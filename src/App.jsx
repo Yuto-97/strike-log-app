@@ -1693,16 +1693,41 @@ export default function StrikeLog() {
                       </summary>
                       <div className="px-3 pb-3 space-y-2" style={{ borderTop: `1px solid #EFE4CC`, paddingTop: 8 }}>
                         {[
-                          { label: "ストライク率", formula: "ストライク数 ÷ 投球フレーム数(1投目)" },
-                          { label: "スペア率", formula: "スペア数 ÷ スペアチャンス数(1投目がストライクでなかったフレーム)" },
-                          { label: "スプリット率", formula: "スプリット数 ÷ 投球フレーム数" },
-                          { label: "スプリットカバー率", formula: "スプリットカバー数 ÷ 1投目がスプリットになったフレーム数" },
-                          { label: "ガター率", formula: "ガター数 ÷ 投球した全ボール数" },
-                          { label: "ファール率", formula: "ファール数 ÷ 投球した全ボール数" },
+                          {
+                            label: "ストライク率",
+                            formula: "ストライク数 ÷ 投球フレーム数(1投目)",
+                            note: "「投球フレーム数」は普通1ゲームで10(10フレーム目のボーナス球は含みません)",
+                          },
+                          {
+                            label: "スペア率",
+                            formula: "スペア数 ÷ スペアチャンス数(1投目がストライクでなかったフレーム)",
+                            note: "ストライクを取れなかったフレームのうち、何%を2投目で立て直せたか",
+                          },
+                          {
+                            label: "スプリット率",
+                            formula: "スプリット数 ÷ 投球フレーム数",
+                            note: "10フレーム中、何回スプリット(ピンが離れて残る形)が出たか",
+                          },
+                          {
+                            label: "スプリットカバー率",
+                            formula: "スプリットカバー数 ÷ 1投目がスプリットになったフレーム数",
+                            note: "スプリットになった中で、何%をスペアで返せたか",
+                          },
+                          {
+                            label: "ガター率",
+                            formula: "ガター数 ÷ 投球した全ボール数",
+                            note: "全投球のうち、何%が溝に落ちたか",
+                          },
+                          {
+                            label: "ファール率",
+                            formula: "ファール数 ÷ 投球した全ボール数",
+                            note: "全投球のうち、何%がファールライン超えだったか",
+                          },
                         ].map((row) => (
                           <div key={row.label}>
                             <div className="text-xs" style={{ color: COLORS.ink, fontWeight: 700 }}>{row.label}</div>
                             <div className="text-xs" style={{ color: COLORS.oak }}>{row.formula}</div>
+                            <div className="text-xs" style={{ color: COLORS.gold }}>{row.note}</div>
                           </div>
                         ))}
                       </div>
