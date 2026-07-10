@@ -784,7 +784,6 @@ export default function StrikeLog() {
 
   const [imagePreview, setImagePreview] = useState(null);
   const [imageMeta, setImageMeta] = useState(null); // {base64, mediaType}
-  const [imageSizeKB, setImageSizeKB] = useState(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzeError, setAnalyzeError] = useState("");
   const [pendingResult, setPendingResult] = useState(null);
@@ -797,7 +796,6 @@ export default function StrikeLog() {
   const [nameSaved, setNameSaved] = useState(false);
   const [ballType, setBallType] = useState("house"); // "house" | "own"
   const [ballWeight, setBallWeight] = useState("");
-  const [ballCharacteristic, setBallCharacteristic] = useState("");
   const [ballThumbless, setBallThumbless] = useState(false);
   const [periodMode, setPeriodMode] = useState("week"); // "day" | "week" | "month" | "custom"
   const [dayAnchor, setDayAnchor] = useState(() => toLocalISODate(new Date()));
@@ -842,7 +840,6 @@ export default function StrikeLog() {
           const cfg = JSON.parse(res.value);
           if (cfg.ballType) setBallType(cfg.ballType);
           if (cfg.ballWeight) setBallWeight(cfg.ballWeight);
-          if (cfg.ballCharacteristic) setBallCharacteristic(cfg.ballCharacteristic);
           if (cfg.ballThumbless !== undefined) setBallThumbless(cfg.ballThumbless);
         }
       } catch (e) {
@@ -898,7 +895,6 @@ export default function StrikeLog() {
     setImageMeta(null);
     setActiveCell(null);
     setSplitPending(false);
-    setImageSizeKB(null);
     try {
       const rawUrl = await readFileAsDataUrl(file);
       setImagePreview(rawUrl);
@@ -909,7 +905,6 @@ export default function StrikeLog() {
       const { base64, mediaType } = await preprocessImage(file);
       setImageMeta({ base64, mediaType });
       setImagePreview(`data:${mediaType};base64,${base64}`);
-      setImageSizeKB(Math.round((base64.length * 0.75) / 1024));
     } catch (e) {
       setAnalyzeError(e.message);
     }
@@ -956,7 +951,6 @@ export default function StrikeLog() {
     const ball = {
       type: ballType,
       weight: ballWeight ? Number(ballWeight) : null,
-      characteristic: ballCharacteristic.trim(),
       thumbless: ballThumbless,
     };
     const newGame = {
@@ -972,7 +966,7 @@ export default function StrikeLog() {
       (a, b) => a.date.localeCompare(b.date) || (a.gameNumber || 1) - (b.gameNumber || 1)
     );
     await persistGames(next);
-    await saveBallConfig({ ballType, ballWeight, ballCharacteristic, ballThumbless });
+    await saveBallConfig({ ballType, ballWeight, ballThumbless });
     setPendingResult(null);
     setImagePreview(null);
     setImageMeta(null);
@@ -1109,12 +1103,12 @@ export default function StrikeLog() {
             </div>
             <div className="text-xs mt-0.5" style={{ color: COLORS.oak }}>スコア記録 &amp; フォーム分析</div>
           </div>
-          <div
-            className="w-10 h-10 rounded-full flex items-center justify-center"
-            style={{ background: COLORS.strike }}
-          >
-            <span style={{ color: COLORS.cream, fontFamily: "'Oswald', sans-serif", fontWeight: 700 }}>10</span>
-          </div>
+          <img
+            src="/icons/icon-192.png"
+            alt="STRIKE LOG"
+            className="w-10 h-10 rounded-full"
+            style={{ objectFit: "cover" }}
+          />
         </div>
       </header>
 
@@ -1131,7 +1125,7 @@ export default function StrikeLog() {
                 value={playerName}
                 onChange={(e) => setPlayerName(e.target.value)}
                 onBlur={(e) => savePlayerName(e.target.value.trim())}
-                placeholder="例: ユウト"
+                placeholder="例: ヤマダ"
                 className="w-full px-3 py-2 rounded border text-sm"
                 style={{ borderColor: COLORS.oak, color: COLORS.ink }}
               />
@@ -1162,11 +1156,6 @@ export default function StrikeLog() {
             {imagePreview && (
               <div className="rounded-xl overflow-hidden border" style={{ borderColor: COLORS.oak }}>
                 <img src={imagePreview} alt="スコア写真プレビュー" className="w-full object-cover max-h-72" />
-              </div>
-            )}
-            {imageSizeKB !== null && (
-              <div className="text-center" style={{ color: COLORS.oak, fontSize: 11 }}>
-                送信サイズ: 約{imageSizeKB}KB(できるだけ圧縮しています)
               </div>
             )}
 
@@ -1402,14 +1391,6 @@ export default function StrikeLog() {
                       style={{ borderColor: COLORS.oak, color: COLORS.ink }}
                     />
                     <span className="text-xs" style={{ color: COLORS.oak }}>ポンド</span>
-                    <input
-                      type="text"
-                      value={ballCharacteristic}
-                      onChange={(e) => setBallCharacteristic(e.target.value)}
-                      placeholder="特性(例: フック、ストレート)"
-                      className="flex-1 px-2 py-1 rounded border text-sm"
-                      style={{ borderColor: COLORS.oak, color: COLORS.ink }}
-                    />
                   </div>
 
                   <label className="flex items-center gap-2 text-xs" style={{ color: COLORS.ink }}>
@@ -1418,7 +1399,7 @@ export default function StrikeLog() {
                       checked={ballThumbless}
                       onChange={(e) => setBallThumbless(e.target.checked)}
                     />
-                    サムレスボール
+                    サムレス
                   </label>
                 </div>
 
@@ -1488,12 +1469,11 @@ export default function StrikeLog() {
                     </div>
                   </div>
                 )}
-                {g.ball && (g.ball.weight || g.ball.characteristic || g.ball.type) && (
+                {g.ball && (g.ball.weight || g.ball.type) && (
                   <div className="mb-2 flex items-center gap-1" style={{ color: COLORS.oak, fontSize: 11 }}>
                     <CircleDot size={11} />
                     {g.ball.type === "own" ? "マイボール" : "ハウスボール"}
                     {g.ball.weight ? ` ${g.ball.weight}lb` : ""}
-                    {g.ball.characteristic ? ` ・ ${g.ball.characteristic}` : ""}
                     {g.ball.thumbless ? " ・ サムレス" : ""}
                   </div>
                 )}
@@ -1706,6 +1686,27 @@ export default function StrikeLog() {
                         </div>
                       ))}
                     </div>
+
+                    <details className="rounded-xl border bg-white overflow-hidden" style={{ borderColor: COLORS.oak }}>
+                      <summary className="px-3 py-2 cursor-pointer text-sm" style={{ color: COLORS.oak }}>
+                        その他(計算式について)
+                      </summary>
+                      <div className="px-3 pb-3 space-y-2" style={{ borderTop: `1px solid #EFE4CC`, paddingTop: 8 }}>
+                        {[
+                          { label: "ストライク率", formula: "ストライク数 ÷ 投球フレーム数(1投目)" },
+                          { label: "スペア率", formula: "スペア数 ÷ スペアチャンス数(1投目がストライクでなかったフレーム)" },
+                          { label: "スプリット率", formula: "スプリット数 ÷ 投球フレーム数" },
+                          { label: "スプリットカバー率", formula: "スプリットカバー数 ÷ 1投目がスプリットになったフレーム数" },
+                          { label: "ガター率", formula: "ガター数 ÷ 投球した全ボール数" },
+                          { label: "ファール率", formula: "ファール数 ÷ 投球した全ボール数" },
+                        ].map((row) => (
+                          <div key={row.label}>
+                            <div className="text-xs" style={{ color: COLORS.ink, fontWeight: 700 }}>{row.label}</div>
+                            <div className="text-xs" style={{ color: COLORS.oak }}>{row.formula}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
 
                     <div className="rounded-xl p-3 border bg-white" style={{ borderColor: COLORS.oak }}>
                       <div className="text-xs mb-2 flex items-center gap-1" style={{ color: COLORS.oak }}>
