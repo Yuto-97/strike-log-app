@@ -2348,13 +2348,13 @@ export default function StrikeLog() {
 
                   <div>
                     <div className="text-xs mb-1" style={{ color: COLORS.oak }}>再生速度</div>
-                    <div className="grid grid-cols-3 gap-1.5">
-                      {[1, 0.75, 0.5, 0.25, 0.1, 0.05].map((rate) => (
+                    <div className="flex gap-1.5">
+                      {[1, 0.75, 0.5, 0.25, 0.1].map((rate) => (
                         <button
                           key={rate}
                           type="button"
                           onClick={() => changeRate(rate)}
-                          className="rounded-lg py-2 text-xs"
+                          className="flex-1 rounded-lg py-2 text-xs"
                           style={{
                             background: playbackRate === rate ? COLORS.strike : "white",
                             color: playbackRate === rate ? "white" : COLORS.ink,
@@ -2393,8 +2393,8 @@ export default function StrikeLog() {
             { key: "scan", label: "スコア記録", icon: Camera },
             { key: "history", label: "履歴", icon: History },
             { key: "stats", label: "統計", icon: BarChart3 },
-            { key: "profile", label: "プロフィール", icon: User },
             { key: "form", label: "フォーム分析", icon: Video },
+            { key: "profile", label: "プロフィール", icon: User },
           ].map(({ key, label, icon: Icon }) => {
             const active = tab === key;
             return (
