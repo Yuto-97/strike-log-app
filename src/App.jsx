@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Camera, History, BarChart3, Loader2, Check, X, Pencil, Trophy, TrendingUp, Calendar, CircleDot, Hash } from "lucide-react";
+import { Camera, History, BarChart3, Loader2, Check, X, Pencil, Trophy, TrendingUp, Calendar, CircleDot, Hash, User, Target, Trash2 } from "lucide-react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
 // ---------- palette ----------
@@ -561,6 +561,8 @@ async function analyzeScoreImage(base64, mediaType, playerName) {
 
 const PLAYER_NAME_KEY = "player-name";
 const BALL_CONFIG_KEY = "ball-config";
+const PROFILE_KEY = "profile";
+const MY_BALLS_KEY = "my-balls";
 
 // ---------- scoreboard-style marks ----------
 // Split: a circle around the pin count, matching the "⑧" style circled
@@ -797,6 +799,16 @@ export default function StrikeLog() {
   const [ballType, setBallType] = useState("house"); // "house" | "own"
   const [ballWeight, setBallWeight] = useState("");
   const [ballThumbless, setBallThumbless] = useState(false);
+  const [selectedBallId, setSelectedBallId] = useState(null);
+  const [myBalls, setMyBalls] = useState([]); // [{ id, label, weight, thumbless }]
+  const [dominantHand, setDominantHand] = useState("right"); // "right" | "left"
+  const [goalAverage, setGoalAverage] = useState("");
+  const [goalScore, setGoalScore] = useState("");
+  const [homeCenter, setHomeCenter] = useState("");
+  const [newBallLabel, setNewBallLabel] = useState("");
+  const [newBallWeight, setNewBallWeight] = useState("");
+  const [newBallThumbless, setNewBallThumbless] = useState(false);
+  const [profileSaved, setProfileSaved] = useState(false);
   const [periodMode, setPeriodMode] = useState("week"); // "day" | "week" | "month" | "custom"
   const [dayAnchor, setDayAnchor] = useState(() => toLocalISODate(new Date()));
   const [weekAnchor, setWeekAnchor] = useState(() => toLocalISODate(new Date()));
@@ -846,6 +858,28 @@ export default function StrikeLog() {
         // no saved ball config yet, that's fine
       }
     })();
+    (async () => {
+      try {
+        const res = await storage.get(PROFILE_KEY);
+        if (res && res.value) {
+          const p = JSON.parse(res.value);
+          if (p.dominantHand) setDominantHand(p.dominantHand);
+          if (p.goalAverage) setGoalAverage(p.goalAverage);
+          if (p.goalScore) setGoalScore(p.goalScore);
+          if (p.homeCenter) setHomeCenter(p.homeCenter);
+        }
+      } catch (e) {
+        // no saved profile yet, that's fine
+      }
+    })();
+    (async () => {
+      try {
+        const res = await storage.get(MY_BALLS_KEY);
+        if (res && res.value) setMyBalls(JSON.parse(res.value));
+      } catch (e) {
+        // no registered balls yet, that's fine
+      }
+    })();
   }, []);
 
   // Suggests the next game number for the selected date (existing games for
@@ -874,6 +908,45 @@ export default function StrikeLog() {
     } catch (e) {
       // non-fatal; ball config still works for this session
     }
+  };
+
+  const saveProfile = async (patch) => {
+    const next = { dominantHand, goalAverage, goalScore, homeCenter, ...patch };
+    try {
+      await storage.set(PROFILE_KEY, JSON.stringify(next));
+      setProfileSaved(true);
+      setTimeout(() => setProfileSaved(false), 1200);
+    } catch (e) {
+      // non-fatal; profile still works for this session
+    }
+  };
+
+  const persistMyBalls = async (next) => {
+    setMyBalls(next);
+    try {
+      await storage.set(MY_BALLS_KEY, JSON.stringify(next));
+    } catch (e) {
+      // non-fatal; balls still work for this session
+    }
+  };
+
+  const addMyBall = () => {
+    if (!newBallWeight) return;
+    const ball = {
+      id: uid(),
+      label: newBallLabel.trim() || `マイボール${myBalls.length + 1}`,
+      weight: Number(newBallWeight),
+      thumbless: newBallThumbless,
+    };
+    persistMyBalls([...myBalls, ball]);
+    setNewBallLabel("");
+    setNewBallWeight("");
+    setNewBallThumbless(false);
+  };
+
+  const deleteMyBall = (id) => {
+    persistMyBalls(myBalls.filter((b) => b.id !== id));
+    if (selectedBallId === id) setSelectedBallId(null);
   };
 
   const persistGames = useCallback(async (next) => {
@@ -948,11 +1021,16 @@ export default function StrikeLog() {
 
   const saveGame = async () => {
     if (!pendingResult) return;
-    const ball = {
-      type: ballType,
-      weight: ballWeight ? Number(ballWeight) : null,
-      thumbless: ballThumbless,
-    };
+    const selectedBall = myBalls.find((b) => b.id === selectedBallId);
+    const ball =
+      ballType === "house"
+        ? { type: "house", weight: ballWeight ? Number(ballWeight) : null, thumbless: ballThumbless, label: null }
+        : {
+            type: "own",
+            weight: selectedBall ? selectedBall.weight : null,
+            thumbless: selectedBall ? selectedBall.thumbless : false,
+            label: selectedBall ? selectedBall.label : null,
+          };
     const newGame = {
       id: uid(),
       date: gameDate,
@@ -1117,7 +1195,7 @@ export default function StrikeLog() {
           <div className="space-y-4">
             <div className="rounded-xl p-3 border bg-white" style={{ borderColor: COLORS.oak }}>
               <label className="text-xs flex items-center justify-between mb-1" style={{ color: COLORS.oak }}>
-                <span>自分の名前(複数人プレー時、この名前の列だけを解析します)</span>
+                <span>スコア画面に表示されている、自分の名前</span>
                 {nameSaved && <span style={{ color: COLORS.gold }}>保存しました</span>}
               </label>
               <input
@@ -1129,9 +1207,6 @@ export default function StrikeLog() {
                 className="w-full px-3 py-2 rounded border text-sm"
                 style={{ borderColor: COLORS.oak, color: COLORS.ink }}
               />
-              <div className="mt-1" style={{ color: COLORS.oak, fontSize: 10 }}>
-                空欄のままだと、画面内の最初の1人分を解析します
-              </div>
             </div>
 
             {!imagePreview && (
@@ -1379,28 +1454,50 @@ export default function StrikeLog() {
                     ))}
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      min={1}
-                      max={20}
-                      value={ballWeight}
-                      onChange={(e) => setBallWeight(e.target.value)}
-                      placeholder="重さ"
-                      className="w-16 px-2 py-1 rounded border text-sm"
-                      style={{ borderColor: COLORS.oak, color: COLORS.ink }}
-                    />
-                    <span className="text-xs" style={{ color: COLORS.oak }}>ポンド</span>
-                  </div>
+                  {ballType === "house" ? (
+                    <>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min={1}
+                          max={20}
+                          value={ballWeight}
+                          onChange={(e) => setBallWeight(e.target.value)}
+                          placeholder="重さ"
+                          className="w-16 px-2 py-1 rounded border text-sm"
+                          style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                        />
+                        <span className="text-xs" style={{ color: COLORS.oak }}>ポンド</span>
+                      </div>
 
-                  <label className="flex items-center gap-2 text-xs" style={{ color: COLORS.ink }}>
-                    <input
-                      type="checkbox"
-                      checked={ballThumbless}
-                      onChange={(e) => setBallThumbless(e.target.checked)}
-                    />
-                    サムレス
-                  </label>
+                      <label className="flex items-center gap-2 text-xs" style={{ color: COLORS.ink }}>
+                        <input
+                          type="checkbox"
+                          checked={ballThumbless}
+                          onChange={(e) => setBallThumbless(e.target.checked)}
+                        />
+                        サムレス
+                      </label>
+                    </>
+                  ) : myBalls.length === 0 ? (
+                    <div className="text-xs" style={{ color: COLORS.oak }}>
+                      登録済みのマイボールがありません。「プロフィール」タブで登録してください
+                    </div>
+                  ) : (
+                    <select
+                      value={selectedBallId || ""}
+                      onChange={(e) => setSelectedBallId(e.target.value || null)}
+                      className="w-full px-2 py-2 rounded border text-sm"
+                      style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                    >
+                      <option value="">ボールを選択</option>
+                      {myBalls.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.label}({b.weight}lb{b.thumbless ? "・サムレス" : ""})
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
 
                 <button
@@ -1472,7 +1569,7 @@ export default function StrikeLog() {
                 {g.ball && (g.ball.weight || g.ball.type) && (
                   <div className="mb-2 flex items-center gap-1" style={{ color: COLORS.oak, fontSize: 11 }}>
                     <CircleDot size={11} />
-                    {g.ball.type === "own" ? "マイボール" : "ハウスボール"}
+                    {g.ball.label ? g.ball.label : g.ball.type === "own" ? "マイボール" : "ハウスボール"}
                     {g.ball.weight ? ` ${g.ball.weight}lb` : ""}
                     {g.ball.thumbless ? " ・ サムレス" : ""}
                   </div>
@@ -1659,6 +1756,34 @@ export default function StrikeLog() {
                       </div>
                     </div>
 
+                    {(goalAverage || goalScore) && (
+                      <div className="rounded-xl p-3 border bg-white flex items-center gap-4" style={{ borderColor: COLORS.oak }}>
+                        <Target size={16} style={{ color: COLORS.gold }} />
+                        <div className="flex-1 text-xs" style={{ color: COLORS.ink }}>
+                          {goalAverage && (
+                            <div>
+                              目標アベレージ {goalAverage}
+                              {avg >= Number(goalAverage) ? (
+                                <span style={{ color: COLORS.gold, fontWeight: 700 }}> ・ 達成!</span>
+                              ) : (
+                                <span> ・ あと{Number(goalAverage) - avg}</span>
+                              )}
+                            </div>
+                          )}
+                          {goalScore && (
+                            <div>
+                              目標スコア {goalScore}
+                              {highGame >= Number(goalScore) ? (
+                                <span style={{ color: COLORS.gold, fontWeight: 700 }}> ・ 達成!</span>
+                              ) : (
+                                <span> ・ あと{Number(goalScore) - highGame}</span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
                     <div className="rounded-xl border bg-white overflow-hidden" style={{ borderColor: COLORS.oak }}>
                       {[
                         { label: "ストライク", count: strikeCount, rate: strikeRate },
@@ -1831,6 +1956,158 @@ export default function StrikeLog() {
             )}
           </div>
         )}
+
+        {tab === "profile" && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="text-sm" style={{ color: COLORS.oak }}>基本情報</div>
+              {profileSaved && <span style={{ color: COLORS.gold, fontSize: 11 }}>保存しました</span>}
+            </div>
+
+            <div className="rounded-xl p-3 border bg-white space-y-3" style={{ borderColor: COLORS.oak }}>
+              <div>
+                <div className="text-xs mb-1" style={{ color: COLORS.oak }}>利き手</div>
+                <div className="flex gap-2">
+                  {[
+                    { key: "right", label: "右" },
+                    { key: "left", label: "左" },
+                  ].map((opt) => (
+                    <button
+                      key={opt.key}
+                      type="button"
+                      onClick={() => {
+                        setDominantHand(opt.key);
+                        saveProfile({ dominantHand: opt.key });
+                      }}
+                      className="flex-1 rounded-lg py-2 text-sm"
+                      style={{
+                        background: dominantHand === opt.key ? COLORS.ink : "white",
+                        color: dominantHand === opt.key ? COLORS.cream : COLORS.ink,
+                        border: `1px solid ${COLORS.oak}`,
+                        fontWeight: 700,
+                      }}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <div className="text-xs mb-1 flex items-center gap-1" style={{ color: COLORS.oak }}>
+                  <Target size={12} /> 目標アベレージ
+                </div>
+                <input
+                  type="number"
+                  value={goalAverage}
+                  onChange={(e) => setGoalAverage(e.target.value)}
+                  onBlur={(e) => saveProfile({ goalAverage: e.target.value })}
+                  placeholder="例: 150"
+                  className="w-full px-3 py-2 rounded border text-sm"
+                  style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                />
+              </div>
+
+              <div>
+                <div className="text-xs mb-1 flex items-center gap-1" style={{ color: COLORS.oak }}>
+                  <Target size={12} /> 目標スコア(ハイゲーム)
+                </div>
+                <input
+                  type="number"
+                  value={goalScore}
+                  onChange={(e) => setGoalScore(e.target.value)}
+                  onBlur={(e) => saveProfile({ goalScore: e.target.value })}
+                  placeholder="例: 200"
+                  className="w-full px-3 py-2 rounded border text-sm"
+                  style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                />
+              </div>
+
+              <div>
+                <div className="text-xs mb-1" style={{ color: COLORS.oak }}>ホームセンター(よく行くボウリング場)</div>
+                <input
+                  type="text"
+                  value={homeCenter}
+                  onChange={(e) => setHomeCenter(e.target.value)}
+                  onBlur={(e) => saveProfile({ homeCenter: e.target.value })}
+                  placeholder="例: ラウンドワン◯◯店"
+                  className="w-full px-3 py-2 rounded border text-sm"
+                  style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                />
+              </div>
+            </div>
+
+            <div className="text-sm" style={{ color: COLORS.oak }}>マイボール一覧</div>
+
+            <div className="rounded-xl border bg-white overflow-hidden" style={{ borderColor: COLORS.oak }}>
+              {myBalls.length === 0 ? (
+                <div className="p-3 text-xs text-center" style={{ color: COLORS.oak }}>
+                  まだ登録されていません
+                </div>
+              ) : (
+                myBalls.map((b, i) => (
+                  <div
+                    key={b.id}
+                    className="flex items-center justify-between px-3 py-2"
+                    style={{ borderTop: i === 0 ? "none" : `1px solid #EFE4CC` }}
+                  >
+                    <div>
+                      <div className="text-sm" style={{ color: COLORS.ink, fontWeight: 700 }}>{b.label}</div>
+                      <div className="text-xs" style={{ color: COLORS.oak }}>
+                        {b.weight}lb{b.thumbless ? " ・ サムレス" : ""}
+                      </div>
+                    </div>
+                    <button onClick={() => deleteMyBall(b.id)} aria-label="削除">
+                      <Trash2 size={16} style={{ color: COLORS.oak }} />
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="rounded-xl p-3 border bg-white space-y-2" style={{ borderColor: COLORS.oak }}>
+              <div className="text-xs" style={{ color: COLORS.oak }}>新しいボールを登録</div>
+              <input
+                type="text"
+                value={newBallLabel}
+                onChange={(e) => setNewBallLabel(e.target.value)}
+                placeholder="ニックネーム(例: メインボール)"
+                className="w-full px-3 py-2 rounded border text-sm"
+                style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+              />
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={newBallWeight}
+                  onChange={(e) => setNewBallWeight(e.target.value)}
+                  placeholder="重さ"
+                  className="w-16 px-2 py-1 rounded border text-sm"
+                  style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                />
+                <span className="text-xs" style={{ color: COLORS.oak }}>ポンド</span>
+                <label className="flex items-center gap-1 text-xs" style={{ color: COLORS.ink }}>
+                  <input
+                    type="checkbox"
+                    checked={newBallThumbless}
+                    onChange={(e) => setNewBallThumbless(e.target.checked)}
+                  />
+                  サムレス
+                </label>
+              </div>
+              <button
+                type="button"
+                onClick={addMyBall}
+                disabled={!newBallWeight}
+                className="w-full rounded-lg py-2 text-sm"
+                style={{ background: COLORS.ink, color: COLORS.cream, fontWeight: 700, opacity: newBallWeight ? 1 : 0.5 }}
+              >
+                追加する
+              </button>
+            </div>
+          </div>
+        )}
       </main>
 
       {/* bottom nav */}
@@ -1843,6 +2120,7 @@ export default function StrikeLog() {
             { key: "scan", label: "スコア記録", icon: Camera },
             { key: "history", label: "履歴", icon: History },
             { key: "stats", label: "統計", icon: BarChart3 },
+            { key: "profile", label: "プロフィール", icon: User },
           ].map(({ key, label, icon: Icon }) => {
             const active = tab === key;
             return (
