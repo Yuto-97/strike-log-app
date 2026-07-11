@@ -94,6 +94,12 @@ function shiftMonth(monthStr, months) {
 }
 
 const WEEKDAY_JA = ["日", "月", "火", "水", "木", "金", "土"];
+
+// Label lookups for the structured "own ball" characteristic fields.
+const CORE_LABELS = { symmetric: "シンメトリック", asymmetric: "アシンメトリック" };
+const COVERSTOCK_LABELS = { reactive: "リアクティブレジン", urethane: "ウレタン", plastic: "プラスチック", particle: "パーティクル" };
+const MOTION_LABELS = { straight: "ストレート", mild_curve: "マイルドカーブ", hook: "フック", backup: "バックアップ" };
+const LANE_LABELS = { dry: "ドライレーン向き", medium: "ミディアムレーン向き", oily: "オイリーレーン向き" };
 function formatMD(dateStr) {
   const d = parseISODate(dateStr);
   return `${d.getMonth() + 1}/${d.getDate()}`;
@@ -809,6 +815,10 @@ export default function StrikeLog() {
   const [newBallType, setNewBallType] = useState("own"); // "own" | "house"
   const [newBallWeight, setNewBallWeight] = useState("");
   const [newBallThumbless, setNewBallThumbless] = useState(false);
+  const [newBallCore, setNewBallCore] = useState(""); // "symmetric" | "asymmetric"
+  const [newBallCoverstock, setNewBallCoverstock] = useState(""); // "reactive" | "urethane" | "plastic" | "particle"
+  const [newBallMotion, setNewBallMotion] = useState(""); // "straight" | "mild_curve" | "hook" | "backup"
+  const [newBallLaneCondition, setNewBallLaneCondition] = useState(""); // "dry" | "medium" | "oily"
   const [profileSaved, setProfileSaved] = useState(false);
   const [periodMode, setPeriodMode] = useState("week"); // "day" | "week" | "month" | "custom"
   const [dayAnchor, setDayAnchor] = useState(() => toLocalISODate(new Date()));
@@ -941,11 +951,23 @@ export default function StrikeLog() {
       label: `${typeLabel} ${newBallWeight}lb${newBallThumbless ? "・サムレス" : ""}`,
       weight: Number(newBallWeight),
       thumbless: newBallThumbless,
+      ...(newBallType === "own"
+        ? {
+            core: newBallCore || null,
+            coverstock: newBallCoverstock || null,
+            motion: newBallMotion || null,
+            laneCondition: newBallLaneCondition || null,
+          }
+        : {}),
     };
     persistMyBalls([...myBalls, ball]);
     setNewBallWeight("");
     setNewBallThumbless(false);
     setNewBallType("own");
+    setNewBallCore("");
+    setNewBallCoverstock("");
+    setNewBallMotion("");
+    setNewBallLaneCondition("");
   };
 
   const deleteMyBall = (id) => {
@@ -1975,6 +1997,19 @@ export default function StrikeLog() {
 
             <div className="rounded-xl p-3 border bg-white space-y-3" style={{ borderColor: COLORS.oak }}>
               <div>
+                <div className="text-xs mb-1" style={{ color: COLORS.oak }}>ニックネーム</div>
+                <input
+                  type="text"
+                  value={nickname}
+                  onChange={(e) => setNickname(e.target.value)}
+                  onBlur={(e) => saveProfile({ nickname: e.target.value })}
+                  placeholder="例: ユウト"
+                  className="w-full px-3 py-2 rounded border text-sm"
+                  style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                />
+              </div>
+
+              <div>
                 <div className="text-xs mb-1" style={{ color: COLORS.oak }}>利き手</div>
                 <div className="flex gap-2">
                   {[
@@ -2044,19 +2079,6 @@ export default function StrikeLog() {
                   style={{ borderColor: COLORS.oak, color: COLORS.ink }}
                 />
               </div>
-
-              <div>
-                <div className="text-xs mb-1" style={{ color: COLORS.oak }}>ニックネーム</div>
-                <input
-                  type="text"
-                  value={nickname}
-                  onChange={(e) => setNickname(e.target.value)}
-                  onBlur={(e) => saveProfile({ nickname: e.target.value })}
-                  placeholder="例: ユウト"
-                  className="w-full px-3 py-2 rounded border text-sm"
-                  style={{ borderColor: COLORS.oak, color: COLORS.ink }}
-                />
-              </div>
             </div>
 
             <div className="text-sm" style={{ color: COLORS.oak }}>登録済みのボール</div>
@@ -2084,6 +2106,18 @@ export default function StrikeLog() {
                       <div className="text-xs" style={{ color: COLORS.oak }}>
                         {b.weight}lb{b.thumbless ? " ・ サムレス" : ""}
                       </div>
+                      {(b.core || b.coverstock || b.motion || b.laneCondition) && (
+                        <div className="text-xs" style={{ color: COLORS.gold }}>
+                          {[
+                            b.core && CORE_LABELS[b.core],
+                            b.coverstock && COVERSTOCK_LABELS[b.coverstock],
+                            b.motion && MOTION_LABELS[b.motion],
+                            b.laneCondition && LANE_LABELS[b.laneCondition],
+                          ]
+                            .filter(Boolean)
+                            .join(" ・ ")}
+                        </div>
+                      )}
                     </div>
                     <button onClick={() => deleteMyBall(b.id)} aria-label="削除">
                       <Trash2 size={16} style={{ color: COLORS.oak }} />
@@ -2127,6 +2161,72 @@ export default function StrikeLog() {
                   サムレス
                 </label>
               </div>
+
+              {newBallType === "own" && (
+                <>
+                  <div>
+                    <div className="text-xs mb-1" style={{ color: COLORS.oak }}>コアタイプ</div>
+                    <select
+                      value={newBallCore}
+                      onChange={(e) => setNewBallCore(e.target.value)}
+                      className="w-full px-3 py-2 rounded border text-sm"
+                      style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                    >
+                      <option value="">選択しない</option>
+                      <option value="symmetric">シンメトリック</option>
+                      <option value="asymmetric">アシンメトリック</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <div className="text-xs mb-1" style={{ color: COLORS.oak }}>カバーストック</div>
+                    <select
+                      value={newBallCoverstock}
+                      onChange={(e) => setNewBallCoverstock(e.target.value)}
+                      className="w-full px-3 py-2 rounded border text-sm"
+                      style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                    >
+                      <option value="">選択しない</option>
+                      <option value="reactive">リアクティブレジン</option>
+                      <option value="urethane">ウレタン</option>
+                      <option value="plastic">プラスチック</option>
+                      <option value="particle">パーティクル</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <div className="text-xs mb-1" style={{ color: COLORS.oak }}>球質(回転タイプ)</div>
+                    <select
+                      value={newBallMotion}
+                      onChange={(e) => setNewBallMotion(e.target.value)}
+                      className="w-full px-3 py-2 rounded border text-sm"
+                      style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                    >
+                      <option value="">選択しない</option>
+                      <option value="straight">ストレート</option>
+                      <option value="mild_curve">マイルドカーブ</option>
+                      <option value="hook">フック</option>
+                      <option value="backup">バックアップ</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <div className="text-xs mb-1" style={{ color: COLORS.oak }}>適したレーンコンディション</div>
+                    <select
+                      value={newBallLaneCondition}
+                      onChange={(e) => setNewBallLaneCondition(e.target.value)}
+                      className="w-full px-3 py-2 rounded border text-sm"
+                      style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                    >
+                      <option value="">選択しない</option>
+                      <option value="dry">ドライレーン</option>
+                      <option value="medium">ミディアムレーン</option>
+                      <option value="oily">オイリーレーン</option>
+                    </select>
+                  </div>
+                </>
+              )}
+
               <button
                 type="button"
                 onClick={addMyBall}
