@@ -805,7 +805,8 @@ export default function StrikeLog() {
   const [goalAverage, setGoalAverage] = useState("");
   const [goalScore, setGoalScore] = useState("");
   const [homeCenter, setHomeCenter] = useState("");
-  const [newBallLabel, setNewBallLabel] = useState("");
+  const [nickname, setNickname] = useState("");
+  const [newBallType, setNewBallType] = useState("own"); // "own" | "house"
   const [newBallWeight, setNewBallWeight] = useState("");
   const [newBallThumbless, setNewBallThumbless] = useState(false);
   const [profileSaved, setProfileSaved] = useState(false);
@@ -867,6 +868,7 @@ export default function StrikeLog() {
           if (p.goalAverage) setGoalAverage(p.goalAverage);
           if (p.goalScore) setGoalScore(p.goalScore);
           if (p.homeCenter) setHomeCenter(p.homeCenter);
+          if (p.nickname) setNickname(p.nickname);
         }
       } catch (e) {
         // no saved profile yet, that's fine
@@ -911,7 +913,7 @@ export default function StrikeLog() {
   };
 
   const saveProfile = async (patch) => {
-    const next = { dominantHand, goalAverage, goalScore, homeCenter, ...patch };
+    const next = { dominantHand, goalAverage, goalScore, homeCenter, nickname, ...patch };
     try {
       await storage.set(PROFILE_KEY, JSON.stringify(next));
       setProfileSaved(true);
@@ -932,16 +934,18 @@ export default function StrikeLog() {
 
   const addMyBall = () => {
     if (!newBallWeight) return;
+    const typeLabel = newBallType === "house" ? "ハウスボール" : "マイボール";
     const ball = {
       id: uid(),
-      label: newBallLabel.trim() || `マイボール${myBalls.length + 1}`,
+      type: newBallType,
+      label: `${typeLabel} ${newBallWeight}lb${newBallThumbless ? "・サムレス" : ""}`,
       weight: Number(newBallWeight),
       thumbless: newBallThumbless,
     };
     persistMyBalls([...myBalls, ball]);
-    setNewBallLabel("");
     setNewBallWeight("");
     setNewBallThumbless(false);
+    setNewBallType("own");
   };
 
   const deleteMyBall = (id) => {
@@ -1218,6 +1222,9 @@ export default function StrikeLog() {
                 <Camera size={40} style={{ color: COLORS.strike }} />
                 <div style={{ color: COLORS.ink, fontWeight: 700 }}>スコア画面を撮影 / アップロード</div>
                 <div className="text-xs" style={{ color: COLORS.oak }}>電光掲示板や紙のスコアシートでOK</div>
+                <div className="text-xs text-center px-4" style={{ color: COLORS.gold }}>
+                  できるだけ正面から、明るく鮮明に撮ると解析の精度が上がります
+                </div>
               </button>
             )}
             <input
@@ -1479,7 +1486,7 @@ export default function StrikeLog() {
                         サムレス
                       </label>
                     </>
-                  ) : myBalls.length === 0 ? (
+                  ) : myBalls.filter((b) => (b.type || "own") === "own").length === 0 ? (
                     <div className="text-xs" style={{ color: COLORS.oak }}>
                       登録済みのマイボールがありません。「プロフィール」タブで登録してください
                     </div>
@@ -1491,11 +1498,13 @@ export default function StrikeLog() {
                       style={{ borderColor: COLORS.oak, color: COLORS.ink }}
                     >
                       <option value="">ボールを選択</option>
-                      {myBalls.map((b) => (
-                        <option key={b.id} value={b.id}>
-                          {b.label}({b.weight}lb{b.thumbless ? "・サムレス" : ""})
-                        </option>
-                      ))}
+                      {myBalls
+                        .filter((b) => (b.type || "own") === "own")
+                        .map((b) => (
+                          <option key={b.id} value={b.id}>
+                            {b.label}({b.weight}lb{b.thumbless ? "・サムレス" : ""})
+                          </option>
+                        ))}
                     </select>
                   )}
                 </div>
@@ -2035,9 +2044,22 @@ export default function StrikeLog() {
                   style={{ borderColor: COLORS.oak, color: COLORS.ink }}
                 />
               </div>
+
+              <div>
+                <div className="text-xs mb-1" style={{ color: COLORS.oak }}>ニックネーム</div>
+                <input
+                  type="text"
+                  value={nickname}
+                  onChange={(e) => setNickname(e.target.value)}
+                  onBlur={(e) => saveProfile({ nickname: e.target.value })}
+                  placeholder="例: ユウト"
+                  className="w-full px-3 py-2 rounded border text-sm"
+                  style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                />
+              </div>
             </div>
 
-            <div className="text-sm" style={{ color: COLORS.oak }}>マイボール一覧</div>
+            <div className="text-sm" style={{ color: COLORS.oak }}>登録済みのボール</div>
 
             <div className="rounded-xl border bg-white overflow-hidden" style={{ borderColor: COLORS.oak }}>
               {myBalls.length === 0 ? (
@@ -2052,7 +2074,13 @@ export default function StrikeLog() {
                     style={{ borderTop: i === 0 ? "none" : `1px solid #EFE4CC` }}
                   >
                     <div>
-                      <div className="text-sm" style={{ color: COLORS.ink, fontWeight: 700 }}>{b.label}</div>
+                      <div className="text-sm" style={{ color: COLORS.ink, fontWeight: 700 }}>
+                        {b.label}
+                        <span style={{ color: COLORS.oak, fontWeight: 400, fontSize: 11 }}>
+                          {" "}
+                          ({b.type === "house" ? "ハウスボール" : "マイボール"})
+                        </span>
+                      </div>
                       <div className="text-xs" style={{ color: COLORS.oak }}>
                         {b.weight}lb{b.thumbless ? " ・ サムレス" : ""}
                       </div>
@@ -2067,14 +2095,17 @@ export default function StrikeLog() {
 
             <div className="rounded-xl p-3 border bg-white space-y-2" style={{ borderColor: COLORS.oak }}>
               <div className="text-xs" style={{ color: COLORS.oak }}>新しいボールを登録</div>
-              <input
-                type="text"
-                value={newBallLabel}
-                onChange={(e) => setNewBallLabel(e.target.value)}
-                placeholder="ニックネーム(例: メインボール)"
+
+              <select
+                value={newBallType}
+                onChange={(e) => setNewBallType(e.target.value)}
                 className="w-full px-3 py-2 rounded border text-sm"
                 style={{ borderColor: COLORS.oak, color: COLORS.ink }}
-              />
+              >
+                <option value="own">マイボール</option>
+                <option value="house">ハウスボール</option>
+              </select>
+
               <div className="flex items-center gap-2">
                 <input
                   type="number"
