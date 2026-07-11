@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Camera, History, BarChart3, Loader2, Check, X, Pencil, Trophy, TrendingUp, Calendar, CircleDot, Hash, User, Target, Trash2 } from "lucide-react";
+import { Camera, History, BarChart3, Loader2, Check, X, Pencil, Trophy, TrendingUp, Calendar, CircleDot, Hash, User, Target, Trash2, Video, Play, Pause, Square } from "lucide-react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
 // ---------- palette ----------
@@ -836,6 +836,11 @@ export default function StrikeLog() {
   const [customEnd, setCustomEnd] = useState(() => toLocalISODate(new Date()));
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const fileInputRef = useRef(null);
+  const videoInputRef = useRef(null);
+  const videoRef = useRef(null);
+  const [formVideoUrl, setFormVideoUrl] = useState(null);
+  const [playbackRate, setPlaybackRate] = useState(1);
+  const [isPlaying, setIsPlaying] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -1137,6 +1142,48 @@ export default function StrikeLog() {
   const closePicker = () => {
     setActiveCell(null);
     setSplitPending(false);
+  };
+
+  // ---------- form analysis: video playback ----------
+  const handleVideoFile = (file) => {
+    if (!file) return;
+    if (formVideoUrl) URL.revokeObjectURL(formVideoUrl);
+    const url = URL.createObjectURL(file);
+    setFormVideoUrl(url);
+    setIsPlaying(false);
+    setPlaybackRate(1);
+  };
+
+  const togglePlay = () => {
+    const v = videoRef.current;
+    if (!v) return;
+    if (v.paused) {
+      v.play();
+      setIsPlaying(true);
+    } else {
+      v.pause();
+      setIsPlaying(false);
+    }
+  };
+
+  const stopVideo = () => {
+    const v = videoRef.current;
+    if (!v) return;
+    v.pause();
+    v.currentTime = 0;
+    setIsPlaying(false);
+  };
+
+  const changeRate = (rate) => {
+    setPlaybackRate(rate);
+    if (videoRef.current) videoRef.current.playbackRate = rate;
+  };
+
+  const clearVideo = () => {
+    if (formVideoUrl) URL.revokeObjectURL(formVideoUrl);
+    setFormVideoUrl(null);
+    setIsPlaying(false);
+    setPlaybackRate(1);
   };
 
   const deleteGame = async (id) => {
@@ -2239,6 +2286,101 @@ export default function StrikeLog() {
             </div>
           </div>
         )}
+
+        {tab === "form" && (
+          <div className="space-y-4">
+            {!formVideoUrl && (
+              <button
+                onClick={() => videoInputRef.current?.click()}
+                className="w-full flex flex-col items-center justify-center gap-3 rounded-xl py-14 border-2 border-dashed"
+                style={{ borderColor: COLORS.oak, background: "white" }}
+              >
+                <Video size={40} style={{ color: COLORS.strike }} />
+                <div style={{ color: COLORS.ink, fontWeight: 700 }}>投球フォームの動画を撮影 / アップロード</div>
+                <div className="text-xs" style={{ color: COLORS.oak }}>スロー再生・一時停止で確認できます</div>
+              </button>
+            )}
+            <input
+              ref={videoInputRef}
+              type="file"
+              accept="video/*"
+              className="hidden"
+              onChange={(e) => handleVideoFile(e.target.files?.[0])}
+            />
+
+            {formVideoUrl && (
+              <>
+                <div className="rounded-xl overflow-hidden border" style={{ borderColor: COLORS.oak, background: "black" }}>
+                  <video
+                    ref={videoRef}
+                    src={formVideoUrl}
+                    playsInline
+                    controls
+                    className="w-full"
+                    style={{ maxHeight: 400 }}
+                    onPlay={() => setIsPlaying(true)}
+                    onPause={() => setIsPlaying(false)}
+                    onEnded={() => setIsPlaying(false)}
+                  />
+                </div>
+
+                <div className="rounded-xl p-3 border bg-white space-y-3" style={{ borderColor: COLORS.oak }}>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={togglePlay}
+                      className="flex-1 rounded-lg py-2 flex items-center justify-center gap-2"
+                      style={{ background: COLORS.ink, color: COLORS.cream, fontWeight: 700 }}
+                    >
+                      {isPlaying ? <Pause size={16} /> : <Play size={16} />}
+                      {isPlaying ? "一時停止" : "再生"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={stopVideo}
+                      className="flex-1 rounded-lg py-2 flex items-center justify-center gap-2"
+                      style={{ border: `1px solid ${COLORS.oak}`, color: COLORS.ink, fontWeight: 700 }}
+                    >
+                      <Square size={16} />
+                      ストップ
+                    </button>
+                  </div>
+
+                  <div>
+                    <div className="text-xs mb-1" style={{ color: COLORS.oak }}>再生速度</div>
+                    <div className="flex gap-1.5">
+                      {[1, 0.75, 0.5, 0.25, 0.1].map((rate) => (
+                        <button
+                          key={rate}
+                          type="button"
+                          onClick={() => changeRate(rate)}
+                          className="flex-1 rounded-lg py-2 text-xs"
+                          style={{
+                            background: playbackRate === rate ? COLORS.strike : "white",
+                            color: playbackRate === rate ? "white" : COLORS.ink,
+                            border: `1px solid ${COLORS.oak}`,
+                            fontWeight: 700,
+                          }}
+                        >
+                          {rate === 1 ? "通常" : `${rate}倍`}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={clearVideo}
+                  className="w-full rounded-lg py-2 text-sm"
+                  style={{ border: `1px solid ${COLORS.oak}`, color: COLORS.oak }}
+                >
+                  別の動画に変える
+                </button>
+              </>
+            )}
+          </div>
+        )}
       </main>
 
       {/* bottom nav */}
@@ -2252,6 +2394,7 @@ export default function StrikeLog() {
             { key: "history", label: "履歴", icon: History },
             { key: "stats", label: "統計", icon: BarChart3 },
             { key: "profile", label: "プロフィール", icon: User },
+            { key: "form", label: "フォーム分析", icon: Video },
           ].map(({ key, label, icon: Icon }) => {
             const active = tab === key;
             return (
