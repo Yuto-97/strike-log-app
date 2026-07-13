@@ -783,8 +783,252 @@ function RollPicker({ frameIdx, rollIdx, splitEligible, onSelect, onSplitToggle,
   );
 }
 
+// ---------- access gate ----------
+// Shown instead of the app until the person's device has been approved by
+// the admin. "checking" while we ask the server, then one of the statuses.
+function GateScreen({ mode, name, setName, onSubmit }) {
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  const submit = async () => {
+    if (!name.trim()) {
+      setError("お名前を入力してください");
+      return;
+    }
+    setSubmitting(true);
+    setError("");
+    try {
+      await onSubmit();
+    } catch (e) {
+      setError("送信に失敗しました。もう一度お試しください");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div
+      style={{ minHeight: "100vh", background: COLORS.cream, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}
+    >
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Noto+Sans+JP:wght@400;500;700&display=swap');`}</style>
+      <div style={{ maxWidth: 340, width: "100%", fontFamily: "'Noto Sans JP', sans-serif" }} className="text-center space-y-4">
+        <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 26, color: COLORS.ink }}>
+          STRIKE LOG
+        </div>
+
+        {mode === "checking" && <div style={{ color: COLORS.oak }}>確認中...</div>}
+
+        {(mode === "not_found" || mode === "error") && (
+          <>
+            <div style={{ color: COLORS.ink, fontSize: 14 }}>
+              このアプリは招待制です。利用するには申請が必要です。
+            </div>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="お名前"
+              className="w-full px-3 py-2 rounded border text-sm"
+              style={{ borderColor: COLORS.oak }}
+            />
+            {error && <div style={{ color: COLORS.strike, fontSize: 12 }}>{error}</div>}
+            <button
+              onClick={submit}
+              disabled={submitting}
+              className="w-full rounded-lg py-3"
+              style={{ background: COLORS.ink, color: COLORS.cream, fontWeight: 700 }}
+            >
+              {submitting ? "送信中..." : "利用をリクエストする"}
+            </button>
+          </>
+        )}
+
+        {mode === "pending" && (
+          <div style={{ color: COLORS.oak, fontSize: 14 }}>
+            利用申請を受け付けました。管理者の承認をお待ちください。
+          </div>
+        )}
+
+        {mode === "rejected" && (
+          <div style={{ color: COLORS.strike, fontSize: 14 }}>この端末での利用は承認されませんでした。</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------- admin panel (approve access requests, review feedback) ----------
+function AdminPanel() {
+  const [password, setPassword] = useState("");
+  const [authed, setAuthed] = useState(false);
+  const [requests, setRequests] = useState([]);
+  const [feedbackList, setFeedbackList] = useState([]);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const load = async (pw) => {
+    setLoading(true);
+    setError("");
+    try {
+      const [rReq, rFb] = await Promise.all([
+        fetch(`/api/admin/requests?password=${encodeURIComponent(pw)}`),
+        fetch(`/api/admin/feedback?password=${encodeURIComponent(pw)}`),
+      ]);
+      if (!rReq.ok || !rFb.ok) throw new Error("auth failed");
+      const reqData = await rReq.json();
+      const fbData = await rFb.json();
+      setRequests(reqData.items || []);
+      setFeedbackList(fbData.items || []);
+      setAuthed(true);
+    } catch (e) {
+      setError("パスワードが違うか、読み込みに失敗しました");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updateStatus = async (deviceId, status) => {
+    await fetch("/api/admin/requests", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password, deviceId, status }),
+    });
+    load(password);
+  };
+
+  if (!authed) {
+    return (
+      <div style={{ minHeight: "100vh", background: COLORS.cream, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+        <div style={{ maxWidth: 320, width: "100%" }} className="space-y-3">
+          <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 20, color: COLORS.ink }}>管理者ログイン</div>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="管理者パスワード"
+            className="w-full px-3 py-2 rounded border text-sm"
+            style={{ borderColor: COLORS.oak }}
+          />
+          {error && <div style={{ color: COLORS.strike, fontSize: 12 }}>{error}</div>}
+          <button
+            onClick={() => load(password)}
+            disabled={loading}
+            className="w-full rounded-lg py-2"
+            style={{ background: COLORS.ink, color: COLORS.cream, fontWeight: 700 }}
+          >
+            {loading ? "確認中..." : "ログイン"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const pending = requests.filter((r) => r.status === "pending");
+  const others = requests.filter((r) => r.status !== "pending");
+
+  return (
+    <div style={{ minHeight: "100vh", background: COLORS.cream, padding: 16 }}>
+      <div className="max-w-2xl mx-auto space-y-6">
+        <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 22, color: COLORS.ink }}>管理画面</div>
+
+        <div>
+          <div className="text-sm mb-2" style={{ color: COLORS.oak, fontWeight: 700 }}>
+            承認待ち ({pending.length})
+          </div>
+          <div className="space-y-2">
+            {pending.length === 0 && <div className="text-xs" style={{ color: COLORS.oak }}>承認待ちの申請はありません</div>}
+            {pending.map((r) => (
+              <div key={r.id} className="rounded-xl p-3 border bg-white flex items-center justify-between" style={{ borderColor: COLORS.oak }}>
+                <div>
+                  <div style={{ color: COLORS.ink, fontWeight: 700 }}>{r.name}</div>
+                  <div style={{ color: COLORS.oak, fontSize: 11 }}>{r.requestedAt}</div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => updateStatus(r.id, "approved")}
+                    className="rounded px-3 py-1 text-xs"
+                    style={{ background: COLORS.gold, color: "white", fontWeight: 700 }}
+                  >
+                    承認
+                  </button>
+                  <button
+                    onClick={() => updateStatus(r.id, "rejected")}
+                    className="rounded px-3 py-1 text-xs"
+                    style={{ background: COLORS.strike, color: "white", fontWeight: 700 }}
+                  >
+                    却下
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <div className="text-sm mb-2" style={{ color: COLORS.oak, fontWeight: 700 }}>
+            承認済み・却下済み ({others.length})
+          </div>
+          <div className="space-y-2">
+            {others.map((r) => (
+              <div key={r.id} className="rounded-xl p-3 border bg-white flex items-center justify-between" style={{ borderColor: COLORS.oak }}>
+                <div>
+                  <div style={{ color: COLORS.ink, fontWeight: 700 }}>{r.name}</div>
+                  <div style={{ color: COLORS.oak, fontSize: 11 }}>
+                    {r.status === "approved" ? "承認済み" : "却下"} ・ {r.updatedAt}
+                  </div>
+                </div>
+                <button
+                  onClick={() => updateStatus(r.id, r.status === "approved" ? "rejected" : "approved")}
+                  className="rounded px-3 py-1 text-xs"
+                  style={{ border: `1px solid ${COLORS.oak}`, color: COLORS.ink, fontWeight: 700 }}
+                >
+                  {r.status === "approved" ? "取り消す" : "承認に変更"}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <div className="text-sm mb-2" style={{ color: COLORS.oak, fontWeight: 700 }}>
+            改善要望 ({feedbackList.length})
+          </div>
+          <div className="space-y-2">
+            {feedbackList.length === 0 && <div className="text-xs" style={{ color: COLORS.oak }}>まだ要望はありません</div>}
+            {feedbackList.map((f) => (
+              <div key={f.id} className="rounded-xl p-3 border bg-white" style={{ borderColor: COLORS.oak }}>
+                <div style={{ color: COLORS.ink, whiteSpace: "pre-wrap" }}>{f.message}</div>
+                <div style={{ color: COLORS.oak, fontSize: 11, marginTop: 4 }}>
+                  {f.name || "匿名"} ・ {f.createdAt}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ---------- main app ----------
 export default function StrikeLog() {
+  const isAdminRoute =
+    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("admin") === "1";
+  const [deviceId] = useState(() => {
+    if (typeof window === "undefined") return "";
+    let id = localStorage.getItem("device-id");
+    if (!id) {
+      id = uid() + uid();
+      localStorage.setItem("device-id", id);
+    }
+    return id;
+  });
+  const [accessStatus, setAccessStatus] = useState("checking");
+  const [requestName, setRequestName] = useState("");
+  const [feedbackMessage, setFeedbackMessage] = useState("");
+  const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
+  const [feedbackSent, setFeedbackSent] = useState(false);
+
   const [tab, setTab] = useState("scan");
   const [games, setGames] = useState([]);
   const [loadingGames, setLoadingGames] = useState(true);
@@ -907,6 +1151,48 @@ export default function StrikeLog() {
     const sameDay = games.filter((g) => g.date === gameDate).length;
     setGameNumber(sameDay + 1);
   }, [gameDate, games, gameNumberTouched]);
+
+  useEffect(() => {
+    if (isAdminRoute || !deviceId) return;
+    (async () => {
+      try {
+        const res = await fetch(`/api/access/status?deviceId=${encodeURIComponent(deviceId)}`);
+        const data = await res.json();
+        setAccessStatus(data.status || "not_found");
+      } catch (e) {
+        setAccessStatus("error");
+      }
+    })();
+  }, [isAdminRoute, deviceId]);
+
+  const requestAccess = async () => {
+    const res = await fetch("/api/access/request", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ deviceId, name: requestName.trim() }),
+    });
+    const data = await res.json();
+    setAccessStatus(data.status || "pending");
+  };
+
+  const submitFeedback = async () => {
+    if (!feedbackMessage.trim()) return;
+    setFeedbackSubmitting(true);
+    try {
+      await fetch("/api/feedback/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ deviceId, name: nickname || playerName, message: feedbackMessage.trim() }),
+      });
+      setFeedbackMessage("");
+      setFeedbackSent(true);
+      setTimeout(() => setFeedbackSent(false), 2000);
+    } catch (e) {
+      // non-fatal; person can just try again
+    } finally {
+      setFeedbackSubmitting(false);
+    }
+  };
 
   const savePlayerName = async (name) => {
     setPlayerName(name);
@@ -1238,6 +1524,19 @@ export default function StrikeLog() {
             });
         })();
   const chartIsBar = periodMode === "day";
+
+  if (isAdminRoute) return <AdminPanel />;
+
+  if (accessStatus !== "approved") {
+    return (
+      <GateScreen
+        mode={accessStatus}
+        name={requestName}
+        setName={setRequestName}
+        onSubmit={requestAccess}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen w-full" style={{ background: COLORS.cream, fontFamily: "'Noto Sans JP', 'Hiragino Sans', sans-serif" }}>
@@ -2282,6 +2581,32 @@ export default function StrikeLog() {
                 style={{ background: COLORS.ink, color: COLORS.cream, fontWeight: 700, opacity: newBallWeight ? 1 : 0.5 }}
               >
                 追加する
+              </button>
+            </div>
+
+            <div className="text-sm" style={{ color: COLORS.oak }}>ご意見・要望</div>
+            <div className="rounded-xl p-3 border bg-white space-y-2" style={{ borderColor: COLORS.oak }}>
+              <textarea
+                value={feedbackMessage}
+                onChange={(e) => setFeedbackMessage(e.target.value)}
+                placeholder="こんな機能が欲しい、ここが使いにくい、などお気軽にどうぞ"
+                rows={4}
+                className="w-full px-3 py-2 rounded border text-sm"
+                style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+              />
+              <button
+                type="button"
+                onClick={submitFeedback}
+                disabled={feedbackSubmitting || !feedbackMessage.trim()}
+                className="w-full rounded-lg py-2 text-sm flex items-center justify-center gap-2"
+                style={{
+                  background: COLORS.strike,
+                  color: "white",
+                  fontWeight: 700,
+                  opacity: feedbackMessage.trim() ? 1 : 0.5,
+                }}
+              >
+                {feedbackSubmitting ? "送信中..." : feedbackSent ? "送信しました!" : "送信する"}
               </button>
             </div>
           </div>
