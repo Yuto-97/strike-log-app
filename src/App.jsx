@@ -1154,6 +1154,20 @@ export default function StrikeLog() {
   const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
   const [feedbackSent, setFeedbackSent] = useState(false);
 
+  // When opened as the admin panel, swap the manifest/icon/title so "Add to
+  // Home Screen" gives it its own distinct icon instead of matching the
+  // regular STRIKE LOG icon.
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    if (isAdminRoute) {
+      document.title = "STRIKE LOG 管理";
+      const manifestLink = document.querySelector('link[rel="manifest"]');
+      if (manifestLink) manifestLink.setAttribute("href", "/manifest-admin.json");
+      const touchIconLink = document.querySelector('link[rel="apple-touch-icon"]');
+      if (touchIconLink) touchIconLink.setAttribute("href", "/icons/icon-admin-192.png");
+    }
+  }, [isAdminRoute]);
+
   const [tab, setTab] = useState("scan");
   const [games, setGames] = useState([]);
   const [loadingGames, setLoadingGames] = useState(true);
