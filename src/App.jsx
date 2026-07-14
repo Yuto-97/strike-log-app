@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Camera, History, BarChart3, Loader2, Check, X, Pencil, Trophy, TrendingUp, Calendar, CircleDot, Hash, User, Target, Trash2, Video, Play, Pause, Square } from "lucide-react";
+import { Camera, History, BarChart3, Loader2, Check, X, Pencil, Trophy, TrendingUp, Calendar, CircleDot, Hash, User, Target, Trash2, Video, Play, Pause, Square, ShieldCheck, CircleCheck } from "lucide-react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
 // ---------- palette ----------
@@ -865,6 +865,7 @@ function AdminPanel() {
   const [feedbackList, setFeedbackList] = useState([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [confirmDeleteFeedbackId, setConfirmDeleteFeedbackId] = useState(null);
 
   const load = async (pw) => {
     setLoading(true);
@@ -896,11 +897,33 @@ function AdminPanel() {
     load(password);
   };
 
+  const updateFeedbackStatus = async (id, status) => {
+    await fetch("/api/admin/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password, id, status }),
+    });
+    load(password);
+  };
+
+  const deleteFeedback = async (id) => {
+    await fetch("/api/admin/feedback", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password, id }),
+    });
+    setConfirmDeleteFeedbackId(null);
+    load(password);
+  };
+
   if (!authed) {
     return (
       <div style={{ minHeight: "100vh", background: COLORS.cream, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
         <div style={{ maxWidth: 320, width: "100%" }} className="space-y-3">
-          <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 20, color: COLORS.ink }}>管理者ログイン</div>
+          <div className="flex items-center gap-2">
+            <ShieldCheck size={22} style={{ color: COLORS.strike }} />
+            <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 20, color: COLORS.ink }}>管理者ログイン</div>
+          </div>
           <input
             type="password"
             value={password}
@@ -925,11 +948,16 @@ function AdminPanel() {
 
   const pending = requests.filter((r) => r.status === "pending");
   const others = requests.filter((r) => r.status !== "pending");
+  const unhandledFeedback = feedbackList.filter((f) => f.status !== "handled");
+  const handledFeedback = feedbackList.filter((f) => f.status === "handled");
 
   return (
     <div style={{ minHeight: "100vh", background: COLORS.cream, padding: 16 }}>
       <div className="max-w-2xl mx-auto space-y-6">
-        <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 22, color: COLORS.ink }}>管理画面</div>
+        <div className="flex items-center gap-2">
+          <ShieldCheck size={24} style={{ color: COLORS.strike }} />
+          <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 22, color: COLORS.ink }}>管理画面</div>
+        </div>
 
         <div>
           <div className="text-sm mb-2" style={{ color: COLORS.oak, fontWeight: 700 }}>
@@ -991,16 +1019,113 @@ function AdminPanel() {
 
         <div>
           <div className="text-sm mb-2" style={{ color: COLORS.oak, fontWeight: 700 }}>
-            改善要望 ({feedbackList.length})
+            改善要望 ・ 未対応 ({unhandledFeedback.length})
           </div>
           <div className="space-y-2">
-            {feedbackList.length === 0 && <div className="text-xs" style={{ color: COLORS.oak }}>まだ要望はありません</div>}
-            {feedbackList.map((f) => (
+            {unhandledFeedback.length === 0 && <div className="text-xs" style={{ color: COLORS.oak }}>未対応の要望はありません</div>}
+            {unhandledFeedback.map((f) => (
               <div key={f.id} className="rounded-xl p-3 border bg-white" style={{ borderColor: COLORS.oak }}>
                 <div style={{ color: COLORS.ink, whiteSpace: "pre-wrap" }}>{f.message}</div>
-                <div style={{ color: COLORS.oak, fontSize: 11, marginTop: 4 }}>
-                  {f.name || "匿名"} ・ {f.createdAt}
+                <div className="flex items-center justify-between mt-2">
+                  <div style={{ color: COLORS.oak, fontSize: 11 }}>
+                    {f.name || "匿名"} ・ {f.createdAt}
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => updateFeedbackStatus(f.id, "handled")}
+                      className="rounded px-3 py-1 text-xs flex items-center gap-1"
+                      style={{ background: COLORS.gold, color: "white", fontWeight: 700 }}
+                    >
+                      <CircleCheck size={12} /> 対応済みにする
+                    </button>
+                    <button
+                      onClick={() => setConfirmDeleteFeedbackId(f.id)}
+                      className="rounded px-2 py-1"
+                      style={{ border: `1px solid ${COLORS.oak}` }}
+                      aria-label="削除"
+                    >
+                      <Trash2 size={14} style={{ color: COLORS.oak }} />
+                    </button>
+                  </div>
                 </div>
+                {confirmDeleteFeedbackId === f.id && (
+                  <div className="mt-2 rounded-lg p-2 flex items-center justify-between" style={{ background: "#FBEAE5" }}>
+                    <span className="text-xs" style={{ color: COLORS.strike, fontWeight: 700 }}>本当に削除しますか?</span>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setConfirmDeleteFeedbackId(null)}
+                        className="text-xs rounded px-2 py-1 border"
+                        style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                      >
+                        キャンセル
+                      </button>
+                      <button
+                        onClick={() => deleteFeedback(f.id)}
+                        className="text-xs rounded px-2 py-1"
+                        style={{ background: COLORS.strike, color: "white", fontWeight: 700 }}
+                      >
+                        削除する
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <div className="text-sm mb-2" style={{ color: COLORS.oak, fontWeight: 700 }}>
+            改善要望 ・ 対応済み ({handledFeedback.length})
+          </div>
+          <div className="space-y-2">
+            {handledFeedback.length === 0 && <div className="text-xs" style={{ color: COLORS.oak }}>対応済みの要望はありません</div>}
+            {handledFeedback.map((f) => (
+              <div key={f.id} className="rounded-xl p-3 border bg-white" style={{ borderColor: COLORS.oak, opacity: 0.7 }}>
+                <div style={{ color: COLORS.ink, whiteSpace: "pre-wrap" }}>{f.message}</div>
+                <div className="flex items-center justify-between mt-2">
+                  <div style={{ color: COLORS.oak, fontSize: 11 }}>
+                    {f.name || "匿名"} ・ {f.createdAt}
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => updateFeedbackStatus(f.id, "unhandled")}
+                      className="rounded px-3 py-1 text-xs"
+                      style={{ border: `1px solid ${COLORS.oak}`, color: COLORS.ink, fontWeight: 700 }}
+                    >
+                      未対応に戻す
+                    </button>
+                    <button
+                      onClick={() => setConfirmDeleteFeedbackId(f.id)}
+                      className="rounded px-2 py-1"
+                      style={{ border: `1px solid ${COLORS.oak}` }}
+                      aria-label="削除"
+                    >
+                      <Trash2 size={14} style={{ color: COLORS.oak }} />
+                    </button>
+                  </div>
+                </div>
+                {confirmDeleteFeedbackId === f.id && (
+                  <div className="mt-2 rounded-lg p-2 flex items-center justify-between" style={{ background: "#FBEAE5" }}>
+                    <span className="text-xs" style={{ color: COLORS.strike, fontWeight: 700 }}>本当に削除しますか?</span>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setConfirmDeleteFeedbackId(null)}
+                        className="text-xs rounded px-2 py-1 border"
+                        style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                      >
+                        キャンセル
+                      </button>
+                      <button
+                        onClick={() => deleteFeedback(f.id)}
+                        className="text-xs rounded px-2 py-1"
+                        style={{ background: COLORS.strike, color: "white", fontWeight: 700 }}
+                      >
+                        削除する
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>

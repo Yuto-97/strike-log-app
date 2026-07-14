@@ -19,6 +19,7 @@ export default async function handler(req, res) {
       deviceId: deviceId || null,
       name: name || "",
       message: message.trim(),
+      status: "unhandled",
       createdAt: new Date().toISOString(),
     });
     res.status(200).json({ ok: true });
