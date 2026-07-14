@@ -1138,7 +1138,9 @@ function AdminPanel() {
 // ---------- main app ----------
 export default function StrikeLog() {
   const isAdminRoute =
-    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("admin") === "1";
+    typeof window !== "undefined" &&
+    (window.location.pathname.endsWith("/admin.html") ||
+      new URLSearchParams(window.location.search).get("admin") === "1");
   const [deviceId] = useState(() => {
     if (typeof window === "undefined") return "";
     let id = localStorage.getItem("device-id");
