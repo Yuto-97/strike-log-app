@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Camera, History, BarChart3, Loader2, Check, X, Pencil, Trophy, TrendingUp, Calendar, CircleDot, Hash, User, Target, Trash2, Video, Play, Pause, Square, ShieldCheck, CircleCheck } from "lucide-react";
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
 // ---------- palette ----------
 // ink:      #201811  (deep walnut, headers/text)
@@ -615,7 +615,6 @@ const BALL_CONFIG_KEY = "ball-config";
 const PROFILE_KEY = "profile";
 const MY_BALLS_KEY = "my-balls";
 const SHOE_CONFIG_KEY = "shoe-config";
-const MY_SHOES_KEY = "my-shoes";
 
 // ---------- scoreboard-style marks ----------
 // Split: a circle around the pin count, matching the "⑧" style circled
@@ -994,7 +993,8 @@ function AdminPanel() {
   }
 
   const pending = requests.filter((r) => r.status === "pending");
-  const others = requests.filter((r) => r.status !== "pending");
+  const approved = requests.filter((r) => r.status === "approved");
+  const rejected = requests.filter((r) => r.status === "rejected");
   const unhandledFeedback = feedbackList.filter((f) => f.status !== "handled");
   const handledFeedback = feedbackList.filter((f) => f.status === "handled");
 
@@ -1041,23 +1041,46 @@ function AdminPanel() {
 
         <div>
           <div className="text-sm mb-2" style={{ color: COLORS.oak, fontWeight: 700 }}>
-            承認済み・却下済み ({others.length})
+            承認済み ({approved.length})
           </div>
           <div className="space-y-2">
-            {others.map((r) => (
+            {approved.length === 0 && <div className="text-xs" style={{ color: COLORS.oak }}>承認済みの申請はありません</div>}
+            {approved.map((r) => (
               <div key={r.id} className="rounded-xl p-3 border bg-white flex items-center justify-between" style={{ borderColor: COLORS.oak }}>
                 <div>
                   <div style={{ color: COLORS.ink, fontWeight: 700 }}>{r.name}</div>
-                  <div style={{ color: COLORS.oak, fontSize: 11 }}>
-                    {r.status === "approved" ? "承認済み" : "却下"} ・ {r.updatedAt}
-                  </div>
+                  <div style={{ color: COLORS.oak, fontSize: 11 }}>承認済み ・ {r.updatedAt}</div>
                 </div>
                 <button
-                  onClick={() => updateStatus(r.id, r.status === "approved" ? "rejected" : "approved")}
+                  onClick={() => updateStatus(r.id, "rejected")}
                   className="rounded px-3 py-1 text-xs"
                   style={{ border: `1px solid ${COLORS.oak}`, color: COLORS.ink, fontWeight: 700 }}
                 >
-                  {r.status === "approved" ? "取り消す" : "承認に変更"}
+                  却下に変更
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <div className="text-sm mb-2" style={{ color: COLORS.oak, fontWeight: 700 }}>
+            却下 ({rejected.length})
+          </div>
+          <div className="space-y-2">
+            {rejected.length === 0 && <div className="text-xs" style={{ color: COLORS.oak }}>却下した申請はありません</div>}
+            {rejected.map((r) => (
+              <div key={r.id} className="rounded-xl p-3 border bg-white flex items-center justify-between" style={{ borderColor: COLORS.oak }}>
+                <div>
+                  <div style={{ color: COLORS.ink, fontWeight: 700 }}>{r.name}</div>
+                  <div style={{ color: COLORS.oak, fontSize: 11 }}>却下 ・ {r.updatedAt}</div>
+                </div>
+                <button
+                  onClick={() => updateStatus(r.id, "approved")}
+                  className="rounded px-3 py-1 text-xs"
+                  style={{ border: `1px solid ${COLORS.oak}`, color: COLORS.ink, fontWeight: 700 }}
+                >
+                  承認に変更
                 </button>
               </div>
             ))}
@@ -1254,9 +1277,7 @@ export default function StrikeLog() {
   const [profileSaved, setProfileSaved] = useState(false);
   const [shoeType, setShoeType] = useState("rental"); // "rental" | "own"
   const [shoeSize, setShoeSize] = useState("");
-  const [selectedShoeId, setSelectedShoeId] = useState(null);
-  const [myShoes, setMyShoes] = useState([]); // [{ id, label, size }]
-  const [newShoeSize, setNewShoeSize] = useState("");
+  const [shoeTouched, setShoeTouched] = useState(false);
   const [periodMode, setPeriodMode] = useState("week"); // "day" | "week" | "month" | "custom"
   const [dayAnchor, setDayAnchor] = useState(() => toLocalISODate(new Date()));
   const [weekAnchor, setWeekAnchor] = useState(() => toLocalISODate(new Date()));
@@ -1348,14 +1369,6 @@ export default function StrikeLog() {
         // no saved shoe config yet, that's fine
       }
     })();
-    (async () => {
-      try {
-        const res = await storage.get(MY_SHOES_KEY);
-        if (res && res.value) setMyShoes(JSON.parse(res.value));
-      } catch (e) {
-        // no registered shoes yet, that's fine
-      }
-    })();
   }, []);
 
   // Suggests the next game number for the selected date (existing games for
@@ -1366,6 +1379,18 @@ export default function StrikeLog() {
     const sameDay = games.filter((g) => g.date === gameDate).length;
     setGameNumber(sameDay + 1);
   }, [gameDate, games, gameNumberTouched]);
+
+  // For a 2nd+ game on the same day, default the shoe choice to match the
+  // first game recorded that day (people usually keep the same shoes for
+  // the whole visit) — but never override a manual change in this session.
+  useEffect(() => {
+    if (shoeTouched) return;
+    const sameDayGames = games.filter((g) => g.date === gameDate);
+    if (sameDayGames.length > 0 && sameDayGames[0].shoe) {
+      setShoeType(sameDayGames[0].shoe.type || "rental");
+      setShoeSize(sameDayGames[0].shoe.size || "");
+    }
+  }, [gameDate, games, shoeTouched]);
 
   useEffect(() => {
     if (isAdminRoute || !deviceId) return;
@@ -1489,31 +1514,6 @@ export default function StrikeLog() {
     }
   };
 
-  const persistMyShoes = async (next) => {
-    setMyShoes(next);
-    try {
-      await storage.set(MY_SHOES_KEY, JSON.stringify(next));
-    } catch (e) {
-      // non-fatal; shoes still work for this session
-    }
-  };
-
-  const addMyShoe = () => {
-    if (!newShoeSize) return;
-    const shoe = {
-      id: uid(),
-      label: `マイシューズ ${newShoeSize}`,
-      size: newShoeSize,
-    };
-    persistMyShoes([...myShoes, shoe]);
-    setNewShoeSize("");
-  };
-
-  const deleteMyShoe = (id) => {
-    persistMyShoes(myShoes.filter((s) => s.id !== id));
-    if (selectedShoeId === id) setSelectedShoeId(null);
-  };
-
   const persistGames = useCallback(async (next) => {
     setGames(next);
     try {
@@ -1596,11 +1596,7 @@ export default function StrikeLog() {
             thumbless: selectedBall ? selectedBall.thumbless : false,
             label: selectedBall ? selectedBall.label : null,
           };
-    const selectedShoe = myShoes.find((s) => s.id === selectedShoeId);
-    const shoe =
-      shoeType === "rental"
-        ? { type: "rental", size: shoeSize || null, label: null }
-        : { type: "own", size: selectedShoe ? selectedShoe.size : null, label: selectedShoe ? selectedShoe.label : null };
+    const shoe = { type: shoeType, size: shoeSize || null, label: null };
     const newGame = {
       id: uid(),
       date: gameDate,
@@ -1617,6 +1613,7 @@ export default function StrikeLog() {
     await persistGames(next);
     await saveBallConfig({ ballType, ballWeight, ballThumbless });
     await saveShoeConfig({ shoeType, shoeSize });
+    setShoeTouched(false);
     setPendingResult(null);
     setImagePreview(null);
     setImageMeta(null);
@@ -1805,7 +1802,7 @@ export default function StrikeLog() {
               };
             });
         })();
-  const chartIsBar = periodMode === "day";
+
 
   if (isAdminRoute) return <AdminPanel />;
 
@@ -2166,13 +2163,16 @@ export default function StrikeLog() {
 
                   <div className="flex gap-2">
                     {[
-                      { key: "rental", label: "レンタル" },
+                      { key: "rental", label: "レンタルシューズ" },
                       { key: "own", label: "マイシューズ" },
                     ].map((opt) => (
                       <button
                         key={opt.key}
                         type="button"
-                        onClick={() => setShoeType(opt.key)}
+                        onClick={() => {
+                          setShoeType(opt.key);
+                          setShoeTouched(true);
+                        }}
                         className="flex-1 rounded-lg py-2 text-xs"
                         style={{
                           background: shoeType === opt.key ? COLORS.ink : "white",
@@ -2186,37 +2186,20 @@ export default function StrikeLog() {
                     ))}
                   </div>
 
-                  {shoeType === "rental" ? (
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={shoeSize}
-                        onChange={(e) => setShoeSize(e.target.value)}
-                        placeholder="サイズ(例: 27.0)"
-                        className="w-24 px-2 py-1 rounded border text-sm"
-                        style={{ borderColor: COLORS.oak, color: COLORS.ink }}
-                      />
-                      <span className="text-xs" style={{ color: COLORS.oak }}>cm</span>
-                    </div>
-                  ) : myShoes.length === 0 ? (
-                    <div className="text-xs" style={{ color: COLORS.oak }}>
-                      登録済みのマイシューズがありません。「プロフィール」タブで登録してください
-                    </div>
-                  ) : (
-                    <select
-                      value={selectedShoeId || ""}
-                      onChange={(e) => setSelectedShoeId(e.target.value || null)}
-                      className="w-full px-2 py-2 rounded border text-sm"
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={shoeSize}
+                      onChange={(e) => {
+                        setShoeSize(e.target.value);
+                        setShoeTouched(true);
+                      }}
+                      placeholder="サイズ(例: 27.0)"
+                      className="w-24 px-2 py-1 rounded border text-sm"
                       style={{ borderColor: COLORS.oak, color: COLORS.ink }}
-                    >
-                      <option value="">シューズを選択</option>
-                      {myShoes.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.label}
-                        </option>
-                      ))}
-                    </select>
-                  )}
+                    />
+                    <span className="text-xs" style={{ color: COLORS.oak }}>cm</span>
+                  </div>
                 </div>
 
                 <button
@@ -2543,48 +2526,48 @@ export default function StrikeLog() {
                       <summary className="px-3 py-2 cursor-pointer text-sm" style={{ color: COLORS.oak }}>
                         その他(計算式について)
                       </summary>
-                      <div className="px-3 pb-3 space-y-2" style={{ borderTop: `1px solid #EFE4CC`, paddingTop: 8 }}>
+                      <div className="px-3 pb-3 space-y-3" style={{ borderTop: `1px solid #EFE4CC`, paddingTop: 8 }}>
                         {[
                           {
                             label: "ストライク率",
-                            formula: "ストライク数 ÷ 投球フレーム数(1投目)",
-                            note: "「投球フレーム数」は普通1ゲームで10(10フレーム目のボーナス球は含みません)",
+                            meaning: "1投目で10本すべて倒すことを「ストライク」という",
+                            formula: "計算式:ストライク数 ÷ 投球フレーム数(1ゲーム10フレーム。10フレーム目のボーナス球は分母に含めない)",
                           },
                           {
                             label: "スペア率",
-                            formula: "スペア数 ÷ スペアチャンス数(1投目がストライクでなかったフレーム)",
-                            note: "ストライクを取れなかったフレームのうち、何%を2投目で立て直せたか",
+                            meaning: "1投目で倒しきれなかった場合、2投目までの合計で10本すべて倒すことを「スペア」という",
+                            formula: "計算式:スペア数 ÷ スペアチャンス数(1投目がストライクでなかったフレームの数)",
                           },
                           {
                             label: "オープンフレーム率",
-                            formula: "オープンフレーム数 ÷ 投球フレーム数",
-                            note: "ストライクでもスペアでもなく、ピンが残ったフレームの割合(公式ルール上の「オープンフレーム」)",
+                            meaning: "ストライクにもスペアにもならなかったフレームを「オープンフレーム」という(公式ルール上の用語)",
+                            formula: "計算式:オープンフレーム数 ÷ 投球フレーム数",
                           },
                           {
                             label: "スプリット率",
-                            formula: "スプリット数 ÷ 投球フレーム数",
-                            note: "10フレーム中、何回スプリット(ピンが離れて残る形)が出たか",
+                            meaning: "1投目でヘッドピン(1番ピン)が倒れ、かつ残ったピンが離れて立っている状態を「スプリット」という",
+                            formula: "計算式:スプリット数 ÷ 投球フレーム数",
                           },
                           {
                             label: "スプリットカバー率",
-                            formula: "スプリットカバー数 ÷ 1投目がスプリットになったフレーム数",
-                            note: "スプリットになった中で、何%をスペアで返せたか",
+                            meaning: "スプリットになったフレームで、2投目に残りすべてを倒してスペアにできることを「スプリットカバー」という",
+                            formula: "計算式:スプリットカバー数 ÷ 1投目がスプリットになったフレームの数",
                           },
                           {
                             label: "ガター率",
-                            formula: "ガター数 ÷ 投球した全ボール数",
-                            note: "全投球のうち、何%が溝に落ちたか",
+                            meaning: "ピンに当たらず、レーン両端の溝(ガター)にボールが落ちることを「ガター」という",
+                            formula: "計算式:ガター数 ÷ 投球した全ボール数",
                           },
                           {
                             label: "ファール率",
-                            formula: "ファール数 ÷ 投球した全ボール数",
-                            note: "全投球のうち、何%がファールライン超えだったか",
+                            meaning: "投球時にファールラインを踏み越える、またはライン上の設備に触れることを「ファール」という(0本として記録される)",
+                            formula: "計算式:ファール数 ÷ 投球した全ボール数",
                           },
                         ].map((row) => (
                           <div key={row.label}>
                             <div className="text-xs" style={{ color: COLORS.ink, fontWeight: 700 }}>{row.label}</div>
+                            <div className="text-xs" style={{ color: COLORS.ink }}>{row.meaning}</div>
                             <div className="text-xs" style={{ color: COLORS.oak }}>{row.formula}</div>
-                            <div className="text-xs" style={{ color: COLORS.gold }}>{row.note}</div>
                           </div>
                         ))}
                       </div>
@@ -2596,23 +2579,13 @@ export default function StrikeLog() {
                         {periodMode === "day" ? "本日のゲームごとのスコア" : "日ごとの平均スコア推移"}
                       </div>
                       <ResponsiveContainer width="100%" height={220}>
-                        {chartIsBar ? (
-                          <BarChart data={chartData} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#E5DCC8" />
-                            <XAxis dataKey="label" tick={{ fontSize: 11, fill: COLORS.oak }} />
-                            <YAxis domain={[0, 300]} tick={{ fontSize: 11, fill: COLORS.oak }} />
-                            <Tooltip contentStyle={{ fontSize: 12, borderColor: COLORS.oak }} />
-                            <Bar dataKey="total" fill={COLORS.strike} radius={[4, 4, 0, 0]} />
-                          </BarChart>
-                        ) : (
-                          <LineChart data={chartData} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#E5DCC8" />
-                            <XAxis dataKey="label" tick={{ fontSize: 11, fill: COLORS.oak }} />
-                            <YAxis domain={[0, 300]} tick={{ fontSize: 11, fill: COLORS.oak }} />
-                            <Tooltip contentStyle={{ fontSize: 12, borderColor: COLORS.oak }} />
-                            <Line type="monotone" dataKey="total" stroke={COLORS.strike} strokeWidth={2.5} dot={{ r: 3, fill: COLORS.strike }} />
-                          </LineChart>
-                        )}
+                        <LineChart data={chartData} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#E5DCC8" />
+                          <XAxis dataKey="label" tick={{ fontSize: 11, fill: COLORS.oak }} />
+                          <YAxis domain={[0, 300]} tick={{ fontSize: 11, fill: COLORS.oak }} />
+                          <Tooltip contentStyle={{ fontSize: 12, borderColor: COLORS.oak }} />
+                          <Line type="monotone" dataKey="total" stroke={COLORS.strike} strokeWidth={2.5} dot={{ r: 3, fill: COLORS.strike }} />
+                        </LineChart>
                       </ResponsiveContainer>
                     </div>
 
@@ -2745,10 +2718,15 @@ export default function StrikeLog() {
                 </div>
                 <input
                   type="number"
+                  min={1}
+                  max={300}
                   value={goalAverage}
-                  onChange={(e) => setGoalAverage(e.target.value)}
+                  onChange={(e) => {
+                    const n = Number(e.target.value);
+                    setGoalAverage(e.target.value === "" ? "" : String(Math.min(300, Math.max(0, n))));
+                  }}
                   onBlur={(e) => saveProfile({ goalAverage: e.target.value })}
-                  placeholder="例: 150"
+                  placeholder="例: 150(最大300)"
                   className="w-full px-3 py-2 rounded border text-sm"
                   style={{ borderColor: COLORS.oak, color: COLORS.ink }}
                 />
@@ -2940,56 +2918,6 @@ export default function StrikeLog() {
                 disabled={!newBallWeight}
                 className="w-full rounded-lg py-2 text-sm"
                 style={{ background: COLORS.ink, color: COLORS.cream, fontWeight: 700, opacity: newBallWeight ? 1 : 0.5 }}
-              >
-                追加する
-              </button>
-            </div>
-
-            <div className="text-sm" style={{ color: COLORS.oak }}>登録済みのマイシューズ</div>
-
-            <div className="rounded-xl border bg-white overflow-hidden" style={{ borderColor: COLORS.oak }}>
-              {myShoes.length === 0 ? (
-                <div className="p-3 text-xs text-center" style={{ color: COLORS.oak }}>
-                  まだ登録されていません
-                </div>
-              ) : (
-                myShoes.map((s, i) => (
-                  <div
-                    key={s.id}
-                    className="flex items-center justify-between px-3 py-2"
-                    style={{ borderTop: i === 0 ? "none" : `1px solid #EFE4CC` }}
-                  >
-                    <div>
-                      <div className="text-sm" style={{ color: COLORS.ink, fontWeight: 700 }}>{s.label}</div>
-                      <div className="text-xs" style={{ color: COLORS.oak }}>{s.size}cm</div>
-                    </div>
-                    <button onClick={() => deleteMyShoe(s.id)} aria-label="削除">
-                      <Trash2 size={16} style={{ color: COLORS.oak }} />
-                    </button>
-                  </div>
-                ))
-              )}
-            </div>
-
-            <div className="rounded-xl p-3 border bg-white space-y-2" style={{ borderColor: COLORS.oak }}>
-              <div className="text-xs" style={{ color: COLORS.oak }}>新しいマイシューズを登録</div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  value={newShoeSize}
-                  onChange={(e) => setNewShoeSize(e.target.value)}
-                  placeholder="サイズ(例: 27.0)"
-                  className="w-24 px-2 py-1 rounded border text-sm"
-                  style={{ borderColor: COLORS.oak, color: COLORS.ink }}
-                />
-                <span className="text-xs" style={{ color: COLORS.oak }}>cm</span>
-              </div>
-              <button
-                type="button"
-                onClick={addMyShoe}
-                disabled={!newShoeSize}
-                className="w-full rounded-lg py-2 text-sm"
-                style={{ background: COLORS.ink, color: COLORS.cream, fontWeight: 700, opacity: newShoeSize ? 1 : 0.5 }}
               >
                 追加する
               </button>
