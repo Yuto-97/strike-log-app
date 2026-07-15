@@ -1,5 +1,6 @@
-// GET  /api/admin/requests?password=xxx           -> list all access requests
-// POST /api/admin/requests { password, deviceId, status } -> approve/reject
+// GET    /api/admin/requests?password=xxx                 -> list all access requests
+// POST   /api/admin/requests { password, deviceId, status } -> approve/reject
+// DELETE /api/admin/requests { password, deviceId }          -> delete a request
 import { db } from "../_firebaseAdmin.js";
 
 function isAuthed(req) {
@@ -34,7 +35,18 @@ export default async function handler(req, res) {
       return;
     }
 
-    res.status(405).json({ error: "GET or POST only" });
+    if (req.method === "DELETE") {
+      const { deviceId } = req.body || {};
+      if (!deviceId) {
+        res.status(400).json({ error: "deviceId is required" });
+        return;
+      }
+      await db.collection("accessRequests").doc(deviceId).delete();
+      res.status(200).json({ ok: true });
+      return;
+    }
+
+    res.status(405).json({ error: "GET, POST, or DELETE only" });
   } catch (err) {
     res.status(500).json({ error: err.message || String(err) });
   }

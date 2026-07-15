@@ -912,6 +912,7 @@ function AdminPanel() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [confirmDeleteFeedbackId, setConfirmDeleteFeedbackId] = useState(null);
+  const [confirmDeleteRequestId, setConfirmDeleteRequestId] = useState(null);
 
   const load = async (pw) => {
     setLoading(true);
@@ -940,6 +941,16 @@ function AdminPanel() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ password, deviceId, status }),
     });
+    load(password);
+  };
+
+  const deleteRequest = async (deviceId) => {
+    await fetch("/api/admin/requests", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password, deviceId }),
+    });
+    setConfirmDeleteRequestId(null);
     load(password);
   };
 
@@ -1070,18 +1081,51 @@ function AdminPanel() {
           <div className="space-y-2">
             {rejected.length === 0 && <div className="text-xs" style={{ color: COLORS.oak }}>却下した申請はありません</div>}
             {rejected.map((r) => (
-              <div key={r.id} className="rounded-xl p-3 border bg-white flex items-center justify-between" style={{ borderColor: COLORS.oak }}>
-                <div>
-                  <div style={{ color: COLORS.ink, fontWeight: 700 }}>{r.name}</div>
-                  <div style={{ color: COLORS.oak, fontSize: 11 }}>却下 ・ {r.updatedAt}</div>
+              <div key={r.id} className="rounded-xl p-3 border bg-white" style={{ borderColor: COLORS.oak }}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div style={{ color: COLORS.ink, fontWeight: 700 }}>{r.name}</div>
+                    <div style={{ color: COLORS.oak, fontSize: 11 }}>却下 ・ {r.updatedAt}</div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => updateStatus(r.id, "approved")}
+                      className="rounded px-3 py-1 text-xs"
+                      style={{ border: `1px solid ${COLORS.oak}`, color: COLORS.ink, fontWeight: 700 }}
+                    >
+                      承認に変更
+                    </button>
+                    <button
+                      onClick={() => setConfirmDeleteRequestId(r.id)}
+                      className="rounded px-2 py-1"
+                      style={{ border: `1px solid ${COLORS.oak}` }}
+                      aria-label="削除"
+                    >
+                      <Trash2 size={14} style={{ color: COLORS.oak }} />
+                    </button>
+                  </div>
                 </div>
-                <button
-                  onClick={() => updateStatus(r.id, "approved")}
-                  className="rounded px-3 py-1 text-xs"
-                  style={{ border: `1px solid ${COLORS.oak}`, color: COLORS.ink, fontWeight: 700 }}
-                >
-                  承認に変更
-                </button>
+                {confirmDeleteRequestId === r.id && (
+                  <div className="mt-2 rounded-lg p-2 flex items-center justify-between" style={{ background: "#FBEAE5" }}>
+                    <span className="text-xs" style={{ color: COLORS.strike, fontWeight: 700 }}>本当に削除しますか?</span>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setConfirmDeleteRequestId(null)}
+                        className="text-xs rounded px-2 py-1 border"
+                        style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                      >
+                        キャンセル
+                      </button>
+                      <button
+                        onClick={() => deleteRequest(r.id)}
+                        className="text-xs rounded px-2 py-1"
+                        style={{ background: COLORS.strike, color: "white", fontWeight: 700 }}
+                      >
+                        削除する
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -2524,7 +2568,7 @@ export default function StrikeLog() {
 
                     <details className="rounded-xl border bg-white overflow-hidden" style={{ borderColor: COLORS.oak }}>
                       <summary className="px-3 py-2 cursor-pointer text-sm" style={{ color: COLORS.oak }}>
-                        その他(計算式について)
+                        用語と計算式
                       </summary>
                       <div className="px-3 pb-3 space-y-3" style={{ borderTop: `1px solid #EFE4CC`, paddingTop: 8 }}>
                         {[
@@ -2578,13 +2622,20 @@ export default function StrikeLog() {
                         <TrendingUp size={14} />
                         {periodMode === "day" ? "本日のゲームごとのスコア" : "日ごとの平均スコア推移"}
                       </div>
-                      <ResponsiveContainer width="100%" height={220}>
-                        <LineChart data={chartData} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
+                      <ResponsiveContainer width="100%" height={240}>
+                        <LineChart data={chartData} margin={{ top: 20, right: 10, left: -20, bottom: 0 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#E5DCC8" />
                           <XAxis dataKey="label" tick={{ fontSize: 11, fill: COLORS.oak }} />
-                          <YAxis domain={[0, 300]} tick={{ fontSize: 11, fill: COLORS.oak }} />
+                          <YAxis domain={[0, 300]} ticks={[0, 50, 100, 150, 200, 250, 300]} tick={{ fontSize: 11, fill: COLORS.oak }} />
                           <Tooltip contentStyle={{ fontSize: 12, borderColor: COLORS.oak }} />
-                          <Line type="monotone" dataKey="total" stroke={COLORS.strike} strokeWidth={2.5} dot={{ r: 3, fill: COLORS.strike }} />
+                          <Line
+                            type="monotone"
+                            dataKey="total"
+                            stroke={COLORS.strike}
+                            strokeWidth={2.5}
+                            dot={{ r: 3, fill: COLORS.strike }}
+                            label={{ position: "top", fontSize: 11, fontWeight: 700, fill: COLORS.ink }}
+                          />
                         </LineChart>
                       </ResponsiveContainer>
                     </div>
