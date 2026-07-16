@@ -15,7 +15,7 @@ export default async function handler(req, res) {
       res.status(200).json({ status: "not_found" });
       return;
     }
-    res.status(200).json({ status: doc.data().status, name: doc.data().name });
+    res.status(200).json({ status: doc.data().status, name: doc.data().name, requestNumber: doc.data().requestNumber || null });
   } catch (err) {
     res.status(500).json({ error: err.message || String(err) });
   }

@@ -46,6 +46,20 @@ function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 }
 
+// Displays a registrant's sequential number as a 7-digit ID (e.g. 3 -> "0000003").
+// Displays a registrant's sequential number using only digits 1-9 (a
+// "bijective base-9" numbering) so the ID never contains a 0 — avoids any
+// confusion between 0 and O, and keeps the ID visually distinct.
+// Displays a registrant's sequential number as a fixed 7-character ID using
+// only digits 1-9 (never 0). Each position is an independent base-9 digit
+// (shifted to 1-9), so every number from 1 up to 9^7 (~4.78 million) maps
+// to a unique, always-7-character ID with no collisions.
+// The registrant ID is now generated server-side as a random 7-character
+// string (digits 1-9 only, no 0) — this just handles the "not assigned yet" case.
+function formatRequestNumber(n) {
+  return n ? String(n) : "-------";
+}
+
 // Grabs one frame partway through the video (as a JPEG base64 string) so it
 // can be sent to Claude for a quick "is this actually bowling?" check before
 // we accept the upload.
@@ -832,7 +846,7 @@ function RollPicker({ frameIdx, rollIdx, splitEligible, onSelect, onSplitToggle,
 // ---------- access gate ----------
 // Shown instead of the app until the person's device has been approved by
 // the admin. "checking" while we ask the server, then one of the statuses.
-function GateScreen({ mode, name, setName, onSubmit }) {
+function GateScreen({ mode, name, setName, onSubmit, requestNumber }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
@@ -890,8 +904,15 @@ function GateScreen({ mode, name, setName, onSubmit }) {
         )}
 
         {mode === "pending" && (
-          <div style={{ color: COLORS.oak, fontSize: 14 }}>
-            利用申請を受け付けました。管理者の承認をお待ちください。
+          <div className="space-y-2">
+            <div style={{ color: COLORS.oak, fontSize: 14 }}>
+              利用申請を受け付けました。管理者の承認をお待ちください。
+            </div>
+            {requestNumber && (
+              <div style={{ color: COLORS.gold, fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 16 }}>
+                あなたの登録番号: {formatRequestNumber(requestNumber)}
+              </div>
+            )}
           </div>
         )}
 
@@ -1010,6 +1031,7 @@ function AdminPanel() {
         return (
           (r.name || "").toLowerCase().includes(q) ||
           String(r.requestNumber || "").includes(q) ||
+          formatRequestNumber(r.requestNumber).includes(q) ||
           `no.${r.requestNumber || ""}`.toLowerCase().includes(q)
         );
       })
@@ -1047,7 +1069,7 @@ function AdminPanel() {
               <div key={r.id} className="rounded-xl p-3 border bg-white flex items-center justify-between" style={{ borderColor: COLORS.oak }}>
                 <div>
                   <div style={{ color: COLORS.ink, fontWeight: 700 }}>
-                    <span style={{ color: COLORS.gold }}>No.{r.requestNumber ?? "-"}</span> {r.name}
+                    <span style={{ color: COLORS.gold }}>No.{formatRequestNumber(r.requestNumber)}</span> {r.name}
                   </div>
                   <div style={{ color: COLORS.oak, fontSize: 11 }}>{r.requestedAt}</div>
                 </div>
@@ -1082,7 +1104,7 @@ function AdminPanel() {
               <div key={r.id} className="rounded-xl p-3 border bg-white flex items-center justify-between" style={{ borderColor: COLORS.oak }}>
                 <div>
                   <div style={{ color: COLORS.ink, fontWeight: 700 }}>
-                    <span style={{ color: COLORS.gold }}>No.{r.requestNumber ?? "-"}</span> {r.name}
+                    <span style={{ color: COLORS.gold }}>No.{formatRequestNumber(r.requestNumber)}</span> {r.name}
                   </div>
                   <div style={{ color: COLORS.oak, fontSize: 11 }}>承認済み ・ {r.updatedAt}</div>
                 </div>
@@ -1109,7 +1131,7 @@ function AdminPanel() {
                 <div className="flex items-center justify-between">
                   <div>
                     <div style={{ color: COLORS.ink, fontWeight: 700 }}>
-                      <span style={{ color: COLORS.gold }}>No.{r.requestNumber ?? "-"}</span> {r.name}
+                      <span style={{ color: COLORS.gold }}>No.{formatRequestNumber(r.requestNumber)}</span> {r.name}
                     </div>
                     <div style={{ color: COLORS.oak, fontSize: 11 }}>却下 ・ {r.updatedAt}</div>
                   </div>
@@ -1291,6 +1313,7 @@ export default function StrikeLog() {
     return id;
   });
   const [accessStatus, setAccessStatus] = useState("checking");
+  const [myRequestNumber, setMyRequestNumber] = useState(null);
   const [requestName, setRequestName] = useState("");
   const [feedbackMessage, setFeedbackMessage] = useState("");
   const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
@@ -1469,6 +1492,7 @@ export default function StrikeLog() {
         const res = await fetch(`/api/access/status?deviceId=${encodeURIComponent(deviceId)}`);
         const data = await res.json();
         setAccessStatus(data.status || "not_found");
+        if (data.requestNumber) setMyRequestNumber(data.requestNumber);
       } catch (e) {
         setAccessStatus("error");
       }
@@ -1483,6 +1507,7 @@ export default function StrikeLog() {
     });
     const data = await res.json();
     setAccessStatus(data.status || "pending");
+    if (data.requestNumber) setMyRequestNumber(data.requestNumber);
   };
 
   const submitFeedback = async () => {
@@ -1883,6 +1908,7 @@ export default function StrikeLog() {
         name={requestName}
         setName={setRequestName}
         onSubmit={requestAccess}
+        requestNumber={myRequestNumber}
       />
     );
   }
@@ -2742,6 +2768,15 @@ export default function StrikeLog() {
 
         {tab === "profile" && (
           <div className="space-y-4">
+            {myRequestNumber && (
+              <div className="rounded-xl p-3 border bg-white text-center" style={{ borderColor: COLORS.oak }}>
+                <div className="text-xs" style={{ color: COLORS.oak }}>あなたの登録番号</div>
+                <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 20, color: COLORS.gold }}>
+                  {formatRequestNumber(myRequestNumber)}
+                </div>
+              </div>
+            )}
+
             <div className="flex items-center justify-between">
               <div className="text-sm" style={{ color: COLORS.oak }}>基本情報</div>
               {profileSaved && <span style={{ color: COLORS.gold, fontSize: 11 }}>保存しました</span>}
