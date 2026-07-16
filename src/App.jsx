@@ -913,6 +913,7 @@ function AdminPanel() {
   const [loading, setLoading] = useState(false);
   const [confirmDeleteFeedbackId, setConfirmDeleteFeedbackId] = useState(null);
   const [confirmDeleteRequestId, setConfirmDeleteRequestId] = useState(null);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const load = async (pw) => {
     setLoading(true);
@@ -1003,9 +1004,19 @@ function AdminPanel() {
     );
   }
 
-  const pending = requests.filter((r) => r.status === "pending");
-  const approved = requests.filter((r) => r.status === "approved");
-  const rejected = requests.filter((r) => r.status === "rejected");
+  const filteredRequests = searchQuery.trim()
+    ? requests.filter((r) => {
+        const q = searchQuery.trim().toLowerCase();
+        return (
+          (r.name || "").toLowerCase().includes(q) ||
+          String(r.requestNumber || "").includes(q) ||
+          `no.${r.requestNumber || ""}`.toLowerCase().includes(q)
+        );
+      })
+    : requests;
+  const pending = filteredRequests.filter((r) => r.status === "pending");
+  const approved = filteredRequests.filter((r) => r.status === "approved");
+  const rejected = filteredRequests.filter((r) => r.status === "rejected");
   const unhandledFeedback = feedbackList.filter((f) => f.status !== "handled");
   const handledFeedback = feedbackList.filter((f) => f.status === "handled");
 
@@ -1017,6 +1028,15 @@ function AdminPanel() {
           <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 22, color: COLORS.ink }}>管理画面</div>
         </div>
 
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="番号(例: 3)または名前で登録者を検索"
+          className="w-full px-3 py-2 rounded border text-sm"
+          style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+        />
+
         <div>
           <div className="text-sm mb-2" style={{ color: COLORS.oak, fontWeight: 700 }}>
             承認待ち ({pending.length})
@@ -1026,7 +1046,9 @@ function AdminPanel() {
             {pending.map((r) => (
               <div key={r.id} className="rounded-xl p-3 border bg-white flex items-center justify-between" style={{ borderColor: COLORS.oak }}>
                 <div>
-                  <div style={{ color: COLORS.ink, fontWeight: 700 }}>{r.name}</div>
+                  <div style={{ color: COLORS.ink, fontWeight: 700 }}>
+                    <span style={{ color: COLORS.gold }}>No.{r.requestNumber ?? "-"}</span> {r.name}
+                  </div>
                   <div style={{ color: COLORS.oak, fontSize: 11 }}>{r.requestedAt}</div>
                 </div>
                 <div className="flex gap-2">
@@ -1059,7 +1081,9 @@ function AdminPanel() {
             {approved.map((r) => (
               <div key={r.id} className="rounded-xl p-3 border bg-white flex items-center justify-between" style={{ borderColor: COLORS.oak }}>
                 <div>
-                  <div style={{ color: COLORS.ink, fontWeight: 700 }}>{r.name}</div>
+                  <div style={{ color: COLORS.ink, fontWeight: 700 }}>
+                    <span style={{ color: COLORS.gold }}>No.{r.requestNumber ?? "-"}</span> {r.name}
+                  </div>
                   <div style={{ color: COLORS.oak, fontSize: 11 }}>承認済み ・ {r.updatedAt}</div>
                 </div>
                 <button
@@ -1084,7 +1108,9 @@ function AdminPanel() {
               <div key={r.id} className="rounded-xl p-3 border bg-white" style={{ borderColor: COLORS.oak }}>
                 <div className="flex items-center justify-between">
                   <div>
-                    <div style={{ color: COLORS.ink, fontWeight: 700 }}>{r.name}</div>
+                    <div style={{ color: COLORS.ink, fontWeight: 700 }}>
+                      <span style={{ color: COLORS.gold }}>No.{r.requestNumber ?? "-"}</span> {r.name}
+                    </div>
                     <div style={{ color: COLORS.oak, fontSize: 11 }}>却下 ・ {r.updatedAt}</div>
                   </div>
                   <div className="flex gap-2">
