@@ -113,6 +113,40 @@ function captureFrameFromVideoElement(videoEl) {
   return canvas.toDataURL("image/jpeg", 0.85).split(",")[1];
 }
 
+function seekVideo(videoEl, time) {
+  return new Promise((resolve) => {
+    const onSeeked = () => {
+      videoEl.removeEventListener("seeked", onSeeked);
+      resolve();
+    };
+    videoEl.addEventListener("seeked", onSeeked);
+    videoEl.currentTime = time;
+  });
+}
+
+// Steps through the whole clip and grabs several evenly-spaced frames
+// (approach through follow-through), so one throw can be reviewed as a
+// full sequence rather than a single frozen moment.
+async function captureMultipleFrames(videoEl, count = 6) {
+  const duration = videoEl.duration;
+  if (!duration || !isFinite(duration) || duration <= 0) {
+    throw new Error("動画の長さを取得できませんでした");
+  }
+  const wasPlaying = !videoEl.paused;
+  videoEl.pause();
+  const originalTime = videoEl.currentTime;
+  const frames = [];
+  for (let idx = 0; idx < count; idx++) {
+    const t = (duration * (idx + 0.5)) / count;
+    await seekVideo(videoEl, t);
+    const base64 = captureFrameFromVideoElement(videoEl);
+    if (base64) frames.push(base64);
+  }
+  await seekVideo(videoEl, originalTime);
+  if (wasPlaying) videoEl.play();
+  return frames;
+}
+
 // ---------- date helpers for period selection ----------
 // Formats using local date components (not toISOString, which shifts to UTC
 // and can land on the wrong day depending on the person's timezone).
@@ -1863,21 +1897,29 @@ export default function StrikeLog() {
     setFormAnalysisError("");
   };
 
-  const analyzeFormFrame = async () => {
+  const analyzeWholeThrow = async () => {
     const v = videoRef.current;
     if (!v) return;
     setFormAnalyzing(true);
     setFormAnalysisError("");
     setFormAnalysisResult(null);
     try {
-      const base64 = captureFrameFromVideoElement(v);
-      if (!base64) throw new Error("この瞬間の画像を取得できませんでした");
-      const prompt =
-        "これはボウリングの投球フォームの一場面です。この瞬間の姿勢について、良い点と改善できそうな点を、初心者にもわかりやすく日本語で簡潔に(3〜4行程度)アドバイスしてください。断定的な診断ではなく、あくまで見た目からの一般的なアドバイスとして述べてください。";
+      const frameCount = 6;
+      const frames = await captureMultipleFrames(v, frameCount);
+      if (frames.length === 0) throw new Error("動画からコマを取り出せませんでした");
+      const images = frames.map((base64) => ({ base64, mediaType: "image/jpeg" }));
+      const prompt = `これはボウリングの1投球を、アプローチからフォロースルーまで時系列順に${frames.length}コマに分けた画像です。
+
+この投球全体(フォーム、写っていればボールの軌道も含む)を見て、コメントしてください。
+
+注意点:
+- ボウリングの投げ方は人によって様々です(フックボール、ストレート、ローダウン、サムレスなど)。どれか一つの「正しいフォーム」を基準にするのではなく、その人自身の投げ方の特徴を踏まえたうえで、良い点・改善できる点を判断してください
+- コメントは「良い点」と「改善点」に分けて、それぞれ端的に(1〜2行程度)述べてください
+- 断定的な診断ではなく、見た目からの一般的なアドバイスとして述べてください`;
       const response = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ base64, mediaType: "image/jpeg", prompt }),
+        body: JSON.stringify({ images, prompt }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data?.error || "解析に失敗しました");
@@ -3204,17 +3246,17 @@ export default function StrikeLog() {
 
                 <div className="rounded-xl p-3 border bg-white space-y-2" style={{ borderColor: COLORS.oak }}>
                   <div className="text-xs" style={{ color: COLORS.oak }}>
-                    再生をこの瞬間で止めて(一時停止)から、下のボタンを押すと、その瞬間のフォームについてAIからアドバイスがもらえます
+                    投球の始まりから終わりまで自動でコマを取り出し、フォームやボールの動きを見てアドバイスします(フックボール・ストレート・サムレスなど、投げ方の違いも考慮します)
                   </div>
                   <button
                     type="button"
-                    onClick={analyzeFormFrame}
+                    onClick={analyzeWholeThrow}
                     disabled={formAnalyzing}
                     className="w-full rounded-lg py-2 flex items-center justify-center gap-2 text-sm"
                     style={{ background: COLORS.strike, color: "white", fontWeight: 700, opacity: formAnalyzing ? 0.6 : 1 }}
                   >
                     {formAnalyzing ? <Loader2 className="animate-spin" size={16} /> : null}
-                    {formAnalyzing ? "解析中..." : "この瞬間のフォームを解析する"}
+                    {formAnalyzing ? "解析中..." : "この投球全体を解析する"}
                   </button>
                   {formAnalysisError && (
                     <div className="text-xs rounded p-2" style={{ background: "#FBEAE5", color: COLORS.strike }}>

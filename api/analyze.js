@@ -1,5 +1,6 @@
 // Vercel serverless function: POST /api/analyze
-// Body: { base64: string, mediaType: string, prompt: string }
+// Body: { base64, mediaType, prompt } for a single image, OR
+//       { images: [{base64, mediaType}, ...], prompt } for multiple images
 // This is the ONLY place the Anthropic API key is used — it lives in the
 // server environment variable ANTHROPIC_API_KEY and is never sent to the
 // browser, unlike the key-in-the-frontend approach which would let anyone
@@ -17,9 +18,10 @@ export default async function handler(req, res) {
     return;
   }
 
-  const { base64, mediaType, prompt } = req.body || {};
-  if (!base64 || !mediaType || !prompt) {
-    res.status(400).json({ error: "base64, mediaType, and prompt are all required" });
+  const { base64, mediaType, images, prompt } = req.body || {};
+  const imageList = Array.isArray(images) && images.length ? images : base64 && mediaType ? [{ base64, mediaType }] : null;
+  if (!imageList || !prompt) {
+    res.status(400).json({ error: "prompt and either base64+mediaType or images[] are required" });
     return;
   }
 
@@ -38,7 +40,10 @@ export default async function handler(req, res) {
           {
             role: "user",
             content: [
-              { type: "image", source: { type: "base64", media_type: mediaType, data: base64 } },
+              ...imageList.map((img) => ({
+                type: "image",
+                source: { type: "base64", media_type: img.mediaType, data: img.base64 },
+              })),
               { type: "text", text: prompt },
             ],
           },
