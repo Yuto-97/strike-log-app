@@ -1914,8 +1914,8 @@ export default function StrikeLog() {
 
 注意点:
 - ボウリングの投げ方は人によって様々です(フックボール、ストレート、ローダウン、サムレスなど)。どれか一つの「正しいフォーム」を基準にするのではなく、その人自身の投げ方の特徴を踏まえたうえで、良い点・改善できる点を判断してください
-- コメントは「良い点」と「改善点」に分けて、それぞれ端的に(1〜2行程度)述べてください
-- 断定的な診断ではなく、見た目からの一般的なアドバイスとして述べてください`;
+- 出力は「良い点」と「改善点」の2つのみ。それぞれ端的に(1〜2行程度)述べてください
+- 「あくまで見た目からのアドバイスです」「インストラクターに確認することをおすすめします」といった前置き・注意書き・締めの一文は一切書かないでください。良い点と改善点の本文だけを出力してください`;
       const response = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -3246,7 +3246,7 @@ export default function StrikeLog() {
 
                 <div className="rounded-xl p-3 border bg-white space-y-2" style={{ borderColor: COLORS.oak }}>
                   <div className="text-xs" style={{ color: COLORS.oak }}>
-                    投球の始まりから終わりまで自動でコマを取り出し、フォームやボールの動きを見てアドバイスします(フックボール・ストレート・サムレスなど、投げ方の違いも考慮します)
+                    AIが解析します
                   </div>
                   <button
                     type="button"
