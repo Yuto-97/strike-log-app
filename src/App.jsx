@@ -100,6 +100,19 @@ function captureVideoFrame(file) {
   });
 }
 
+// Captures whatever frame is currently showing on a live <video> element
+// (e.g. paused mid-playback at slow speed) as a base64 JPEG, for sending
+// that exact moment off for form feedback.
+function captureFrameFromVideoElement(videoEl) {
+  if (!videoEl || !videoEl.videoWidth) return null;
+  const canvas = document.createElement("canvas");
+  canvas.width = videoEl.videoWidth;
+  canvas.height = videoEl.videoHeight;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", 0.85).split(",")[1];
+}
+
 // ---------- date helpers for period selection ----------
 // Formats using local date components (not toISOString, which shifts to UTC
 // and can land on the wrong day depending on the person's timezone).
@@ -1394,6 +1407,9 @@ export default function StrikeLog() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [videoChecking, setVideoChecking] = useState(false);
   const [videoCheckError, setVideoCheckError] = useState("");
+  const [formAnalyzing, setFormAnalyzing] = useState(false);
+  const [formAnalysisResult, setFormAnalysisResult] = useState(null);
+  const [formAnalysisError, setFormAnalysisError] = useState("");
 
   useEffect(() => {
     (async () => {
@@ -1843,6 +1859,35 @@ export default function StrikeLog() {
     setFormVideoUrl(null);
     setIsPlaying(false);
     setPlaybackRate(1);
+    setFormAnalysisResult(null);
+    setFormAnalysisError("");
+  };
+
+  const analyzeFormFrame = async () => {
+    const v = videoRef.current;
+    if (!v) return;
+    setFormAnalyzing(true);
+    setFormAnalysisError("");
+    setFormAnalysisResult(null);
+    try {
+      const base64 = captureFrameFromVideoElement(v);
+      if (!base64) throw new Error("この瞬間の画像を取得できませんでした");
+      const prompt =
+        "これはボウリングの投球フォームの一場面です。この瞬間の姿勢について、良い点と改善できそうな点を、初心者にもわかりやすく日本語で簡潔に(3〜4行程度)アドバイスしてください。断定的な診断ではなく、あくまで見た目からの一般的なアドバイスとして述べてください。";
+      const response = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ base64, mediaType: "image/jpeg", prompt }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.error || "解析に失敗しました");
+      const textBlock = (data.content || []).find((b) => b.type === "text");
+      setFormAnalysisResult(textBlock?.text?.trim() || "解析結果を取得できませんでした");
+    } catch (e) {
+      setFormAnalysisError(e.message || "解析中にエラーが発生しました");
+    } finally {
+      setFormAnalyzing(false);
+    }
   };
 
   const deleteGame = async (id) => {
@@ -3155,6 +3200,32 @@ export default function StrikeLog() {
                       ))}
                     </div>
                   </div>
+                </div>
+
+                <div className="rounded-xl p-3 border bg-white space-y-2" style={{ borderColor: COLORS.oak }}>
+                  <div className="text-xs" style={{ color: COLORS.oak }}>
+                    再生をこの瞬間で止めて(一時停止)から、下のボタンを押すと、その瞬間のフォームについてAIからアドバイスがもらえます
+                  </div>
+                  <button
+                    type="button"
+                    onClick={analyzeFormFrame}
+                    disabled={formAnalyzing}
+                    className="w-full rounded-lg py-2 flex items-center justify-center gap-2 text-sm"
+                    style={{ background: COLORS.strike, color: "white", fontWeight: 700, opacity: formAnalyzing ? 0.6 : 1 }}
+                  >
+                    {formAnalyzing ? <Loader2 className="animate-spin" size={16} /> : null}
+                    {formAnalyzing ? "解析中..." : "この瞬間のフォームを解析する"}
+                  </button>
+                  {formAnalysisError && (
+                    <div className="text-xs rounded p-2" style={{ background: "#FBEAE5", color: COLORS.strike }}>
+                      {formAnalysisError}
+                    </div>
+                  )}
+                  {formAnalysisResult && (
+                    <div className="rounded-lg p-3" style={{ background: COLORS.cream, color: COLORS.ink, fontSize: 13, whiteSpace: "pre-wrap" }}>
+                      {formAnalysisResult}
+                    </div>
+                  )}
                 </div>
 
                 <button
