@@ -1408,6 +1408,7 @@ export default function StrikeLog() {
   const [homeCenter, setHomeCenter] = useState("");
   const [nickname, setNickname] = useState("");
   const [newBallType, setNewBallType] = useState("own"); // "own" | "house"
+  const [newBallName, setNewBallName] = useState("");
   const [newBallWeight, setNewBallWeight] = useState("");
   const [newBallThumbless, setNewBallThumbless] = useState(false);
   const [newBallCore, setNewBallCore] = useState(""); // "symmetric" | "asymmetric"
@@ -1621,10 +1622,11 @@ export default function StrikeLog() {
   const addMyBall = () => {
     if (!newBallWeight) return;
     const typeLabel = newBallType === "house" ? "ハウスボール" : "マイボール";
+    const autoLabel = `${typeLabel} ${newBallWeight}lb${newBallThumbless ? "・サムレス" : ""}`;
     const ball = {
       id: uid(),
       type: newBallType,
-      label: `${typeLabel} ${newBallWeight}lb${newBallThumbless ? "・サムレス" : ""}`,
+      label: newBallName.trim() || autoLabel,
       weight: Number(newBallWeight),
       thumbless: newBallThumbless,
       ...(newBallType === "own"
@@ -1637,6 +1639,7 @@ export default function StrikeLog() {
         : {}),
     };
     persistMyBalls([...myBalls, ball]);
+    setNewBallName("");
     setNewBallWeight("");
     setNewBallThumbless(false);
     setNewBallType("own");
@@ -3023,6 +3026,15 @@ export default function StrikeLog() {
                 <option value="own">マイボール</option>
                 <option value="house">ハウスボール</option>
               </select>
+
+              <input
+                type="text"
+                value={newBallName}
+                onChange={(e) => setNewBallName(e.target.value)}
+                placeholder="名前(例: メインボール)未入力なら自動で名付けます"
+                className="w-full px-3 py-2 rounded border text-sm"
+                style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+              />
 
               <div className="flex items-center gap-2">
                 <input
