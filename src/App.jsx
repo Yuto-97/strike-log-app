@@ -676,6 +676,7 @@ const BALL_CONFIG_KEY = "ball-config";
 const PROFILE_KEY = "profile";
 const MY_BALLS_KEY = "my-balls";
 const SHOE_CONFIG_KEY = "shoe-config";
+const MY_SHOES_KEY = "my-shoes";
 
 // ---------- scoreboard-style marks ----------
 // Split: a circle around the pin count, matching the "⑧" style circled
@@ -1401,6 +1402,11 @@ export default function StrikeLog() {
   const [ballWeight, setBallWeight] = useState("");
   const [ballThumbless, setBallThumbless] = useState(false);
   const [selectedBallId, setSelectedBallId] = useState(null);
+  const [useSecondBall, setUseSecondBall] = useState(false);
+  const [ballType2, setBallType2] = useState("house");
+  const [ballWeight2, setBallWeight2] = useState("");
+  const [ballThumbless2, setBallThumbless2] = useState(false);
+  const [selectedBallId2, setSelectedBallId2] = useState(null);
   const [myBalls, setMyBalls] = useState([]); // [{ id, label, weight, thumbless }]
   const [dominantHand, setDominantHand] = useState("right"); // "right" | "left"
   const [goalAverage, setGoalAverage] = useState("");
@@ -1419,6 +1425,11 @@ export default function StrikeLog() {
   const [shoeType, setShoeType] = useState("rental"); // "rental" | "own"
   const [shoeSize, setShoeSize] = useState("");
   const [shoeTouched, setShoeTouched] = useState(false);
+  const [selectedShoeId, setSelectedShoeId] = useState(null);
+  const [myShoes, setMyShoes] = useState([]); // [{ id, type, size, label }]
+  const [newShoeType, setNewShoeType] = useState("own"); // "own" | "rental"
+  const [newShoeSize, setNewShoeSize] = useState("");
+  const [newShoeName, setNewShoeName] = useState("");
   const [periodMode, setPeriodMode] = useState("week"); // "day" | "week" | "month" | "custom"
   const [dayAnchor, setDayAnchor] = useState(() => toLocalISODate(new Date()));
   const [weekAnchor, setWeekAnchor] = useState(() => toLocalISODate(new Date()));
@@ -1434,6 +1445,24 @@ export default function StrikeLog() {
   });
   const [customEnd, setCustomEnd] = useState(() => toLocalISODate(new Date()));
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [editingGameId, setEditingGameId] = useState(null);
+  const [editFrames, setEditFrames] = useState([]);
+  const [editActiveCell, setEditActiveCell] = useState(null);
+  const [editSplitPending, setEditSplitPending] = useState(false);
+  const [editDate, setEditDate] = useState("");
+  const [editGameNumber, setEditGameNumber] = useState(1);
+  const [editBallType, setEditBallType] = useState("house");
+  const [editBallWeight, setEditBallWeight] = useState("");
+  const [editBallThumbless, setEditBallThumbless] = useState(false);
+  const [editSelectedBallId, setEditSelectedBallId] = useState(null);
+  const [editUseSecondBall, setEditUseSecondBall] = useState(false);
+  const [editBallType2, setEditBallType2] = useState("house");
+  const [editBallWeight2, setEditBallWeight2] = useState("");
+  const [editBallThumbless2, setEditBallThumbless2] = useState(false);
+  const [editSelectedBallId2, setEditSelectedBallId2] = useState(null);
+  const [editShoeType, setEditShoeType] = useState("rental");
+  const [editShoeSize, setEditShoeSize] = useState("");
+  const [editSelectedShoeId, setEditSelectedShoeId] = useState(null);
   const fileInputRef = useRef(null);
   const videoInputRef = useRef(null);
   const videoRef = useRef(null);
@@ -1513,6 +1542,14 @@ export default function StrikeLog() {
         // no saved shoe config yet, that's fine
       }
     })();
+    (async () => {
+      try {
+        const res = await storage.get(MY_SHOES_KEY);
+        if (res && res.value) setMyShoes(JSON.parse(res.value));
+      } catch (e) {
+        // no registered shoes yet, that's fine
+      }
+    })();
   }, []);
 
   // Suggests the next game number for the selected date (existing games for
@@ -1533,6 +1570,7 @@ export default function StrikeLog() {
     if (sameDayGames.length > 0 && sameDayGames[0].shoe) {
       setShoeType(sameDayGames[0].shoe.type || "rental");
       setShoeSize(sameDayGames[0].shoe.size || "");
+      setSelectedShoeId(sameDayGames[0].shoe.shoeRegistryId || null);
     }
   }, [gameDate, games, shoeTouched]);
 
@@ -1662,6 +1700,36 @@ export default function StrikeLog() {
     }
   };
 
+  const persistMyShoes = async (next) => {
+    setMyShoes(next);
+    try {
+      await storage.set(MY_SHOES_KEY, JSON.stringify(next));
+    } catch (e) {
+      // non-fatal; shoes still work for this session
+    }
+  };
+
+  const addMyShoe = () => {
+    if (!newShoeSize) return;
+    const typeLabel = newShoeType === "rental" ? "レンタルシューズ" : "マイシューズ";
+    const autoLabel = `${typeLabel} ${newShoeSize}cm`;
+    const shoe = {
+      id: uid(),
+      type: newShoeType,
+      size: newShoeSize,
+      label: newShoeName.trim() || autoLabel,
+    };
+    persistMyShoes([...myShoes, shoe]);
+    setNewShoeType("own");
+    setNewShoeSize("");
+    setNewShoeName("");
+  };
+
+  const deleteMyShoe = (id) => {
+    persistMyShoes(myShoes.filter((s) => s.id !== id));
+    if (selectedShoeId === id) setSelectedShoeId(null);
+  };
+
   const persistGames = useCallback(async (next) => {
     setGames(next);
     try {
@@ -1744,7 +1812,29 @@ export default function StrikeLog() {
             thumbless: selectedBall ? selectedBall.thumbless : false,
             label: selectedBall ? selectedBall.label : null,
           };
-    const shoe = { type: shoeType, size: shoeSize || null, label: null };
+    let ball2 = null;
+    if (useSecondBall) {
+      const selectedBall2 = myBalls.find((b) => b.id === selectedBallId2);
+      ball2 =
+        ballType2 === "house"
+          ? { type: "house", weight: ballWeight2 ? Number(ballWeight2) : null, thumbless: ballThumbless2, label: null }
+          : {
+              type: "own",
+              weight: selectedBall2 ? selectedBall2.weight : null,
+              thumbless: selectedBall2 ? selectedBall2.thumbless : false,
+              label: selectedBall2 ? selectedBall2.label : null,
+            };
+    }
+    const selectedShoe = myShoes.find((s) => s.id === selectedShoeId);
+    const shoe =
+      shoeType === "own"
+        ? {
+            type: "own",
+            size: selectedShoe ? selectedShoe.size : null,
+            label: selectedShoe ? selectedShoe.label : null,
+            shoeRegistryId: selectedShoeId || null,
+          }
+        : { type: "rental", size: shoeSize || null, label: null, shoeRegistryId: null };
     const newGame = {
       id: uid(),
       date: gameDate,
@@ -1752,6 +1842,7 @@ export default function StrikeLog() {
       frames: pendingResult.frames || [],
       total: pendingResult.total_score ?? 0,
       ball,
+      ball2,
       shoe,
       createdAt: Date.now(),
     };
@@ -1762,6 +1853,11 @@ export default function StrikeLog() {
     await saveBallConfig({ ballType, ballWeight, ballThumbless });
     await saveShoeConfig({ shoeType, shoeSize });
     setShoeTouched(false);
+    setUseSecondBall(false);
+    setBallType2("house");
+    setBallWeight2("");
+    setBallThumbless2(false);
+    setSelectedBallId2(null);
     setPendingResult(null);
     setImagePreview(null);
     setImageMeta(null);
@@ -1828,6 +1924,134 @@ export default function StrikeLog() {
   const closePicker = () => {
     setActiveCell(null);
     setSplitPending(false);
+  };
+
+  // ---------- history editing (mirrors the scan-tab editing logic above,
+  // but operates on a game already saved in history) ----------
+  const startEditGame = (g) => {
+    setEditingGameId(g.id);
+    setEditFrames(g.frames || []);
+    setEditActiveCell(null);
+    setEditSplitPending(false);
+    setEditDate(g.date);
+    setEditGameNumber(g.gameNumber || 1);
+    setEditBallType(g.ball?.type || "house");
+    setEditBallWeight(g.ball?.weight ? String(g.ball.weight) : "");
+    setEditBallThumbless(!!g.ball?.thumbless);
+    setEditSelectedBallId(g.ball?.type === "own" ? myBalls.find((b) => b.label === g.ball.label)?.id || null : null);
+    setEditUseSecondBall(!!g.ball2);
+    setEditBallType2(g.ball2?.type || "house");
+    setEditBallWeight2(g.ball2?.weight ? String(g.ball2.weight) : "");
+    setEditBallThumbless2(!!g.ball2?.thumbless);
+    setEditSelectedBallId2(g.ball2?.type === "own" ? myBalls.find((b) => b.label === g.ball2.label)?.id || null : null);
+    setEditShoeType(g.shoe?.type || "rental");
+    setEditShoeSize(g.shoe?.size || "");
+    setEditSelectedShoeId(g.shoe?.shoeRegistryId || null);
+  };
+
+  const cancelEditGame = () => {
+    setEditingGameId(null);
+    setEditActiveCell(null);
+    setEditSplitPending(false);
+  };
+
+  const updateEditRollValue = (frameIdx, rollIdx, value, isSplit) => {
+    setEditFrames((prev) => {
+      const rawFrames = prev.map((f, i) => {
+        if (i !== frameIdx) return f;
+        const nextSplitRolls = [...(f.splitRolls || [])];
+        if (isSplit !== undefined) nextSplitRolls[rollIdx] = isSplit;
+        return {
+          ...f,
+          rolls: f.rolls.map((r, j) => (j === rollIdx ? value : r)),
+          splitRolls: nextSplitRolls,
+        };
+      });
+      const norm = normalizeGame(rawFrames);
+      return norm.frames;
+    });
+  };
+
+  const handleEditCellTap = (frameIdx, rollIdx) => {
+    setEditActiveCell({ frameIdx, rollIdx });
+    setEditSplitPending(!!editFrames?.[frameIdx]?.splitRolls?.[rollIdx]);
+  };
+
+  const handleEditPickerSelect = (value) => {
+    if (!editActiveCell) return;
+    const { frameIdx, rollIdx } = editActiveCell;
+    const isSplit = value !== "X" && editSplitPending;
+    updateEditRollValue(frameIdx, rollIdx, value, isSplit);
+    setEditActiveCell(null);
+    setEditSplitPending(false);
+  };
+
+  const handleEditPickerClear = () => {
+    if (!editActiveCell) return;
+    updateEditRollValue(editActiveCell.frameIdx, editActiveCell.rollIdx, "", false);
+  };
+
+  const closeEditPicker = () => {
+    setEditActiveCell(null);
+    setEditSplitPending(false);
+  };
+
+  const saveEditedGame = async () => {
+    const norm = normalizeGame(editFrames);
+    const selectedBall = myBalls.find((b) => b.id === editSelectedBallId);
+    const ball =
+      editBallType === "house"
+        ? { type: "house", weight: editBallWeight ? Number(editBallWeight) : null, thumbless: editBallThumbless, label: null }
+        : {
+            type: "own",
+            weight: selectedBall ? selectedBall.weight : null,
+            thumbless: selectedBall ? selectedBall.thumbless : false,
+            label: selectedBall ? selectedBall.label : null,
+          };
+    let ball2 = null;
+    if (editUseSecondBall) {
+      const selectedBall2 = myBalls.find((b) => b.id === editSelectedBallId2);
+      ball2 =
+        editBallType2 === "house"
+          ? { type: "house", weight: editBallWeight2 ? Number(editBallWeight2) : null, thumbless: editBallThumbless2, label: null }
+          : {
+              type: "own",
+              weight: selectedBall2 ? selectedBall2.weight : null,
+              thumbless: selectedBall2 ? selectedBall2.thumbless : false,
+              label: selectedBall2 ? selectedBall2.label : null,
+            };
+    }
+    const selectedShoe = myShoes.find((s) => s.id === editSelectedShoeId);
+    const shoe =
+      editShoeType === "own"
+        ? {
+            type: "own",
+            size: selectedShoe ? selectedShoe.size : null,
+            label: selectedShoe ? selectedShoe.label : null,
+            shoeRegistryId: editSelectedShoeId || null,
+          }
+        : { type: "rental", size: editShoeSize || null, label: null, shoeRegistryId: null };
+
+    const next = games
+      .map((g) =>
+        g.id === editingGameId
+          ? {
+              ...g,
+              date: editDate,
+              gameNumber: Number(editGameNumber) || 1,
+              frames: norm.frames,
+              total: norm.total ?? g.total,
+              ball,
+              ball2,
+              shoe,
+            }
+          : g
+      )
+      .sort((a, b) => a.date.localeCompare(b.date) || (a.gameNumber || 1) - (b.gameNumber || 1));
+    await persistGames(next);
+    setEditingGameId(null);
+    setEditActiveCell(null);
+    setEditSplitPending(false);
   };
 
   // ---------- form analysis: video playback ----------
@@ -2133,8 +2357,25 @@ export default function StrikeLog() {
 
             {pendingResult && pendingResult.player_matched !== false && (
               <div className="space-y-3">
-                <div className="mb-2" style={{ color: COLORS.oak, fontSize: 11 }}>
-                  マスをタップすると、数字やストライク・スペア・ガーター・スプリットを選んで修正できます
+                <div className="flex items-center justify-between">
+                  <div style={{ color: COLORS.oak, fontSize: 11 }}>
+                    マスをタップすると、数字やストライク・スペア・ガーター・スプリットを選んで修正できます
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPendingResult(null);
+                      setImagePreview(null);
+                      setImageMeta(null);
+                      setAnalyzeError("");
+                      setActiveCell(null);
+                      setSplitPending(false);
+                    }}
+                    className="rounded-lg px-2 py-1 text-xs flex-shrink-0"
+                    style={{ border: `1px solid ${COLORS.oak}`, color: COLORS.ink }}
+                  >
+                    撮り直す
+                  </button>
                 </div>
                 <div className="rounded-xl p-3 border" style={{ borderColor: COLORS.oak, background: "white" }}>
                   <div className="flex items-center justify-between mb-2 text-xs" style={{ color: COLORS.oak }}>
@@ -2342,6 +2583,106 @@ export default function StrikeLog() {
                   )}
                 </div>
 
+                {!useSecondBall ? (
+                  <button
+                    type="button"
+                    onClick={() => setUseSecondBall(true)}
+                    className="w-full rounded-lg py-2 text-xs"
+                    style={{ border: `1px dashed ${COLORS.oak}`, color: COLORS.oak }}
+                  >
+                    + 2つ目のボールを記録する
+                  </button>
+                ) : (
+                  <div className="rounded-xl p-3 border space-y-2" style={{ borderColor: COLORS.oak, background: "white" }}>
+                    <div className="flex items-center justify-between">
+                      <div className="text-sm flex items-center gap-2" style={{ color: COLORS.ink }}>
+                        <CircleDot size={16} /> 使用ボール(2つ目)
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUseSecondBall(false);
+                          setBallType2("house");
+                          setBallWeight2("");
+                          setBallThumbless2(false);
+                          setSelectedBallId2(null);
+                        }}
+                        aria-label="2つ目のボールを削除"
+                      >
+                        <X size={16} style={{ color: COLORS.oak }} />
+                      </button>
+                    </div>
+
+                    <div className="flex gap-2">
+                      {[
+                        { key: "house", label: "ハウスボール" },
+                        { key: "own", label: "マイボール" },
+                      ].map((opt) => (
+                        <button
+                          key={opt.key}
+                          type="button"
+                          onClick={() => setBallType2(opt.key)}
+                          className="flex-1 rounded-lg py-2 text-xs"
+                          style={{
+                            background: ballType2 === opt.key ? COLORS.ink : "white",
+                            color: ballType2 === opt.key ? COLORS.cream : COLORS.ink,
+                            border: `1px solid ${COLORS.oak}`,
+                            fontWeight: 700,
+                          }}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {ballType2 === "house" ? (
+                      <>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            min={1}
+                            max={20}
+                            value={ballWeight2}
+                            onChange={(e) => setBallWeight2(e.target.value)}
+                            placeholder="重さ"
+                            className="w-16 px-2 py-1 rounded border text-sm"
+                            style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                          />
+                          <span className="text-xs" style={{ color: COLORS.oak }}>ポンド</span>
+                        </div>
+                        <label className="flex items-center gap-2 text-xs" style={{ color: COLORS.ink }}>
+                          <input
+                            type="checkbox"
+                            checked={ballThumbless2}
+                            onChange={(e) => setBallThumbless2(e.target.checked)}
+                          />
+                          サムレス
+                        </label>
+                      </>
+                    ) : myBalls.filter((b) => (b.type || "own") === "own").length === 0 ? (
+                      <div className="text-xs" style={{ color: COLORS.oak }}>
+                        登録済みのマイボールがありません
+                      </div>
+                    ) : (
+                      <select
+                        value={selectedBallId2 || ""}
+                        onChange={(e) => setSelectedBallId2(e.target.value || null)}
+                        className="w-full px-2 py-2 rounded border text-sm"
+                        style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                      >
+                        <option value="">ボールを選択</option>
+                        {myBalls
+                          .filter((b) => (b.type || "own") === "own")
+                          .map((b) => (
+                            <option key={b.id} value={b.id}>
+                              {b.label}({b.weight}lb{b.thumbless ? "・サムレス" : ""})
+                            </option>
+                          ))}
+                      </select>
+                    )}
+                  </div>
+                )}
+
                 <div className="rounded-xl p-3 border space-y-2" style={{ borderColor: COLORS.oak, background: "white" }}>
                   <div className="text-sm flex items-center gap-2" style={{ color: COLORS.ink }}>
                     <CircleDot size={16} /> 使用シューズ
@@ -2372,20 +2713,45 @@ export default function StrikeLog() {
                     ))}
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      value={shoeSize}
+                  {shoeType === "rental" ? (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={shoeSize}
+                        onChange={(e) => {
+                          setShoeSize(e.target.value);
+                          setShoeTouched(true);
+                        }}
+                        placeholder="サイズ(例: 27.0)"
+                        className="w-24 px-2 py-1 rounded border text-sm"
+                        style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                      />
+                      <span className="text-xs" style={{ color: COLORS.oak }}>cm</span>
+                    </div>
+                  ) : myShoes.length === 0 ? (
+                    <div className="text-xs" style={{ color: COLORS.oak }}>
+                      登録済みのマイシューズがありません。「プロフィール」タブで登録してください
+                    </div>
+                  ) : (
+                    <select
+                      value={selectedShoeId || ""}
                       onChange={(e) => {
-                        setShoeSize(e.target.value);
+                        setSelectedShoeId(e.target.value || null);
                         setShoeTouched(true);
                       }}
-                      placeholder="サイズ(例: 27.0)"
-                      className="w-24 px-2 py-1 rounded border text-sm"
+                      className="w-full px-2 py-2 rounded border text-sm"
                       style={{ borderColor: COLORS.oak, color: COLORS.ink }}
-                    />
-                    <span className="text-xs" style={{ color: COLORS.oak }}>cm</span>
-                  </div>
+                    >
+                      <option value="">シューズを選択</option>
+                      {myShoes
+                        .filter((s) => s.type === "own")
+                        .map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.label}({s.size}cm)
+                          </option>
+                        ))}
+                    </select>
+                  )}
                 </div>
 
                 <button
@@ -2408,7 +2774,268 @@ export default function StrikeLog() {
                 まだ記録がありません。「スコア記録」タブから撮影してみましょう。
               </div>
             )}
-            {[...games].reverse().map((g) => (
+            {[...games].reverse().map((g) =>
+              editingGameId === g.id ? (
+                <div key={g.id} className="rounded-xl p-3 border bg-white space-y-3" style={{ borderColor: COLORS.strike }}>
+                  <div className="flex items-center justify-between">
+                    <div style={{ color: COLORS.strike, fontWeight: 700, fontSize: 13 }}>記録を編集中</div>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={cancelEditGame}
+                        className="rounded-lg px-2 py-1 text-xs border"
+                        style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                      >
+                        キャンセル
+                      </button>
+                      <button
+                        type="button"
+                        onClick={saveEditedGame}
+                        className="rounded-lg px-3 py-1 text-xs flex items-center gap-1"
+                        style={{ background: COLORS.ink, color: COLORS.cream, fontWeight: 700 }}
+                      >
+                        <Check size={12} /> 保存
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="date"
+                      value={editDate}
+                      onChange={(e) => setEditDate(e.target.value)}
+                      className="flex-1 px-2 py-1 rounded border text-sm"
+                      style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                    />
+                    <input
+                      type="number"
+                      min={1}
+                      value={editGameNumber}
+                      onChange={(e) => setEditGameNumber(Math.max(1, Number(e.target.value) || 1))}
+                      className="w-16 px-2 py-1 rounded border text-sm text-center"
+                      style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                    />
+                    <span className="text-xs" style={{ color: COLORS.oak }}>ゲーム目</span>
+                  </div>
+
+                  <ScoreSheet frames={editFrames} editable activeCell={editActiveCell} onCellTap={handleEditCellTap} />
+
+                  {editActiveCell && (
+                    <RollPicker
+                      frameIdx={editActiveCell.frameIdx}
+                      rollIdx={editActiveCell.rollIdx}
+                      splitEligible={editActiveCell.rollIdx === 0}
+                      splitActive={editSplitPending}
+                      onSplitToggle={() => setEditSplitPending((s) => !s)}
+                      onSelect={handleEditPickerSelect}
+                      onClear={handleEditPickerClear}
+                      onClose={closeEditPicker}
+                    />
+                  )}
+
+                  <div className="rounded-xl p-3 border space-y-2" style={{ borderColor: COLORS.oak, background: COLORS.cream }}>
+                    <div className="text-xs" style={{ color: COLORS.oak }}>ボール</div>
+                    <div className="flex gap-2">
+                      {[
+                        { key: "house", label: "ハウスボール" },
+                        { key: "own", label: "マイボール" },
+                      ].map((opt) => (
+                        <button
+                          key={opt.key}
+                          type="button"
+                          onClick={() => setEditBallType(opt.key)}
+                          className="flex-1 rounded-lg py-2 text-xs"
+                          style={{
+                            background: editBallType === opt.key ? COLORS.ink : "white",
+                            color: editBallType === opt.key ? COLORS.cream : COLORS.ink,
+                            border: `1px solid ${COLORS.oak}`,
+                            fontWeight: 700,
+                          }}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                    {editBallType === "house" ? (
+                      <>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            min={1}
+                            max={20}
+                            value={editBallWeight}
+                            onChange={(e) => setEditBallWeight(e.target.value)}
+                            placeholder="重さ"
+                            className="w-16 px-2 py-1 rounded border text-sm"
+                            style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                          />
+                          <span className="text-xs" style={{ color: COLORS.oak }}>ポンド</span>
+                        </div>
+                        <label className="flex items-center gap-2 text-xs" style={{ color: COLORS.ink }}>
+                          <input
+                            type="checkbox"
+                            checked={editBallThumbless}
+                            onChange={(e) => setEditBallThumbless(e.target.checked)}
+                          />
+                          サムレス
+                        </label>
+                      </>
+                    ) : (
+                      <select
+                        value={editSelectedBallId || ""}
+                        onChange={(e) => setEditSelectedBallId(e.target.value || null)}
+                        className="w-full px-2 py-2 rounded border text-sm"
+                        style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                      >
+                        <option value="">ボールを選択</option>
+                        {myBalls
+                          .filter((b) => (b.type || "own") === "own")
+                          .map((b) => (
+                            <option key={b.id} value={b.id}>
+                              {b.label}({b.weight}lb{b.thumbless ? "・サムレス" : ""})
+                            </option>
+                          ))}
+                      </select>
+                    )}
+                  </div>
+
+                  {!editUseSecondBall ? (
+                    <button
+                      type="button"
+                      onClick={() => setEditUseSecondBall(true)}
+                      className="w-full rounded-lg py-2 text-xs"
+                      style={{ border: `1px dashed ${COLORS.oak}`, color: COLORS.oak }}
+                    >
+                      + 2つ目のボールを追加
+                    </button>
+                  ) : (
+                    <div className="rounded-xl p-3 border space-y-2" style={{ borderColor: COLORS.oak, background: COLORS.cream }}>
+                      <div className="flex items-center justify-between">
+                        <div className="text-xs" style={{ color: COLORS.oak }}>ボール(2つ目)</div>
+                        <button type="button" onClick={() => setEditUseSecondBall(false)} aria-label="削除">
+                          <X size={14} style={{ color: COLORS.oak }} />
+                        </button>
+                      </div>
+                      <div className="flex gap-2">
+                        {[
+                          { key: "house", label: "ハウスボール" },
+                          { key: "own", label: "マイボール" },
+                        ].map((opt) => (
+                          <button
+                            key={opt.key}
+                            type="button"
+                            onClick={() => setEditBallType2(opt.key)}
+                            className="flex-1 rounded-lg py-2 text-xs"
+                            style={{
+                              background: editBallType2 === opt.key ? COLORS.ink : "white",
+                              color: editBallType2 === opt.key ? COLORS.cream : COLORS.ink,
+                              border: `1px solid ${COLORS.oak}`,
+                              fontWeight: 700,
+                            }}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                      {editBallType2 === "house" ? (
+                        <>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              min={1}
+                              max={20}
+                              value={editBallWeight2}
+                              onChange={(e) => setEditBallWeight2(e.target.value)}
+                              placeholder="重さ"
+                              className="w-16 px-2 py-1 rounded border text-sm"
+                              style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                            />
+                            <span className="text-xs" style={{ color: COLORS.oak }}>ポンド</span>
+                          </div>
+                          <label className="flex items-center gap-2 text-xs" style={{ color: COLORS.ink }}>
+                            <input
+                              type="checkbox"
+                              checked={editBallThumbless2}
+                              onChange={(e) => setEditBallThumbless2(e.target.checked)}
+                            />
+                            サムレス
+                          </label>
+                        </>
+                      ) : (
+                        <select
+                          value={editSelectedBallId2 || ""}
+                          onChange={(e) => setEditSelectedBallId2(e.target.value || null)}
+                          className="w-full px-2 py-2 rounded border text-sm"
+                          style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                        >
+                          <option value="">ボールを選択</option>
+                          {myBalls
+                            .filter((b) => (b.type || "own") === "own")
+                            .map((b) => (
+                              <option key={b.id} value={b.id}>
+                                {b.label}({b.weight}lb{b.thumbless ? "・サムレス" : ""})
+                              </option>
+                            ))}
+                        </select>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="rounded-xl p-3 border space-y-2" style={{ borderColor: COLORS.oak, background: COLORS.cream }}>
+                    <div className="text-xs" style={{ color: COLORS.oak }}>シューズ</div>
+                    <div className="flex gap-2">
+                      {[
+                        { key: "rental", label: "レンタル" },
+                        { key: "own", label: "マイシューズ" },
+                      ].map((opt) => (
+                        <button
+                          key={opt.key}
+                          type="button"
+                          onClick={() => setEditShoeType(opt.key)}
+                          className="flex-1 rounded-lg py-2 text-xs"
+                          style={{
+                            background: editShoeType === opt.key ? COLORS.ink : "white",
+                            color: editShoeType === opt.key ? COLORS.cream : COLORS.ink,
+                            border: `1px solid ${COLORS.oak}`,
+                            fontWeight: 700,
+                          }}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                    {editShoeType === "rental" ? (
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={editShoeSize}
+                          onChange={(e) => setEditShoeSize(e.target.value)}
+                          placeholder="サイズ(例: 27.0)"
+                          className="w-24 px-2 py-1 rounded border text-sm"
+                          style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                        />
+                        <span className="text-xs" style={{ color: COLORS.oak }}>cm</span>
+                      </div>
+                    ) : (
+                      <select
+                        value={editSelectedShoeId || ""}
+                        onChange={(e) => setEditSelectedShoeId(e.target.value || null)}
+                        className="w-full px-2 py-2 rounded border text-sm"
+                        style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                      >
+                        <option value="">シューズを選択</option>
+                        {myShoes
+                          .filter((s) => s.type === "own")
+                          .map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.label}({s.size}cm)
+                            </option>
+                          ))}
+                      </select>
+                    )}
+                  </div>
+                </div>
+              ) : (
               <div key={g.id} className="rounded-xl p-3 border bg-white" style={{ borderColor: COLORS.oak }}>
                 <div className="flex items-center justify-between mb-2">
                   <div style={{ color: COLORS.oak, fontSize: 12 }}>
@@ -2421,6 +3048,9 @@ export default function StrikeLog() {
                     <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 20, color: COLORS.strike }}>
                       {g.total}
                     </div>
+                    <button onClick={() => startEditGame(g)} aria-label="編集">
+                      <Pencil size={16} style={{ color: COLORS.oak }} />
+                    </button>
                     <button onClick={() => setConfirmDeleteId(g.id)} aria-label="削除">
                       <X size={16} style={{ color: COLORS.oak }} />
                     </button>
@@ -2462,6 +3092,15 @@ export default function StrikeLog() {
                     {g.ball.thumbless ? " ・ サムレス" : ""}
                   </div>
                 )}
+                {g.ball2 && (g.ball2.weight || g.ball2.type) && (
+                  <div className="mb-2 flex items-center gap-1" style={{ color: COLORS.oak, fontSize: 11 }}>
+                    <CircleDot size={11} />
+                    {g.ball2.label ? g.ball2.label : g.ball2.type === "own" ? "マイボール" : "ハウスボール"}
+                    {g.ball2.weight ? ` ${g.ball2.weight}lb` : ""}
+                    {g.ball2.thumbless ? " ・ サムレス" : ""}
+                    <span style={{ color: COLORS.gold }}>(2つ目)</span>
+                  </div>
+                )}
                 {g.shoe && (g.shoe.size || g.shoe.type) && (
                   <div className="mb-2 flex items-center gap-1" style={{ color: COLORS.oak, fontSize: 11 }}>
                     <CircleDot size={11} />
@@ -2471,7 +3110,8 @@ export default function StrikeLog() {
                 )}
                 <ScoreSheet frames={g.frames} />
               </div>
-            ))}
+              )
+            )}
             {storageError && <div className="text-xs text-center" style={{ color: COLORS.strike }}>{storageError}</div>}
           </div>
         )}
@@ -3027,15 +3667,6 @@ export default function StrikeLog() {
                 <option value="house">ハウスボール</option>
               </select>
 
-              <input
-                type="text"
-                value={newBallName}
-                onChange={(e) => setNewBallName(e.target.value)}
-                placeholder="名前(例: メインボール)未入力なら自動で名付けます"
-                className="w-full px-3 py-2 rounded border text-sm"
-                style={{ borderColor: COLORS.oak, color: COLORS.ink }}
-              />
-
               <div className="flex items-center gap-2">
                 <input
                   type="number"
@@ -3123,12 +3754,104 @@ export default function StrikeLog() {
                 </>
               )}
 
+              <div>
+                <div className="text-xs mb-1" style={{ color: COLORS.oak }}>登録名</div>
+                <input
+                  type="text"
+                  value={newBallName}
+                  onChange={(e) => setNewBallName(e.target.value)}
+                  placeholder="例: メインボール(未入力なら自動で名付けます)"
+                  className="w-full px-3 py-2 rounded border text-sm"
+                  style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                />
+              </div>
+
               <button
                 type="button"
                 onClick={addMyBall}
                 disabled={!newBallWeight}
                 className="w-full rounded-lg py-2 text-sm"
                 style={{ background: COLORS.ink, color: COLORS.cream, fontWeight: 700, opacity: newBallWeight ? 1 : 0.5 }}
+              >
+                追加する
+              </button>
+            </div>
+
+            <div className="text-sm" style={{ color: COLORS.oak }}>登録済みのシューズ</div>
+
+            <div className="rounded-xl border bg-white overflow-hidden" style={{ borderColor: COLORS.oak }}>
+              {myShoes.length === 0 ? (
+                <div className="p-3 text-xs text-center" style={{ color: COLORS.oak }}>
+                  まだ登録されていません
+                </div>
+              ) : (
+                myShoes.map((s, i) => (
+                  <div
+                    key={s.id}
+                    className="flex items-center justify-between px-3 py-2"
+                    style={{ borderTop: i === 0 ? "none" : `1px solid #EFE4CC` }}
+                  >
+                    <div>
+                      <div className="text-sm" style={{ color: COLORS.ink, fontWeight: 700 }}>
+                        {s.label}
+                        <span style={{ color: COLORS.oak, fontWeight: 400, fontSize: 11 }}>
+                          {" "}
+                          ({s.type === "rental" ? "レンタル" : "マイシューズ"})
+                        </span>
+                      </div>
+                      <div className="text-xs" style={{ color: COLORS.oak }}>{s.size}cm</div>
+                    </div>
+                    <button onClick={() => deleteMyShoe(s.id)} aria-label="削除">
+                      <Trash2 size={16} style={{ color: COLORS.oak }} />
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="rounded-xl p-3 border bg-white space-y-2" style={{ borderColor: COLORS.oak }}>
+              <div className="text-xs" style={{ color: COLORS.oak }}>新しいシューズを登録</div>
+
+              <select
+                value={newShoeType}
+                onChange={(e) => setNewShoeType(e.target.value)}
+                className="w-full px-3 py-2 rounded border text-sm"
+                style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+              >
+                <option value="own">マイシューズ</option>
+                <option value="rental">レンタルシューズ</option>
+              </select>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={newShoeSize}
+                  onChange={(e) => setNewShoeSize(e.target.value)}
+                  placeholder="サイズ(例: 27.0)"
+                  className="w-24 px-2 py-1 rounded border text-sm"
+                  style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                />
+                <span className="text-xs" style={{ color: COLORS.oak }}>cm</span>
+              </div>
+
+              <div>
+                <div className="text-xs mb-1" style={{ color: COLORS.oak }}>登録名</div>
+                <input
+                  type="text"
+                  value={newShoeName}
+                  onChange={(e) => setNewShoeName(e.target.value)}
+                  placeholder="例: いつものシューズ(未入力なら自動で名付けます)"
+                  className="w-full px-3 py-2 rounded border text-sm"
+                  style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={addMyShoe}
+                disabled={!newShoeSize}
+                className="w-full rounded-lg py-2 text-sm"
+                style={{ background: COLORS.ink, color: COLORS.cream, fontWeight: 700, opacity: newShoeSize ? 1 : 0.5 }}
               >
                 追加する
               </button>
