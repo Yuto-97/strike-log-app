@@ -1803,27 +1803,21 @@ export default function StrikeLog() {
   const saveGame = async () => {
     if (!pendingResult) return;
     const selectedBall = myBalls.find((b) => b.id === selectedBallId);
-    const ball =
-      ballType === "house"
-        ? { type: "house", weight: ballWeight ? Number(ballWeight) : null, thumbless: ballThumbless, label: null }
-        : {
-            type: "own",
-            weight: selectedBall ? selectedBall.weight : null,
-            thumbless: selectedBall ? selectedBall.thumbless : false,
-            label: selectedBall ? selectedBall.label : null,
-          };
+    const ball = {
+      type: ballType,
+      weight: selectedBall ? selectedBall.weight : null,
+      thumbless: selectedBall ? selectedBall.thumbless : false,
+      label: selectedBall ? selectedBall.label : null,
+    };
     let ball2 = null;
     if (useSecondBall) {
       const selectedBall2 = myBalls.find((b) => b.id === selectedBallId2);
-      ball2 =
-        ballType2 === "house"
-          ? { type: "house", weight: ballWeight2 ? Number(ballWeight2) : null, thumbless: ballThumbless2, label: null }
-          : {
-              type: "own",
-              weight: selectedBall2 ? selectedBall2.weight : null,
-              thumbless: selectedBall2 ? selectedBall2.thumbless : false,
-              label: selectedBall2 ? selectedBall2.label : null,
-            };
+      ball2 = {
+        type: ballType2,
+        weight: selectedBall2 ? selectedBall2.weight : null,
+        thumbless: selectedBall2 ? selectedBall2.thumbless : false,
+        label: selectedBall2 ? selectedBall2.label : null,
+      };
     }
     const selectedShoe = myShoes.find((s) => s.id === selectedShoeId);
     const shoe =
@@ -1938,12 +1932,12 @@ export default function StrikeLog() {
     setEditBallType(g.ball?.type || "house");
     setEditBallWeight(g.ball?.weight ? String(g.ball.weight) : "");
     setEditBallThumbless(!!g.ball?.thumbless);
-    setEditSelectedBallId(g.ball?.type === "own" ? myBalls.find((b) => b.label === g.ball.label)?.id || null : null);
+    setEditSelectedBallId(g.ball?.label ? myBalls.find((b) => b.label === g.ball.label)?.id || null : null);
     setEditUseSecondBall(!!g.ball2);
     setEditBallType2(g.ball2?.type || "house");
     setEditBallWeight2(g.ball2?.weight ? String(g.ball2.weight) : "");
     setEditBallThumbless2(!!g.ball2?.thumbless);
-    setEditSelectedBallId2(g.ball2?.type === "own" ? myBalls.find((b) => b.label === g.ball2.label)?.id || null : null);
+    setEditSelectedBallId2(g.ball2?.label ? myBalls.find((b) => b.label === g.ball2.label)?.id || null : null);
     setEditShoeType(g.shoe?.type || "rental");
     setEditShoeSize(g.shoe?.size || "");
     setEditSelectedShoeId(g.shoe?.shoeRegistryId || null);
@@ -1999,27 +1993,21 @@ export default function StrikeLog() {
   const saveEditedGame = async () => {
     const norm = normalizeGame(editFrames);
     const selectedBall = myBalls.find((b) => b.id === editSelectedBallId);
-    const ball =
-      editBallType === "house"
-        ? { type: "house", weight: editBallWeight ? Number(editBallWeight) : null, thumbless: editBallThumbless, label: null }
-        : {
-            type: "own",
-            weight: selectedBall ? selectedBall.weight : null,
-            thumbless: selectedBall ? selectedBall.thumbless : false,
-            label: selectedBall ? selectedBall.label : null,
-          };
+    const ball = {
+      type: editBallType,
+      weight: selectedBall ? selectedBall.weight : null,
+      thumbless: selectedBall ? selectedBall.thumbless : false,
+      label: selectedBall ? selectedBall.label : null,
+    };
     let ball2 = null;
     if (editUseSecondBall) {
       const selectedBall2 = myBalls.find((b) => b.id === editSelectedBallId2);
-      ball2 =
-        editBallType2 === "house"
-          ? { type: "house", weight: editBallWeight2 ? Number(editBallWeight2) : null, thumbless: editBallThumbless2, label: null }
-          : {
-              type: "own",
-              weight: selectedBall2 ? selectedBall2.weight : null,
-              thumbless: selectedBall2 ? selectedBall2.thumbless : false,
-              label: selectedBall2 ? selectedBall2.label : null,
-            };
+      ball2 = {
+        type: editBallType2,
+        weight: selectedBall2 ? selectedBall2.weight : null,
+        thumbless: selectedBall2 ? selectedBall2.thumbless : false,
+        label: selectedBall2 ? selectedBall2.label : null,
+      };
     }
     const selectedShoe = myShoes.find((s) => s.id === editSelectedShoeId);
     const shoe =
@@ -2357,25 +2345,8 @@ export default function StrikeLog() {
 
             {pendingResult && pendingResult.player_matched !== false && (
               <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div style={{ color: COLORS.oak, fontSize: 11 }}>
-                    マスをタップすると、数字やストライク・スペア・ガーター・スプリットを選んで修正できます
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPendingResult(null);
-                      setImagePreview(null);
-                      setImageMeta(null);
-                      setAnalyzeError("");
-                      setActiveCell(null);
-                      setSplitPending(false);
-                    }}
-                    className="rounded-lg px-2 py-1 text-xs flex-shrink-0"
-                    style={{ border: `1px solid ${COLORS.oak}`, color: COLORS.ink }}
-                  >
-                    撮り直す
-                  </button>
+                <div style={{ color: COLORS.oak, fontSize: 11 }}>
+                  マスをタップすると、数字やストライク・スペア・ガーター・スプリットを選んで修正できます
                 </div>
                 <div className="rounded-xl p-3 border" style={{ borderColor: COLORS.oak, background: "white" }}>
                   <div className="flex items-center justify-between mb-2 text-xs" style={{ color: COLORS.oak }}>
@@ -2535,34 +2506,9 @@ export default function StrikeLog() {
                     ))}
                   </div>
 
-                  {ballType === "house" ? (
-                    <>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="number"
-                          min={1}
-                          max={20}
-                          value={ballWeight}
-                          onChange={(e) => setBallWeight(e.target.value)}
-                          placeholder="重さ"
-                          className="w-16 px-2 py-1 rounded border text-sm"
-                          style={{ borderColor: COLORS.oak, color: COLORS.ink }}
-                        />
-                        <span className="text-xs" style={{ color: COLORS.oak }}>ポンド</span>
-                      </div>
-
-                      <label className="flex items-center gap-2 text-xs" style={{ color: COLORS.ink }}>
-                        <input
-                          type="checkbox"
-                          checked={ballThumbless}
-                          onChange={(e) => setBallThumbless(e.target.checked)}
-                        />
-                        サムレス
-                      </label>
-                    </>
-                  ) : myBalls.filter((b) => (b.type || "own") === "own").length === 0 ? (
+                  {myBalls.filter((b) => (b.type || "own") === ballType).length === 0 ? (
                     <div className="text-xs" style={{ color: COLORS.oak }}>
-                      登録済みのマイボールがありません。「プロフィール」タブで登録してください
+                      登録済みの{ballType === "house" ? "ハウスボール" : "マイボール"}がありません。「プロフィール」タブで登録してください
                     </div>
                   ) : (
                     <select
@@ -2573,7 +2519,7 @@ export default function StrikeLog() {
                     >
                       <option value="">ボールを選択</option>
                       {myBalls
-                        .filter((b) => (b.type || "own") === "own")
+                        .filter((b) => (b.type || "own") === ballType)
                         .map((b) => (
                           <option key={b.id} value={b.id}>
                             {b.label}({b.weight}lb{b.thumbless ? "・サムレス" : ""})
@@ -2635,33 +2581,9 @@ export default function StrikeLog() {
                       ))}
                     </div>
 
-                    {ballType2 === "house" ? (
-                      <>
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="number"
-                            min={1}
-                            max={20}
-                            value={ballWeight2}
-                            onChange={(e) => setBallWeight2(e.target.value)}
-                            placeholder="重さ"
-                            className="w-16 px-2 py-1 rounded border text-sm"
-                            style={{ borderColor: COLORS.oak, color: COLORS.ink }}
-                          />
-                          <span className="text-xs" style={{ color: COLORS.oak }}>ポンド</span>
-                        </div>
-                        <label className="flex items-center gap-2 text-xs" style={{ color: COLORS.ink }}>
-                          <input
-                            type="checkbox"
-                            checked={ballThumbless2}
-                            onChange={(e) => setBallThumbless2(e.target.checked)}
-                          />
-                          サムレス
-                        </label>
-                      </>
-                    ) : myBalls.filter((b) => (b.type || "own") === "own").length === 0 ? (
+                    {myBalls.filter((b) => (b.type || "own") === ballType2).length === 0 ? (
                       <div className="text-xs" style={{ color: COLORS.oak }}>
-                        登録済みのマイボールがありません
+                        登録済みの{ballType2 === "house" ? "ハウスボール" : "マイボール"}がありません
                       </div>
                     ) : (
                       <select
@@ -2672,7 +2594,7 @@ export default function StrikeLog() {
                       >
                         <option value="">ボールを選択</option>
                         {myBalls
-                          .filter((b) => (b.type || "own") === "own")
+                          .filter((b) => (b.type || "own") === ballType2)
                           .map((b) => (
                             <option key={b.id} value={b.id}>
                               {b.label}({b.weight}lb{b.thumbless ? "・サムレス" : ""})
@@ -2760,6 +2682,22 @@ export default function StrikeLog() {
                   style={{ background: COLORS.ink, color: COLORS.cream, fontWeight: 700 }}
                 >
                   <Check size={18} /> 記録を保存
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPendingResult(null);
+                    setImagePreview(null);
+                    setImageMeta(null);
+                    setAnalyzeError("");
+                    setActiveCell(null);
+                    setSplitPending(false);
+                  }}
+                  className="w-full rounded-lg py-4 text-base"
+                  style={{ border: `2px solid ${COLORS.oak}`, color: COLORS.ink, fontWeight: 700 }}
+                >
+                  撮り直す
                 </button>
               </div>
             )}
@@ -2856,30 +2794,10 @@ export default function StrikeLog() {
                         </button>
                       ))}
                     </div>
-                    {editBallType === "house" ? (
-                      <>
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="number"
-                            min={1}
-                            max={20}
-                            value={editBallWeight}
-                            onChange={(e) => setEditBallWeight(e.target.value)}
-                            placeholder="重さ"
-                            className="w-16 px-2 py-1 rounded border text-sm"
-                            style={{ borderColor: COLORS.oak, color: COLORS.ink }}
-                          />
-                          <span className="text-xs" style={{ color: COLORS.oak }}>ポンド</span>
-                        </div>
-                        <label className="flex items-center gap-2 text-xs" style={{ color: COLORS.ink }}>
-                          <input
-                            type="checkbox"
-                            checked={editBallThumbless}
-                            onChange={(e) => setEditBallThumbless(e.target.checked)}
-                          />
-                          サムレス
-                        </label>
-                      </>
+                    {myBalls.filter((b) => (b.type || "own") === editBallType).length === 0 ? (
+                      <div className="text-xs" style={{ color: COLORS.oak }}>
+                        登録済みの{editBallType === "house" ? "ハウスボール" : "マイボール"}がありません
+                      </div>
                     ) : (
                       <select
                         value={editSelectedBallId || ""}
@@ -2889,7 +2807,7 @@ export default function StrikeLog() {
                       >
                         <option value="">ボールを選択</option>
                         {myBalls
-                          .filter((b) => (b.type || "own") === "own")
+                          .filter((b) => (b.type || "own") === editBallType)
                           .map((b) => (
                             <option key={b.id} value={b.id}>
                               {b.label}({b.weight}lb{b.thumbless ? "・サムレス" : ""})
@@ -2937,30 +2855,10 @@ export default function StrikeLog() {
                           </button>
                         ))}
                       </div>
-                      {editBallType2 === "house" ? (
-                        <>
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="number"
-                              min={1}
-                              max={20}
-                              value={editBallWeight2}
-                              onChange={(e) => setEditBallWeight2(e.target.value)}
-                              placeholder="重さ"
-                              className="w-16 px-2 py-1 rounded border text-sm"
-                              style={{ borderColor: COLORS.oak, color: COLORS.ink }}
-                            />
-                            <span className="text-xs" style={{ color: COLORS.oak }}>ポンド</span>
-                          </div>
-                          <label className="flex items-center gap-2 text-xs" style={{ color: COLORS.ink }}>
-                            <input
-                              type="checkbox"
-                              checked={editBallThumbless2}
-                              onChange={(e) => setEditBallThumbless2(e.target.checked)}
-                            />
-                            サムレス
-                          </label>
-                        </>
+                      {myBalls.filter((b) => (b.type || "own") === editBallType2).length === 0 ? (
+                        <div className="text-xs" style={{ color: COLORS.oak }}>
+                          登録済みの{editBallType2 === "house" ? "ハウスボール" : "マイボール"}がありません
+                        </div>
                       ) : (
                         <select
                           value={editSelectedBallId2 || ""}
@@ -2970,7 +2868,7 @@ export default function StrikeLog() {
                         >
                           <option value="">ボールを選択</option>
                           {myBalls
-                            .filter((b) => (b.type || "own") === "own")
+                            .filter((b) => (b.type || "own") === editBallType2)
                             .map((b) => (
                               <option key={b.id} value={b.id}>
                                 {b.label}({b.weight}lb{b.thumbless ? "・サムレス" : ""})
