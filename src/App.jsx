@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Camera, History, BarChart3, Loader2, Check, X, Pencil, Trophy, TrendingUp, Calendar, CircleDot, Hash, User, Target, Trash2, Video, Play, Pause, Square, ShieldCheck, CircleCheck } from "lucide-react";
+import { Camera, History, BarChart3, Loader2, Check, X, Pencil, Trophy, TrendingUp, Calendar, CircleDot, Hash, User, Target, Trash2, Video, Play, Pause, Square, ShieldCheck, CircleCheck, MessageCircle, Send } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
 // ---------- palette ----------
@@ -1366,6 +1366,11 @@ export default function StrikeLog() {
   const [feedbackMessage, setFeedbackMessage] = useState("");
   const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
   const [feedbackSent, setFeedbackSent] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState([]); // [{ role: "user"|"assistant", content }]
+  const [chatInput, setChatInput] = useState("");
+  const [chatSending, setChatSending] = useState(false);
+  const [chatError, setChatError] = useState("");
 
   // When opened as the admin panel, swap the manifest/icon/title so "Add to
   // Home Screen" gives it its own distinct icon instead of matching the
@@ -1615,6 +1620,32 @@ export default function StrikeLog() {
       // non-fatal; person can just try again
     } finally {
       setFeedbackSubmitting(false);
+    }
+  };
+
+  const sendChatMessage = async () => {
+    const text = chatInput.trim();
+    if (!text || chatSending) return;
+    const nextMessages = [...chatMessages, { role: "user", content: text }];
+    setChatMessages(nextMessages);
+    setChatInput("");
+    setChatSending(true);
+    setChatError("");
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: nextMessages }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.error || "回答の取得に失敗しました");
+      const textBlock = (data.content || []).find((b) => b.type === "text");
+      const reply = textBlock?.text?.trim() || "うまく答えられませんでした。もう一度試してください。";
+      setChatMessages([...nextMessages, { role: "assistant", content: reply }]);
+    } catch (e) {
+      setChatError(e.message || "エラーが発生しました。もう一度お試しください。");
+    } finally {
+      setChatSending(false);
     }
   };
 
@@ -3945,6 +3976,115 @@ export default function StrikeLog() {
           })}
         </div>
       </nav>
+
+      {/* floating help-chat button */}
+      {!chatOpen && (
+        <button
+          type="button"
+          onClick={() => setChatOpen(true)}
+          className="fixed rounded-full flex items-center justify-center shadow-lg"
+          style={{
+            bottom: 76,
+            right: 16,
+            width: 52,
+            height: 52,
+            background: COLORS.strike,
+            color: "white",
+            zIndex: 40,
+          }}
+          aria-label="使い方について質問する"
+        >
+          <MessageCircle size={24} />
+        </button>
+      )}
+
+      {chatOpen && (
+        <div
+          className="fixed inset-0 flex flex-col"
+          style={{ background: COLORS.cream, zIndex: 50 }}
+        >
+          <div
+            className="flex items-center justify-between px-4 py-4"
+            style={{ background: COLORS.ink }}
+          >
+            <div className="flex items-center gap-2">
+              <MessageCircle size={20} style={{ color: COLORS.strike }} />
+              <div style={{ color: COLORS.cream, fontWeight: 700, fontFamily: "'Oswald', sans-serif" }}>
+                使い方サポート
+              </div>
+            </div>
+            <button type="button" onClick={() => setChatOpen(false)} aria-label="閉じる">
+              <X size={22} style={{ color: COLORS.cream }} />
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+            {chatMessages.length === 0 && (
+              <div className="text-xs text-center py-6" style={{ color: COLORS.oak }}>
+                アプリの使い方や、ストライク・スペアなどのボウリング用語について、気軽に聞いてください。
+              </div>
+            )}
+            {chatMessages.map((m, i) => (
+              <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+                <div
+                  className="rounded-xl px-3 py-2 text-sm"
+                  style={{
+                    maxWidth: "80%",
+                    whiteSpace: "pre-wrap",
+                    background: m.role === "user" ? COLORS.ink : "white",
+                    color: m.role === "user" ? COLORS.cream : COLORS.ink,
+                    border: m.role === "user" ? "none" : `1px solid ${COLORS.oak}`,
+                  }}
+                >
+                  {m.content}
+                </div>
+              </div>
+            ))}
+            {chatSending && (
+              <div className="flex justify-start">
+                <div
+                  className="rounded-xl px-3 py-2 text-sm flex items-center gap-2"
+                  style={{ background: "white", border: `1px solid ${COLORS.oak}`, color: COLORS.oak }}
+                >
+                  <Loader2 className="animate-spin" size={14} /> 考え中...
+                </div>
+              </div>
+            )}
+            {chatError && (
+              <div className="text-xs rounded-lg p-2" style={{ background: "#FBEAE5", color: COLORS.strike }}>
+                {chatError}
+              </div>
+            )}
+          </div>
+
+          <div className="p-3 flex items-center gap-2" style={{ borderTop: `1px solid ${COLORS.oak}`, background: COLORS.cream }}>
+            <input
+              type="text"
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  sendChatMessage();
+                }
+              }}
+              placeholder="質問を入力"
+              className="flex-1 px-3 py-2 rounded-lg border text-sm"
+              style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+            />
+            <button
+              type="button"
+              onClick={sendChatMessage}
+              disabled={chatSending || !chatInput.trim()}
+              className="rounded-lg px-3 py-2 flex items-center justify-center"
+              style={{ background: COLORS.strike, color: "white", opacity: chatInput.trim() ? 1 : 0.5 }}
+              aria-label="送信"
+            >
+              <Send size={18} />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
