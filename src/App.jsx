@@ -587,49 +587,59 @@ async function analyzeScoreImage(base64, mediaType, playerName) {
 
   const prompt = `これはボウリングのスコア画面またはスコアシートの写真です。${nameInstruction}
 
+この写真には、対象プレイヤーの**1ゲーム分だけ**が写っている場合と、**複数ゲーム分(例: 1ゲーム目・2ゲーム目・3ゲーム目)がまとめて**写っている場合があります。まず、対象プレイヤーについて写っているゲームがいくつあるかを確認し、写っている**すべてのゲーム**を、それぞれ独立した10フレームのデータとして読み取ってください。
+
 電光掲示板でよくある表示の特徴(該当する場合のみ考慮):
 - 表の一番上に「1 2 3 4 5 6 7 8 9 10」のようなフレーム番号のヘッダー行がある場合、それを基準にして各列がどのフレームかを機械的に特定すること。ヘッダーがずれて見えても、フレーム数は必ず10個であることを前提に列を数え直して位置合わせする。フレームの取り違えは起きないよう、この基準を最優先で使う
+- 複数ゲームが表示されている場合、「1G」「2G」「3G」やゲーム番号の見出しで区切られていることが多い。見出しを基準に、どこからどこまでが1ゲーム分かを正しく区切ること
 - ストライクは文字の「X」ではなく、緑や黒の三角形・矢印のようなアイコン、または蝶ネクタイ(ネクタイ)のような形のアイコンで表示されることがある。これらの記号を見つけたらストライク(pins内部的には"X")として扱う。スペアも「/」ではなく記号やハイフンの組み合わせで表示される場合がある
 - 各フレームのセルが上下2段になっていることが多い。上段は投球結果の記号、下段はそのフレーム終了時点の累計スコア(数字)
 - 上段の記号アイコンが小さく判読しにくい場合は、下段の累計スコアの数字を最優先で正確に読み取ること。累計スコアの数字は判読しやすく、フレーム間の差分からストライク/スペア/オープンフレームをかなり正確に推定できる
 - プレイヤー名の直後に区分ラベルらしき1文字の英字(例:「A」)が付いていることがある。これは名前そのものではない可能性があるため、名前照合の際は末尾の1文字英字を無視して比較する
-- 「HDCP」はハンディキャップの略で、スコアそのものではない。「レーン合計」や複数ゲームの累計列も同様にゲームのスコアではない。読み取るべき合計スコアは、10フレーム分のスコア推移の直後にある「TOTAL」列の値のみで、HDCP・レーン合計・累計・順位などの列は無視する
+- 「HDCP」はハンディキャップの略で、スコアそのものではない。「レーン合計」や複数ゲームの累計列も同様にゲームのスコアではない。読み取るべき合計スコアは、各ゲームの10フレーム分のスコア推移の直後にある「TOTAL」列の値のみで、HDCP・レーン合計・累計・順位などの列は無視する
 - 写真が斜め・手ブレ・多少ぼやけている・画面の一部が反射で見えにくい場合でも、諦めずに文字の形状、周囲の数字との整合性、フレームの位置関係から可能な限り推測すること。多少画質が粗くても、数字の並び(1桁刻みで増える累計スコアなど)から妥当な値を推定できることが多い
-- それでも判読が困難な箇所は、無理に確定せず confidence_notes に具体的に記載する(例:「5フレーム目のマークが不鮮明」)
+- それでも判読が困難な箇所は、無理に確定せず、そのゲームの confidence_notes に具体的に記載する(例:「5フレーム目のマークが不鮮明」)
 
-読み取りは以下の手順で慎重に行ってください:
-1. まず画面の種類(電光掲示板のデジタル表示か、紙のスコアシートか)と、対象プレイヤーの列/行の位置を確認する
+読み取りは、写っている**ゲームごとに**以下の手順で慎重に行ってください:
+1. まず画面の種類(電光掲示板のデジタル表示か、紙のスコアシートか)と、対象プレイヤーの列/行の位置、そのゲームが何ゲーム目かを確認する
 2. フレーム1から10まで、1フレームずつ順番に投球結果を読み取る。数字の間違えやすい組み合わせ(例: 6と8、1と7、Xと数字)は特に注意して見る
 3. 各フレームを読み終えたら、そのフレームの累計スコアが「前のフレームの累計 + このフレームで倒したピン数」と矛盾していないか自分で検算する。矛盾があれば、数字の読み取りを見直して修正する
 4. 全フレームを読み終えたら、10フレーム目の累計スコアと、画面に表示されている「TOTAL」列の数字を突き合わせる。一致しない場合は、どこかのフレームの投球結果(特にストライク/スペアの見落とし)を読み間違えている可能性が高いので、frame_by_frame_readingを最初から見直し、一致するまで修正すること。TOTAL表示は画像上で最も読み取りやすい数字であることが多いため、最終的な正解の基準として扱う
-5. 最後に、読み取った内容を次のJSON形式のみで出力する。前置き・説明・マークダウンの記号は一切含めない
+5. 他にゲームが写っていれば、同じ手順を繰り返す
+6. 最後に、読み取った内容を次のJSON形式のみで出力する。前置き・説明・マークダウンの記号は一切含めない
 
 {
   "screen_type": "digital" または "paper",
   "player_matched": true,
   "matched_name_on_screen": "画面上に表示されていた実際の表記",
   "other_players_detected": ["画面にいた他の人の名前など"],
-  "frame_by_frame_reading": ["1F: 7,スペア → 累計17", "2F: ストライク → 累計37", "..."],
-  "frames": [
-    {"rolls": ["7","/"], "score": 17, "split_roll_index": null},
-    {"rolls": ["X"], "score": 37, "split_roll_index": null},
-    {"rolls": ["8","1"], "score": 46, "split_roll_index": 0},
-    {"rolls": ["X","X","6"], "score": 300, "split_roll_index": 2}
-  ],
-  "total_score": 178,
-  "confidence_notes": ""
+  "games": [
+    {
+      "game_label": "1ゲーム目のように画面上のラベル、なければ null",
+      "frame_by_frame_reading": ["1F: 7,スペア → 累計17", "2F: ストライク → 累計37", "..."],
+      "frames": [
+        {"rolls": ["7","/"], "score": 17, "split_roll_index": null},
+        {"rolls": ["X"], "score": 37, "split_roll_index": null},
+        {"rolls": ["8","1"], "score": 46, "split_roll_index": 0},
+        {"rolls": ["X","X","6"], "score": 300, "split_roll_index": 2}
+      ],
+      "total_score": 178,
+      "confidence_notes": ""
+    }
+  ]
 }
 
 ルール:
+- games は配列。写っているゲームが1つだけでも、必ず配列(要素数1)として返す。複数ゲームが写っていれば、その数だけ要素を含める
 - rolls の値は "0"〜"10" の数字文字列、ストライクは "X"、スペアの2投目は "/"
 - frames は必ず10フレーム分(読み取れる範囲まで)
 - 10フレーム目は最大3投
 - score は各フレーム終了時点の累計スコア(手順3で検算した値)。10フレーム目まで画像に表示されている場合は、必ず10個分のscoreを埋めること。最終フレームの累計が画面上の「TOTAL」の値と一致するか必ず確認する
 - split_roll_index は、そのフレームの中で数字が丸で囲まれている(スプリットを示す)投球が何投目か(0始まりのインデックス)を表す。スプリットは1投目とは限らず、10フレーム目のボーナス球(2投目・3投目)に付くこともあるので、実際に丸が付いている投球の位置を必ず確認すること。丸が付いた投球がなければ null
 - frame_by_frame_reading は手順2〜3の思考過程を1フレームずつ短い日本語で記載する(この項目を必ず frames より先に埋めること)
-- 指定された名前に一致する列が画面内に見つからない場合は player_matched を false にし、frames は空配列、confidence_notes に「該当する名前が見つかりませんでした」等を記載
-- 名前の指定がない場合は player_matched を true とし、画面内の(唯一の、または最初の)スコアを読み取る
-- 数字がかすれている・反射で見えにくいなど読み取りに自信がない箇所は confidence_notes に短く日本語で記載(なければ空文字)
+- 指定された名前に一致する列が画面内に見つからない場合は player_matched を false にし、games は空配列、confidence_notes に「該当する名前が見つかりませんでした」等を記載(この場合 confidence_notes はJSONの一番外側に置いてよい)
+- 名前の指定がない場合は player_matched を true とし、画面内の(唯一の、または最初の)プレイヤーのスコアを読み取る
+- 数字がかすれている・反射で見えにくいなど読み取りに自信がない箇所は、そのゲームの confidence_notes に短く日本語で記載(なければ空文字)
 - JSON以外は一切出力しない`;
 
   let response;
@@ -1398,7 +1408,7 @@ export default function StrikeLog() {
   const [pendingResult, setPendingResult] = useState(null);
   const [activeCell, setActiveCell] = useState(null); // { frameIdx, rollIdx } | null
   const [splitPending, setSplitPending] = useState(false);
-  const [gameDate, setGameDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [gameDate, setGameDate] = useState(() => toLocalISODate(new Date()));
   const [gameNumber, setGameNumber] = useState(1);
   const [gameNumberTouched, setGameNumberTouched] = useState(false);
   const [playerName, setPlayerName] = useState("");
@@ -1428,12 +1438,9 @@ export default function StrikeLog() {
   const [newBallLaneCondition, setNewBallLaneCondition] = useState(""); // "dry" | "medium" | "oily"
   const [profileSaved, setProfileSaved] = useState(false);
   const [shoeType, setShoeType] = useState("rental"); // "rental" | "own"
-  const [shoeSize, setShoeSize] = useState("");
   const [shoeTouched, setShoeTouched] = useState(false);
   const [selectedShoeId, setSelectedShoeId] = useState(null);
-  const [myShoes, setMyShoes] = useState([]); // [{ id, type, size, label }]
-  const [newShoeType, setNewShoeType] = useState("own"); // "own" | "rental"
-  const [newShoeSize, setNewShoeSize] = useState("");
+  const [myShoes, setMyShoes] = useState([]); // [{ id, type, label }]
   const [newShoeName, setNewShoeName] = useState("");
   const [periodMode, setPeriodMode] = useState("week"); // "day" | "week" | "month" | "custom"
   const [dayAnchor, setDayAnchor] = useState(() => toLocalISODate(new Date()));
@@ -1466,7 +1473,6 @@ export default function StrikeLog() {
   const [editBallThumbless2, setEditBallThumbless2] = useState(false);
   const [editSelectedBallId2, setEditSelectedBallId2] = useState(null);
   const [editShoeType, setEditShoeType] = useState("rental");
-  const [editShoeSize, setEditShoeSize] = useState("");
   const [editSelectedShoeId, setEditSelectedShoeId] = useState(null);
   const fileInputRef = useRef(null);
   const videoInputRef = useRef(null);
@@ -1541,7 +1547,6 @@ export default function StrikeLog() {
         if (res && res.value) {
           const cfg = JSON.parse(res.value);
           if (cfg.shoeType) setShoeType(cfg.shoeType);
-          if (cfg.shoeSize) setShoeSize(cfg.shoeSize);
         }
       } catch (e) {
         // no saved shoe config yet, that's fine
@@ -1574,7 +1579,6 @@ export default function StrikeLog() {
     const sameDayGames = games.filter((g) => g.date === gameDate);
     if (sameDayGames.length > 0 && sameDayGames[0].shoe) {
       setShoeType(sameDayGames[0].shoe.type || "rental");
-      setShoeSize(sameDayGames[0].shoe.size || "");
       setSelectedShoeId(sameDayGames[0].shoe.shoeRegistryId || null);
     }
   }, [gameDate, games, shoeTouched]);
@@ -1741,18 +1745,13 @@ export default function StrikeLog() {
   };
 
   const addMyShoe = () => {
-    if (!newShoeSize) return;
-    const typeLabel = newShoeType === "rental" ? "レンタルシューズ" : "マイシューズ";
-    const autoLabel = `${typeLabel} ${newShoeSize}cm`;
+    if (!newShoeName.trim()) return;
     const shoe = {
       id: uid(),
-      type: newShoeType,
-      size: newShoeSize,
-      label: newShoeName.trim() || autoLabel,
+      type: "own",
+      label: newShoeName.trim(),
     };
     persistMyShoes([...myShoes, shoe]);
-    setNewShoeType("own");
-    setNewShoeSize("");
     setNewShoeName("");
   };
 
@@ -1804,24 +1803,35 @@ export default function StrikeLog() {
       if (result.player_matched === false) {
         setPendingResult(result);
       } else {
-        const framesWithSplitRolls = (result.frames || []).map((f) => {
-          const splitRolls = [];
-          if (typeof f.split_roll_index === "number") splitRolls[f.split_roll_index] = true;
-          return { ...f, splitRolls };
+        const rawGames = Array.isArray(result.games) ? result.games : [];
+        const normalizedGames = rawGames.map((game) => {
+          const framesWithSplitRolls = (game.frames || []).map((f) => {
+            const splitRolls = [];
+            if (typeof f.split_roll_index === "number") splitRolls[f.split_roll_index] = true;
+            return { ...f, splitRolls };
+          });
+          const norm = normalizeGame(framesWithSplitRolls);
+          const ocrTotal = Number(game.total_score);
+          const hasOcrTotal = Number.isFinite(ocrTotal);
+          const mismatch =
+            norm.total !== null && hasOcrTotal && norm.total !== ocrTotal
+              ? { computed: norm.total, ocrRead: ocrTotal }
+              : null;
+          return {
+            gameLabel: game.game_label || null,
+            frames: norm.frames,
+            total_score: norm.total !== null ? norm.total : hasOcrTotal ? ocrTotal : null,
+            ocrTotal: hasOcrTotal ? ocrTotal : null,
+            totalMismatch: mismatch,
+            confidence_notes: game.confidence_notes || "",
+            frame_by_frame_reading: game.frame_by_frame_reading || [],
+          };
         });
-        const norm = normalizeGame(framesWithSplitRolls);
-        const ocrTotal = Number(result.total_score);
-        const hasOcrTotal = Number.isFinite(ocrTotal);
-        const mismatch =
-          norm.total !== null && hasOcrTotal && norm.total !== ocrTotal
-            ? { computed: norm.total, ocrRead: ocrTotal }
-            : null;
         setPendingResult({
-          ...result,
-          frames: norm.frames,
-          total_score: norm.total !== null ? norm.total : hasOcrTotal ? ocrTotal : null,
-          ocrTotal: hasOcrTotal ? ocrTotal : null,
-          totalMismatch: mismatch,
+          player_matched: result.player_matched,
+          matched_name_on_screen: result.matched_name_on_screen,
+          other_players_detected: result.other_players_detected,
+          games: normalizedGames,
         });
       }
     } catch (e) {
@@ -1832,7 +1842,7 @@ export default function StrikeLog() {
   };
 
   const saveGame = async () => {
-    if (!pendingResult) return;
+    if (!pendingResult || !pendingResult.games?.length) return;
     const selectedBall = myBalls.find((b) => b.id === selectedBallId);
     const ball = {
       type: ballType,
@@ -1855,28 +1865,32 @@ export default function StrikeLog() {
       shoeType === "own"
         ? {
             type: "own",
-            size: selectedShoe ? selectedShoe.size : null,
             label: selectedShoe ? selectedShoe.label : null,
             shoeRegistryId: selectedShoeId || null,
           }
-        : { type: "rental", size: shoeSize || null, label: null, shoeRegistryId: null };
-    const newGame = {
+        : { type: "rental", label: null, shoeRegistryId: null };
+
+    // All games detected in the photo share the same ball/shoe/date, and get
+    // sequential game numbers starting from the chosen "何ゲーム目" value —
+    // matching how one photo of a multi-game screen represents one session.
+    const startingGameNumber = Number(gameNumber) || 1;
+    const newGames = pendingResult.games.map((g, idx) => ({
       id: uid(),
       date: gameDate,
-      gameNumber: Number(gameNumber) || 1,
-      frames: pendingResult.frames || [],
-      total: pendingResult.total_score ?? 0,
+      gameNumber: startingGameNumber + idx,
+      frames: g.frames || [],
+      total: g.total_score ?? 0,
       ball,
       ball2,
       shoe,
-      createdAt: Date.now(),
-    };
-    const next = [...games, newGame].sort(
+      createdAt: Date.now() + idx,
+    }));
+    const next = [...games, ...newGames].sort(
       (a, b) => a.date.localeCompare(b.date) || (a.gameNumber || 1) - (b.gameNumber || 1)
     );
     await persistGames(next);
     await saveBallConfig({ ballType, ballWeight, ballThumbless });
-    await saveShoeConfig({ shoeType, shoeSize });
+    await saveShoeConfig({ shoeType });
     setShoeTouched(false);
     setUseSecondBall(false);
     setBallType2("house");
@@ -1892,58 +1906,62 @@ export default function StrikeLog() {
     setTab("history");
   };
 
-  // Editing a roll re-runs official scoring across the whole game, since a
+  // Editing a roll re-runs official scoring across that game, since a
   // single strike/spare change can shift every later cumulative score —
   // exactly like fixing a mistake on a paper scoresheet. isSplit marks that
   // specific roll's pin count as a circled split (any roll can be a split,
   // not just the frame's opening ball — e.g. a 10th-frame bonus ball).
-  const updateRollValue = (frameIdx, rollIdx, value, isSplit) => {
+  const updateRollValue = (gameIdx, frameIdx, rollIdx, value, isSplit) => {
     setPendingResult((prev) => {
-      const rawFrames = prev.frames.map((f, i) => {
-        if (i !== frameIdx) return f;
-        const nextSplitRolls = [...(f.splitRolls || [])];
-        if (isSplit !== undefined) nextSplitRolls[rollIdx] = isSplit;
+      const games = prev.games.map((game, gi) => {
+        if (gi !== gameIdx) return game;
+        const rawFrames = game.frames.map((f, i) => {
+          if (i !== frameIdx) return f;
+          const nextSplitRolls = [...(f.splitRolls || [])];
+          if (isSplit !== undefined) nextSplitRolls[rollIdx] = isSplit;
+          return {
+            ...f,
+            rolls: f.rolls.map((r, j) => (j === rollIdx ? value : r)),
+            splitRolls: nextSplitRolls,
+          };
+        });
+        const norm = normalizeGame(rawFrames);
+        const mismatch =
+          norm.total !== null && game.ocrTotal !== null && norm.total !== game.ocrTotal
+            ? { computed: norm.total, ocrRead: game.ocrTotal }
+            : null;
         return {
-          ...f,
-          rolls: f.rolls.map((r, j) => (j === rollIdx ? value : r)),
-          splitRolls: nextSplitRolls,
+          ...game,
+          frames: norm.frames,
+          total_score: norm.total !== null ? norm.total : game.total_score,
+          totalMismatch: mismatch,
         };
       });
-      const norm = normalizeGame(rawFrames);
-      const mismatch =
-        norm.total !== null && prev.ocrTotal !== null && norm.total !== prev.ocrTotal
-          ? { computed: norm.total, ocrRead: prev.ocrTotal }
-          : null;
-      return {
-        ...prev,
-        frames: norm.frames,
-        total_score: norm.total !== null ? norm.total : prev.total_score,
-        totalMismatch: mismatch,
-      };
+      return { ...prev, games };
     });
   };
 
   // Opens the picker for a given cell, pre-loading the split toggle to match
   // whatever that specific roll's current state already is.
-  const handleCellTap = (frameIdx, rollIdx) => {
-    setActiveCell({ frameIdx, rollIdx });
-    setSplitPending(!!pendingResult?.frames?.[frameIdx]?.splitRolls?.[rollIdx]);
+  const handleCellTap = (gameIdx, frameIdx, rollIdx) => {
+    setActiveCell({ gameIdx, frameIdx, rollIdx });
+    setSplitPending(!!pendingResult?.games?.[gameIdx]?.frames?.[frameIdx]?.splitRolls?.[rollIdx]);
   };
 
   const handlePickerSelect = (value) => {
     if (!activeCell) return;
-    const { frameIdx, rollIdx } = activeCell;
+    const { gameIdx, frameIdx, rollIdx } = activeCell;
     // A strike can't also be a split (a strike leaves no pins standing), so
     // the split toggle only applies to non-strike selections.
     const isSplit = value !== "X" && splitPending;
-    updateRollValue(frameIdx, rollIdx, value, isSplit);
+    updateRollValue(gameIdx, frameIdx, rollIdx, value, isSplit);
     setActiveCell(null);
     setSplitPending(false);
   };
 
   const handlePickerClear = () => {
     if (!activeCell) return;
-    updateRollValue(activeCell.frameIdx, activeCell.rollIdx, "", false);
+    updateRollValue(activeCell.gameIdx, activeCell.frameIdx, activeCell.rollIdx, "", false);
   };
 
   const closePicker = () => {
@@ -1970,7 +1988,6 @@ export default function StrikeLog() {
     setEditBallThumbless2(!!g.ball2?.thumbless);
     setEditSelectedBallId2(g.ball2?.label ? myBalls.find((b) => b.label === g.ball2.label)?.id || null : null);
     setEditShoeType(g.shoe?.type || "rental");
-    setEditShoeSize(g.shoe?.size || "");
     setEditSelectedShoeId(g.shoe?.shoeRegistryId || null);
   };
 
@@ -2045,11 +2062,10 @@ export default function StrikeLog() {
       editShoeType === "own"
         ? {
             type: "own",
-            size: selectedShoe ? selectedShoe.size : null,
             label: selectedShoe ? selectedShoe.label : null,
             shoeRegistryId: editSelectedShoeId || null,
           }
-        : { type: "rental", size: editShoeSize || null, label: null, shoeRegistryId: null };
+        : { type: "rental", label: null, shoeRegistryId: null };
 
     const next = games
       .map((g) =>
@@ -2378,57 +2394,74 @@ export default function StrikeLog() {
               <div className="space-y-3">
                 <div style={{ color: COLORS.oak, fontSize: 11 }}>
                   マスをタップすると、数字やストライク・スペア・ガーター・スプリットを選んで修正できます
+                  {pendingResult.games?.length > 1 && `(この写真から${pendingResult.games.length}ゲーム分を検出しました)`}
                 </div>
-                <div className="rounded-xl p-3 border" style={{ borderColor: COLORS.oak, background: "white" }}>
-                  <div className="flex items-center justify-between mb-2 text-xs" style={{ color: COLORS.oak }}>
-                    <span className="flex items-center gap-2">
-                      <Pencil size={14} />
-                      読み取り結果(マスをタップして修正できます)
-                    </span>
-                    {pendingResult.matched_name_on_screen && (
-                      <span style={{ color: COLORS.gold, fontWeight: 700 }}>
-                        {pendingResult.matched_name_on_screen} さんの列
+                {pendingResult.other_players_detected?.length > 0 && (
+                  <div style={{ color: COLORS.oak, fontSize: 11 }}>
+                    他に検出された参加者: {pendingResult.other_players_detected.join(" / ")}(記録対象外)
+                  </div>
+                )}
+
+                {(pendingResult.games || []).map((game, gameIdx) => (
+                  <div key={gameIdx} className="rounded-xl p-3 border" style={{ borderColor: COLORS.oak, background: "white" }}>
+                    <div className="flex items-center justify-between mb-2 text-xs" style={{ color: COLORS.oak }}>
+                      <span className="flex items-center gap-2">
+                        <Pencil size={14} />
+                        {game.gameLabel
+                          ? game.gameLabel
+                          : pendingResult.games.length > 1
+                          ? `${gameIdx + 1}ゲーム目`
+                          : "読み取り結果"}
+                        (マスをタップして修正できます)
                       </span>
+                      {gameIdx === 0 && pendingResult.matched_name_on_screen && (
+                        <span style={{ color: COLORS.gold, fontWeight: 700 }}>
+                          {pendingResult.matched_name_on_screen} さんの列
+                        </span>
+                      )}
+                    </div>
+                    <ScoreSheet
+                      frames={game.frames}
+                      editable
+                      activeCell={activeCell?.gameIdx === gameIdx ? activeCell : null}
+                      onCellTap={(frameIdx, rollIdx) => handleCellTap(gameIdx, frameIdx, rollIdx)}
+                    />
+                    <div className="mt-2 flex items-center justify-between">
+                      <span className="text-xs" style={{ color: COLORS.oak }}>このゲームの合計</span>
+                      <span
+                        style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 18, color: COLORS.strike }}
+                      >
+                        {game.total_score ?? "-"}
+                      </span>
+                    </div>
+                    {game.totalMismatch && (
+                      <div
+                        className="mt-2 rounded p-2 text-xs"
+                        style={{ background: "#FBEAE5", color: COLORS.strike, fontWeight: 700 }}
+                      >
+                        ⚠ 投球結果からの計算値({game.totalMismatch.computed})と、画面のTOTAL表示から読み取った値(
+                        {game.totalMismatch.ocrRead})が一致しません。どこかのフレームの読み取りがズレている可能性があります。上のマスを写真と見比べて修正してください。
+                      </div>
+                    )}
+                    {game.confidence_notes && (
+                      <div className="mt-2 text-xs" style={{ color: COLORS.gold }}>
+                        ⚠ {game.confidence_notes}
+                      </div>
+                    )}
+                    {game.frame_by_frame_reading?.length > 0 && (
+                      <details className="mt-2">
+                        <summary className="cursor-pointer" style={{ color: COLORS.oak, fontSize: 11 }}>
+                          フレームごとの読み取り根拠を見る(写真と見比べて確認できます)
+                        </summary>
+                        <ul className="mt-1 space-y-0.5" style={{ color: COLORS.ink, fontSize: 11 }}>
+                          {game.frame_by_frame_reading.map((line, i) => (
+                            <li key={i}>{line}</li>
+                          ))}
+                        </ul>
+                      </details>
                     )}
                   </div>
-                  <ScoreSheet
-                    frames={pendingResult.frames}
-                    editable
-                    activeCell={activeCell}
-                    onCellTap={handleCellTap}
-                  />
-                  {pendingResult.totalMismatch && (
-                    <div
-                      className="mt-2 rounded p-2 text-xs"
-                      style={{ background: "#FBEAE5", color: COLORS.strike, fontWeight: 700 }}
-                    >
-                      ⚠ 投球結果からの計算値({pendingResult.totalMismatch.computed})と、画面のTOTAL表示から読み取った値(
-                      {pendingResult.totalMismatch.ocrRead})が一致しません。どこかのフレームの読み取りがズレている可能性があります。上のマスを写真と見比べて修正してください。
-                    </div>
-                  )}
-                  {pendingResult.other_players_detected?.length > 0 && (
-                    <div className="mt-2" style={{ color: COLORS.oak, fontSize: 11 }}>
-                      他に検出された参加者: {pendingResult.other_players_detected.join(" / ")}(記録対象外)
-                    </div>
-                  )}
-                  {pendingResult.confidence_notes && (
-                    <div className="mt-2 text-xs" style={{ color: COLORS.gold }}>
-                      ⚠ {pendingResult.confidence_notes}
-                    </div>
-                  )}
-                  {pendingResult.frame_by_frame_reading?.length > 0 && (
-                    <details className="mt-2">
-                      <summary className="cursor-pointer" style={{ color: COLORS.oak, fontSize: 11 }}>
-                        フレームごとの読み取り根拠を見る(写真と見比べて確認できます)
-                      </summary>
-                      <ul className="mt-1 space-y-0.5" style={{ color: COLORS.ink, fontSize: 11 }}>
-                        {pendingResult.frame_by_frame_reading.map((line, i) => (
-                          <li key={i}>{line}</li>
-                        ))}
-                      </ul>
-                    </details>
-                  )}
-                </div>
+                ))}
 
                 {activeCell && (
                   <RollPicker
@@ -2448,15 +2481,6 @@ export default function StrikeLog() {
                 </div>
 
                 <div className="rounded-xl p-3 border flex items-center justify-between" style={{ borderColor: COLORS.oak, background: "white" }}>
-                  <span className="text-sm" style={{ color: COLORS.ink }}>合計スコア(自動計算)</span>
-                  <span
-                    style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 20, color: COLORS.strike }}
-                  >
-                    {pendingResult.total_score ?? "-"}
-                  </span>
-                </div>
-
-                <div className="rounded-xl p-3 border flex items-center justify-between" style={{ borderColor: COLORS.oak, background: "white" }}>
                   <span className="text-sm flex items-center gap-2" style={{ color: COLORS.ink }}>
                     <Calendar size={16} /> プレー日
                   </span>
@@ -2469,12 +2493,13 @@ export default function StrikeLog() {
                   />
                 </div>
 
-                <div className="rounded-xl p-3 border flex items-center justify-between" style={{ borderColor: COLORS.oak, background: "white" }}>
-                  <span className="text-sm flex items-center gap-2" style={{ color: COLORS.ink }}>
-                    <Hash size={16} /> 何ゲーム目
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <button
+                <div className="rounded-xl p-3 border" style={{ borderColor: COLORS.oak, background: "white" }}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm flex items-center gap-2" style={{ color: COLORS.ink }}>
+                      <Hash size={16} /> {pendingResult.games?.length > 1 ? "何ゲーム目から" : "何ゲーム目"}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
                       type="button"
                       onClick={() => {
                         setGameNumberTouched(true);
@@ -2508,6 +2533,12 @@ export default function StrikeLog() {
                       +
                     </button>
                   </div>
+                  </div>
+                  {pendingResult.games?.length > 1 && (
+                    <div className="mt-1 text-xs" style={{ color: COLORS.oak }}>
+                      {pendingResult.games.length}ゲーム分を、{gameNumber}ゲーム目から連番で保存します
+                    </div>
+                  )}
                 </div>
 
                 <div className="rounded-xl p-3 border space-y-2" style={{ borderColor: COLORS.oak, background: "white" }}>
@@ -2666,22 +2697,7 @@ export default function StrikeLog() {
                     ))}
                   </div>
 
-                  {shoeType === "rental" ? (
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={shoeSize}
-                        onChange={(e) => {
-                          setShoeSize(e.target.value);
-                          setShoeTouched(true);
-                        }}
-                        placeholder="サイズ(例: 27.0)"
-                        className="w-24 px-2 py-1 rounded border text-sm"
-                        style={{ borderColor: COLORS.oak, color: COLORS.ink }}
-                      />
-                      <span className="text-xs" style={{ color: COLORS.oak }}>cm</span>
-                    </div>
-                  ) : myShoes.length === 0 ? (
+                  {shoeType === "rental" ? null : myShoes.length === 0 ? (
                     <div className="text-xs" style={{ color: COLORS.oak }}>
                       登録済みのマイシューズがありません。「プロフィール」タブで登録してください
                     </div>
@@ -2700,7 +2716,7 @@ export default function StrikeLog() {
                         .filter((s) => s.type === "own")
                         .map((s) => (
                           <option key={s.id} value={s.id}>
-                            {s.label}({s.size}cm)
+                            {s.label}
                           </option>
                         ))}
                     </select>
@@ -2933,19 +2949,7 @@ export default function StrikeLog() {
                         </button>
                       ))}
                     </div>
-                    {editShoeType === "rental" ? (
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          value={editShoeSize}
-                          onChange={(e) => setEditShoeSize(e.target.value)}
-                          placeholder="サイズ(例: 27.0)"
-                          className="w-24 px-2 py-1 rounded border text-sm"
-                          style={{ borderColor: COLORS.oak, color: COLORS.ink }}
-                        />
-                        <span className="text-xs" style={{ color: COLORS.oak }}>cm</span>
-                      </div>
-                    ) : (
+                    {editShoeType === "rental" ? null : (
                       <select
                         value={editSelectedShoeId || ""}
                         onChange={(e) => setEditSelectedShoeId(e.target.value || null)}
@@ -2957,7 +2961,7 @@ export default function StrikeLog() {
                           .filter((s) => s.type === "own")
                           .map((s) => (
                             <option key={s.id} value={s.id}>
-                              {s.label}({s.size}cm)
+                              {s.label}
                             </option>
                           ))}
                       </select>
@@ -3030,11 +3034,10 @@ export default function StrikeLog() {
                     <span style={{ color: COLORS.gold }}>(2つ目)</span>
                   </div>
                 )}
-                {g.shoe && (g.shoe.size || g.shoe.type) && (
+                {g.shoe && g.shoe.type && (
                   <div className="mb-2 flex items-center gap-1" style={{ color: COLORS.oak, fontSize: 11 }}>
                     <CircleDot size={11} />
                     {g.shoe.label ? g.shoe.label : g.shoe.type === "own" ? "マイシューズ" : "レンタル"}
-                    {g.shoe.size ? ` ${g.shoe.size}cm` : ""}
                   </div>
                 )}
                 <ScoreSheet frames={g.frames} />
@@ -3706,7 +3709,7 @@ export default function StrikeLog() {
               </button>
             </div>
 
-            <div className="text-sm" style={{ color: COLORS.oak }}>登録済みのシューズ</div>
+            <div className="text-sm" style={{ color: COLORS.oak }}>登録済みのマイシューズ</div>
 
             <div className="rounded-xl border bg-white overflow-hidden" style={{ borderColor: COLORS.oak }}>
               {myShoes.length === 0 ? (
@@ -3720,16 +3723,7 @@ export default function StrikeLog() {
                     className="flex items-center justify-between px-3 py-2"
                     style={{ borderTop: i === 0 ? "none" : `1px solid #EFE4CC` }}
                   >
-                    <div>
-                      <div className="text-sm" style={{ color: COLORS.ink, fontWeight: 700 }}>
-                        {s.label}
-                        <span style={{ color: COLORS.oak, fontWeight: 400, fontSize: 11 }}>
-                          {" "}
-                          ({s.type === "rental" ? "レンタル" : "マイシューズ"})
-                        </span>
-                      </div>
-                      <div className="text-xs" style={{ color: COLORS.oak }}>{s.size}cm</div>
-                    </div>
+                    <div className="text-sm" style={{ color: COLORS.ink, fontWeight: 700 }}>{s.label}</div>
                     <button onClick={() => deleteMyShoe(s.id)} aria-label="削除">
                       <Trash2 size={16} style={{ color: COLORS.oak }} />
                     </button>
@@ -3739,29 +3733,7 @@ export default function StrikeLog() {
             </div>
 
             <div className="rounded-xl p-3 border bg-white space-y-2" style={{ borderColor: COLORS.oak }}>
-              <div className="text-xs" style={{ color: COLORS.oak }}>新しいシューズを登録</div>
-
-              <select
-                value={newShoeType}
-                onChange={(e) => setNewShoeType(e.target.value)}
-                className="w-full px-3 py-2 rounded border text-sm"
-                style={{ borderColor: COLORS.oak, color: COLORS.ink }}
-              >
-                <option value="own">マイシューズ</option>
-                <option value="rental">レンタルシューズ</option>
-              </select>
-
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  value={newShoeSize}
-                  onChange={(e) => setNewShoeSize(e.target.value)}
-                  placeholder="サイズ(例: 27.0)"
-                  className="w-24 px-2 py-1 rounded border text-sm"
-                  style={{ borderColor: COLORS.oak, color: COLORS.ink }}
-                />
-                <span className="text-xs" style={{ color: COLORS.oak }}>cm</span>
-              </div>
+              <div className="text-xs" style={{ color: COLORS.oak }}>新しいマイシューズを登録</div>
 
               <div>
                 <div className="text-xs mb-1" style={{ color: COLORS.oak }}>登録名</div>
@@ -3769,7 +3741,7 @@ export default function StrikeLog() {
                   type="text"
                   value={newShoeName}
                   onChange={(e) => setNewShoeName(e.target.value)}
-                  placeholder="例: いつものシューズ(未入力なら自動で名付けます)"
+                  placeholder="例: いつものシューズ"
                   className="w-full px-3 py-2 rounded border text-sm"
                   style={{ borderColor: COLORS.oak, color: COLORS.ink }}
                 />
@@ -3778,9 +3750,9 @@ export default function StrikeLog() {
               <button
                 type="button"
                 onClick={addMyShoe}
-                disabled={!newShoeSize}
+                disabled={!newShoeName.trim()}
                 className="w-full rounded-lg py-2 text-sm"
-                style={{ background: COLORS.ink, color: COLORS.cream, fontWeight: 700, opacity: newShoeSize ? 1 : 0.5 }}
+                style={{ background: COLORS.ink, color: COLORS.cream, fontWeight: 700, opacity: newShoeName.trim() ? 1 : 0.5 }}
               >
                 追加する
               </button>
