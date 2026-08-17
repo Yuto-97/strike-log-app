@@ -340,7 +340,13 @@ function extractJson(text) {
   const start = cleaned.indexOf("{");
   const end = cleaned.lastIndexOf("}");
   if (start === -1 || end === -1) throw new Error("解析結果の形式が不正です");
-  return JSON.parse(cleaned.slice(start, end + 1));
+  try {
+    return JSON.parse(cleaned.slice(start, end + 1));
+  } catch (e) {
+    throw new Error(
+      "解析結果を読み取れませんでした。写真に写っているゲーム数が多いと起きやすいので、ゲーム数を分けて撮影するか、もう一度お試しください。"
+    );
+  }
 }
 
 // ---------- official scoring rules ----------
@@ -1355,12 +1361,134 @@ function AdminPanel() {
   );
 }
 
+// ---------- legal pages (terms / privacy / tokushoho) ----------
+// Publicly viewable (no login/approval needed) so people can read these
+// before subscribing. Fill in the bracketed placeholders with real info.
+function LegalPage({ page }) {
+  const pages = {
+    terms: {
+      title: "利用規約",
+      body: `この利用規約(以下「本規約」)は、[事業者名](以下「運営者」)が提供する「STRIKE LOG」(以下「本サービス」)の利用条件を定めるものです。利用者は、本サービスを利用することで本規約に同意したものとみなされます。
+
+第1条(サービス内容)
+本サービスは、ボウリングのスコア記録・統計表示・投球フォーム分析・その他関連機能を提供するアプリケーションです。
+
+第2条(利用登録)
+本サービスの利用には、運営者による利用登録の承認、または所定の月額料金の決済が必要です。
+
+第3条(禁止事項)
+利用者は以下の行為を行ってはなりません。
+・法令または公序良俗に違反する行為
+・本サービスの運営を妨害する行為
+・他の利用者に迷惑をかける行為
+・不正アクセスやシステムの脆弱性を悪用する行為
+
+第4条(料金・支払い)
+本サービスの利用料金は月額1,000円(税込)とし、クレジットカード決済による自動継続課金とします。料金は毎月同日に自動的に請求されます。
+
+第5条(解約)
+利用者はいつでも解約できます。解約後は次回請求日以降の課金が停止しますが、既にお支払いいただいた分の返金は行いません。
+
+第6条(免責事項)
+運営者は、本サービスの内容(AIによる解析結果を含む)の正確性・完全性について保証しません。本サービスの利用により生じた損害について、運営者は故意または重過失がある場合を除き責任を負いません。
+
+第7条(規約の変更)
+運営者は、必要に応じて本規約を変更できるものとし、変更後の規約は本サービス上に掲示した時点で効力を生じます。
+
+第8条(準拠法・管轄)
+本規約の解釈には日本法を準拠法とし、本サービスに関して紛争が生じた場合には、運営者の所在地を管轄する裁判所を専属的合意管轄とします。
+
+制定日:[制定日を記入]`,
+    },
+    privacy: {
+      title: "プライバシーポリシー",
+      body: `[事業者名](以下「運営者」)は、「STRIKE LOG」(以下「本サービス」)における利用者の情報の取り扱いについて、以下の通りプライバシーポリシーを定めます。
+
+1. 取得する情報
+・お名前(利用申請時にご入力いただく表示名)
+・スコアシートの写真、投球フォームの動画
+・記録されたスコア・統計データ
+・改善要望として送信された内容
+
+2. 利用目的
+・本サービスの提供(スコアの自動読み取り、フォーム分析など)のため
+・利用申請の承認・本人確認のため
+・お問い合わせ・改善要望への対応のため
+
+3. AIサービスの利用について
+スコア画像および投球動画の解析には、Anthropic社のClaude APIを利用しています。解析のためにアップロードされた画像・動画は、解析処理の目的でAnthropic社のサーバーに送信されます。
+
+4. 外部サービスの利用
+本サービスは、データの保存にGoogle Firebaseを、決済処理にStripeを利用しています。それぞれの外部サービスにおける情報の取り扱いは、各社のプライバシーポリシーに準じます。
+
+5. 第三者提供
+運営者は、法令に基づく場合を除き、利用者の同意なく個人情報を第三者に提供しません。
+
+6. 情報の管理
+運営者は、取得した情報の漏洩・滅失・毀損の防止のため、適切な安全管理措置を講じます。
+
+7. 開示・削除等の請求
+利用者は、運営者に対して、自己の個人情報の開示・訂正・削除を請求できます。ご希望の場合は下記お問い合わせ先までご連絡ください。
+
+8. お問い合わせ先
+[連絡先メールアドレスを記入]
+
+制定日:[制定日を記入]`,
+    },
+    tokushoho: {
+      title: "特定商取引法に基づく表記",
+      body: `販売事業者名:[本名を記入]
+
+運営統括責任者:[本名を記入]
+
+所在地:[住所を記入(請求があれば遅滞なく開示する場合は、その旨を記載のうえ省略可)]
+
+電話番号:[電話番号を記入]
+
+メールアドレス:[連絡先メールアドレスを記入]
+
+販売価格:月額1,000円(税込)
+
+商品代金以外の必要料金:インターネット接続に伴う通信費は利用者のご負担となります。
+
+支払方法:クレジットカード決済(Stripe)
+
+支払時期:お申し込み時に初回分を課金し、以後は毎月同日に自動課金されます。
+
+サービス提供時期:決済完了後、即時にご利用いただけます。
+
+返品・返金について:サービスの性質上、返金・返品には対応しておりません。解約はいつでも可能ですが、既にお支払いいただいた分の返金は行いません。
+
+解約方法:アプリ内プロフィール画面、または上記お問い合わせ先までご連絡ください。次回請求日以降の課金が停止します。`,
+    },
+  };
+
+  const content = pages[page];
+
+  return (
+    <div style={{ minHeight: "100vh", background: COLORS.cream, padding: 24 }}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Noto+Sans+JP:wght@400;500;700&display=swap');`}</style>
+      <div className="max-w-xl mx-auto" style={{ fontFamily: "'Noto Sans JP', sans-serif" }}>
+        <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 22, color: COLORS.ink, marginBottom: 4 }}>
+          STRIKE LOG
+        </div>
+        <h1 style={{ fontSize: 20, fontWeight: 700, color: COLORS.ink, marginBottom: 16 }}>{content.title}</h1>
+        <div style={{ whiteSpace: "pre-wrap", fontSize: 14, lineHeight: 1.8, color: COLORS.ink }}>{content.body}</div>
+      </div>
+    </div>
+  );
+}
+
 // ---------- main app ----------
 export default function StrikeLog() {
   const isAdminRoute =
     typeof window !== "undefined" &&
     (window.location.pathname.endsWith("/admin.html") ||
       new URLSearchParams(window.location.search).get("admin") === "1");
+  const legalRoute =
+    typeof window !== "undefined"
+      ? { "/terms": "terms", "/privacy": "privacy", "/tokushoho": "tokushoho" }[window.location.pathname]
+      : null;
   const [deviceId] = useState(() => {
     if (typeof window === "undefined") return "";
     let id = localStorage.getItem("device-id");
@@ -2249,6 +2377,7 @@ export default function StrikeLog() {
 
 
   if (isAdminRoute) return <AdminPanel />;
+  if (legalRoute) return <LegalPage page={legalRoute} />;
 
   if (accessStatus !== "approved") {
     return (
@@ -3782,6 +3911,12 @@ export default function StrikeLog() {
               >
                 {feedbackSubmitting ? "送信中..." : feedbackSent ? "送信しました!" : "送信する"}
               </button>
+            </div>
+
+            <div className="flex items-center justify-center gap-4 pt-2" style={{ fontSize: 11, color: COLORS.oak }}>
+              <a href="/terms" style={{ textDecoration: "underline" }}>利用規約</a>
+              <a href="/privacy" style={{ textDecoration: "underline" }}>プライバシーポリシー</a>
+              <a href="/tokushoho" style={{ textDecoration: "underline" }}>特定商取引法に基づく表記</a>
             </div>
           </div>
         )}
