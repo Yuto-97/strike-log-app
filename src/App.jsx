@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Camera, History, BarChart3, Loader2, Check, X, Pencil, Trophy, TrendingUp, Calendar, CircleDot, Hash, User, Target, Trash2, Video, Play, Pause, Square, ShieldCheck, CircleCheck, MessageCircle, Send } from "lucide-react";
+import { Camera, History, BarChart3, Loader2, Check, X, Pencil, Trophy, TrendingUp, Calendar, CircleDot, Hash, User, Target, Trash2, ShieldCheck, CircleCheck, MessageCircle, Send } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
 // ---------- palette ----------
@@ -46,105 +46,10 @@ function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 }
 
-// Displays a registrant's sequential number as a 7-digit ID (e.g. 3 -> "0000003").
-// Displays a registrant's sequential number using only digits 1-9 (a
-// "bijective base-9" numbering) so the ID never contains a 0 — avoids any
-// confusion between 0 and O, and keeps the ID visually distinct.
-// Displays a registrant's sequential number as a fixed 7-character ID using
-// only digits 1-9 (never 0). Each position is an independent base-9 digit
-// (shifted to 1-9), so every number from 1 up to 9^7 (~4.78 million) maps
-// to a unique, always-7-character ID with no collisions.
 // The registrant ID is now generated server-side as a random 7-character
 // string (digits 1-9 only, no 0) — this just handles the "not assigned yet" case.
 function formatRequestNumber(n) {
   return n ? String(n) : "-------";
-}
-
-// Grabs one frame partway through the video (as a JPEG base64 string) so it
-// can be sent to Claude for a quick "is this actually bowling?" check before
-// we accept the upload.
-function captureVideoFrame(file) {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
-    const video = document.createElement("video");
-    video.preload = "metadata";
-    video.muted = true;
-    video.playsInline = true;
-    video.src = url;
-
-    const cleanup = () => URL.revokeObjectURL(url);
-
-    video.onloadedmetadata = () => {
-      const duration = video.duration || 1;
-      video.currentTime = Math.min(duration * 0.3, duration - 0.05, 3);
-    };
-    video.onseeked = () => {
-      try {
-        const canvas = document.createElement("canvas");
-        canvas.width = video.videoWidth || 640;
-        canvas.height = video.videoHeight || 360;
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const dataUrl = canvas.toDataURL("image/jpeg", 0.8);
-        cleanup();
-        resolve(dataUrl.split(",")[1]);
-      } catch (e) {
-        cleanup();
-        reject(e);
-      }
-    };
-    video.onerror = () => {
-      cleanup();
-      reject(new Error("動画の読み込みに失敗しました"));
-    };
-  });
-}
-
-// Captures whatever frame is currently showing on a live <video> element
-// (e.g. paused mid-playback at slow speed) as a base64 JPEG, for sending
-// that exact moment off for form feedback.
-function captureFrameFromVideoElement(videoEl) {
-  if (!videoEl || !videoEl.videoWidth) return null;
-  const canvas = document.createElement("canvas");
-  canvas.width = videoEl.videoWidth;
-  canvas.height = videoEl.videoHeight;
-  const ctx = canvas.getContext("2d");
-  ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL("image/jpeg", 0.85).split(",")[1];
-}
-
-function seekVideo(videoEl, time) {
-  return new Promise((resolve) => {
-    const onSeeked = () => {
-      videoEl.removeEventListener("seeked", onSeeked);
-      resolve();
-    };
-    videoEl.addEventListener("seeked", onSeeked);
-    videoEl.currentTime = time;
-  });
-}
-
-// Steps through the whole clip and grabs several evenly-spaced frames
-// (approach through follow-through), so one throw can be reviewed as a
-// full sequence rather than a single frozen moment.
-async function captureMultipleFrames(videoEl, count = 6) {
-  const duration = videoEl.duration;
-  if (!duration || !isFinite(duration) || duration <= 0) {
-    throw new Error("動画の長さを取得できませんでした");
-  }
-  const wasPlaying = !videoEl.paused;
-  videoEl.pause();
-  const originalTime = videoEl.currentTime;
-  const frames = [];
-  for (let idx = 0; idx < count; idx++) {
-    const t = (duration * (idx + 0.5)) / count;
-    await seekVideo(videoEl, t);
-    const base64 = captureFrameFromVideoElement(videoEl);
-    if (base64) frames.push(base64);
-  }
-  await seekVideo(videoEl, originalTime);
-  if (wasPlaying) videoEl.play();
-  return frames;
 }
 
 // ---------- date helpers for period selection ----------
@@ -1368,10 +1273,10 @@ function LegalPage({ page }) {
   const pages = {
     terms: {
       title: "利用規約",
-      body: `この利用規約(以下「本規約」)は、[事業者名](以下「運営者」)が提供する「STRIKE LOG」(以下「本サービス」)の利用条件を定めるものです。利用者は、本サービスを利用することで本規約に同意したものとみなされます。
+      body: `この利用規約(以下「本規約」)は、下村優斗(以下「運営者」)が提供する「STRIKE LOG」(以下「本サービス」)の利用条件を定めるものです。利用者は、本サービスを利用することで本規約に同意したものとみなされます。
 
 第1条(サービス内容)
-本サービスは、ボウリングのスコア記録・統計表示・投球フォーム分析・その他関連機能を提供するアプリケーションです。
+本サービスは、ボウリングのスコア記録・統計表示・その他関連機能を提供するアプリケーションです。
 
 第2条(利用登録)
 本サービスの利用には、運営者による利用登録の承認、または所定の月額料金の決済が必要です。
@@ -1398,25 +1303,25 @@ function LegalPage({ page }) {
 第8条(準拠法・管轄)
 本規約の解釈には日本法を準拠法とし、本サービスに関して紛争が生じた場合には、運営者の所在地を管轄する裁判所を専属的合意管轄とします。
 
-制定日:[制定日を記入]`,
+制定日:2026年8月17日`,
     },
     privacy: {
       title: "プライバシーポリシー",
-      body: `[事業者名](以下「運営者」)は、「STRIKE LOG」(以下「本サービス」)における利用者の情報の取り扱いについて、以下の通りプライバシーポリシーを定めます。
+      body: `下村優斗(以下「運営者」)は、「STRIKE LOG」(以下「本サービス」)における利用者の情報の取り扱いについて、以下の通りプライバシーポリシーを定めます。
 
 1. 取得する情報
 ・お名前(利用申請時にご入力いただく表示名)
-・スコアシートの写真、投球フォームの動画
+・スコアシートの写真
 ・記録されたスコア・統計データ
 ・改善要望として送信された内容
 
 2. 利用目的
-・本サービスの提供(スコアの自動読み取り、フォーム分析など)のため
+・本サービスの提供(スコアの自動読み取りなど)のため
 ・利用申請の承認・本人確認のため
 ・お問い合わせ・改善要望への対応のため
 
 3. AIサービスの利用について
-スコア画像および投球動画の解析には、Anthropic社のClaude APIを利用しています。解析のためにアップロードされた画像・動画は、解析処理の目的でAnthropic社のサーバーに送信されます。
+スコア画像の解析には、Anthropic社のClaude APIを利用しています。解析のためにアップロードされた画像は、解析処理の目的でAnthropic社のサーバーに送信されます。
 
 4. 外部サービスの利用
 本サービスは、データの保存にGoogle Firebaseを、決済処理にStripeを利用しています。それぞれの外部サービスにおける情報の取り扱いは、各社のプライバシーポリシーに準じます。
@@ -1431,21 +1336,21 @@ function LegalPage({ page }) {
 利用者は、運営者に対して、自己の個人情報の開示・訂正・削除を請求できます。ご希望の場合は下記お問い合わせ先までご連絡ください。
 
 8. お問い合わせ先
-[連絡先メールアドレスを記入]
+sy.bsk.1209@docomo.ne.jp
 
-制定日:[制定日を記入]`,
+制定日:2026年8月17日`,
     },
     tokushoho: {
       title: "特定商取引法に基づく表記",
-      body: `販売事業者名:[本名を記入]
+      body: `販売事業者名:下村優斗
 
-運営統括責任者:[本名を記入]
+運営統括責任者:下村優斗
 
-所在地:[住所を記入(請求があれば遅滞なく開示する場合は、その旨を記載のうえ省略可)]
+所在地:ご請求をいただいた場合、メールにて遅滞なく開示いたします
 
-電話番号:[電話番号を記入]
+電話番号:ご請求をいただいた場合、メールにて遅滞なく開示いたします
 
-メールアドレス:[連絡先メールアドレスを記入]
+メールアドレス:sy.bsk.1209@docomo.ne.jp
 
 販売価格:月額1,000円(税込)
 
@@ -1603,16 +1508,6 @@ export default function StrikeLog() {
   const [editShoeType, setEditShoeType] = useState("rental");
   const [editSelectedShoeId, setEditSelectedShoeId] = useState(null);
   const fileInputRef = useRef(null);
-  const videoInputRef = useRef(null);
-  const videoRef = useRef(null);
-  const [formVideoUrl, setFormVideoUrl] = useState(null);
-  const [playbackRate, setPlaybackRate] = useState(1);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [videoChecking, setVideoChecking] = useState(false);
-  const [videoCheckError, setVideoCheckError] = useState("");
-  const [formAnalyzing, setFormAnalyzing] = useState(false);
-  const [formAnalysisResult, setFormAnalysisResult] = useState(null);
-  const [formAnalysisError, setFormAnalysisError] = useState("");
 
   useEffect(() => {
     (async () => {
@@ -2217,111 +2112,6 @@ export default function StrikeLog() {
     setEditSplitPending(false);
   };
 
-  // ---------- form analysis: video playback ----------
-  const handleVideoFile = async (file) => {
-    if (!file) return;
-    setVideoCheckError("");
-    setVideoChecking(true);
-    try {
-      const frameBase64 = await captureVideoFrame(file);
-      const verifyPrompt =
-        'この画像はボウリングに関連するもの(ボウリング場、レーン、ボウリングのボール、ピン、投球フォームなど)ですか？前置きなしで、"yes"か"no"のみで答えてください。';
-      const res = await fetch("/api/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ base64: frameBase64, mediaType: "image/jpeg", prompt: verifyPrompt }),
-      });
-      const data = await res.json();
-      const textBlock = (data.content || []).find((b) => b.type === "text");
-      const answer = (textBlock?.text || "").trim().toLowerCase();
-      if (!answer.includes("yes")) {
-        setVideoCheckError("ボウリングに関する動画のみアップロードできます");
-        setVideoChecking(false);
-        return;
-      }
-    } catch (e) {
-      setVideoCheckError("動画の確認中にエラーが発生しました。もう一度お試しください");
-      setVideoChecking(false);
-      return;
-    }
-
-    setVideoChecking(false);
-    if (formVideoUrl) URL.revokeObjectURL(formVideoUrl);
-    const url = URL.createObjectURL(file);
-    setFormVideoUrl(url);
-    setIsPlaying(false);
-    setPlaybackRate(1);
-  };
-
-  const togglePlay = () => {
-    const v = videoRef.current;
-    if (!v) return;
-    if (v.paused) {
-      v.play();
-      setIsPlaying(true);
-    } else {
-      v.pause();
-      setIsPlaying(false);
-    }
-  };
-
-  const stopVideo = () => {
-    const v = videoRef.current;
-    if (!v) return;
-    v.pause();
-    v.currentTime = 0;
-    setIsPlaying(false);
-  };
-
-  const changeRate = (rate) => {
-    setPlaybackRate(rate);
-    if (videoRef.current) videoRef.current.playbackRate = rate;
-  };
-
-  const clearVideo = () => {
-    if (formVideoUrl) URL.revokeObjectURL(formVideoUrl);
-    setFormVideoUrl(null);
-    setIsPlaying(false);
-    setPlaybackRate(1);
-    setFormAnalysisResult(null);
-    setFormAnalysisError("");
-  };
-
-  const analyzeWholeThrow = async () => {
-    const v = videoRef.current;
-    if (!v) return;
-    setFormAnalyzing(true);
-    setFormAnalysisError("");
-    setFormAnalysisResult(null);
-    try {
-      const frameCount = 6;
-      const frames = await captureMultipleFrames(v, frameCount);
-      if (frames.length === 0) throw new Error("動画からコマを取り出せませんでした");
-      const images = frames.map((base64) => ({ base64, mediaType: "image/jpeg" }));
-      const prompt = `これはボウリングの1投球を、アプローチからフォロースルーまで時系列順に${frames.length}コマに分けた画像です。
-
-この投球全体(フォーム、写っていればボールの軌道も含む)を見て、コメントしてください。
-
-注意点:
-- ボウリングの投げ方は人によって様々です(フックボール、ストレート、ローダウン、サムレスなど)。どれか一つの「正しいフォーム」を基準にするのではなく、その人自身の投げ方の特徴を踏まえたうえで、良い点・改善できる点を判断してください
-- 出力は「良い点」と「改善点」の2つのみ。それぞれ端的に(1〜2行程度)述べてください
-- 「あくまで見た目からのアドバイスです」「インストラクターに確認することをおすすめします」といった前置き・注意書き・締めの一文は一切書かないでください。良い点と改善点の本文だけを出力してください`;
-      const response = await fetch("/api/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ images, prompt }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data?.error || "解析に失敗しました");
-      const textBlock = (data.content || []).find((b) => b.type === "text");
-      setFormAnalysisResult(textBlock?.text?.trim() || "解析結果を取得できませんでした");
-    } catch (e) {
-      setFormAnalysisError(e.message || "解析中にエラーが発生しました");
-    } finally {
-      setFormAnalyzing(false);
-    }
-  };
-
   const deleteGame = async (id) => {
     const next = games.filter((g) => g.id !== id);
     await persistGames(next);
@@ -2402,9 +2192,9 @@ export default function StrikeLog() {
         <div className="flex items-center justify-between max-w-md mx-auto">
           <div>
             <div className="text-2xl tracking-wide" style={{ color: COLORS.cream, fontFamily: "'Oswald', sans-serif", fontWeight: 700 }}>
-              STRIKE LOG <span style={{ fontSize: 14, color: COLORS.oak }}>トライアル</span>
+              STRIKE LOG
             </div>
-            <div className="text-xs mt-0.5" style={{ color: COLORS.oak }}>スコア記録 &amp; フォーム分析</div>
+            <div className="text-xs mt-0.5" style={{ color: COLORS.oak }}>スコア記録 &amp; 統計</div>
           </div>
           <img
             src="/icons/icon-192.png"
@@ -3920,139 +3710,6 @@ export default function StrikeLog() {
             </div>
           </div>
         )}
-
-        {tab === "form" && (
-          <div className="space-y-4">
-            {!formVideoUrl && (
-              <button
-                onClick={() => videoInputRef.current?.click()}
-                disabled={videoChecking}
-                className="w-full flex flex-col items-center justify-center gap-3 rounded-xl py-14 border-2 border-dashed"
-                style={{ borderColor: COLORS.oak, background: "white", opacity: videoChecking ? 0.6 : 1 }}
-              >
-                {videoChecking ? (
-                  <Loader2 size={40} className="animate-spin" style={{ color: COLORS.strike }} />
-                ) : (
-                  <Video size={40} style={{ color: COLORS.strike }} />
-                )}
-                <div style={{ color: COLORS.ink, fontWeight: 700 }}>
-                  {videoChecking ? "動画を確認中..." : "投球フォームの動画を撮影 / アップロード"}
-                </div>
-                <div className="text-xs" style={{ color: COLORS.oak }}>スロー再生・一時停止で確認できます</div>
-              </button>
-            )}
-            {videoCheckError && (
-              <div className="text-sm rounded-lg p-3" style={{ background: "#FBEAE5", color: COLORS.strike }}>
-                {videoCheckError}
-              </div>
-            )}
-            <input
-              ref={videoInputRef}
-              type="file"
-              accept="video/*"
-              className="hidden"
-              onChange={(e) => handleVideoFile(e.target.files?.[0])}
-            />
-
-            {formVideoUrl && (
-              <>
-                <div className="rounded-xl overflow-hidden border" style={{ borderColor: COLORS.oak, background: "black" }}>
-                  <video
-                    ref={videoRef}
-                    src={formVideoUrl}
-                    playsInline
-                    controls
-                    className="w-full"
-                    style={{ maxHeight: 400 }}
-                    onPlay={() => setIsPlaying(true)}
-                    onPause={() => setIsPlaying(false)}
-                    onEnded={() => setIsPlaying(false)}
-                  />
-                </div>
-
-                <div className="rounded-xl p-3 border bg-white space-y-3" style={{ borderColor: COLORS.oak }}>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={togglePlay}
-                      className="flex-1 rounded-lg py-2 flex items-center justify-center gap-2"
-                      style={{ background: COLORS.ink, color: COLORS.cream, fontWeight: 700 }}
-                    >
-                      {isPlaying ? <Pause size={16} /> : <Play size={16} />}
-                      {isPlaying ? "一時停止" : "再生"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={stopVideo}
-                      className="flex-1 rounded-lg py-2 flex items-center justify-center gap-2"
-                      style={{ border: `1px solid ${COLORS.oak}`, color: COLORS.ink, fontWeight: 700 }}
-                    >
-                      <Square size={16} />
-                      ストップ
-                    </button>
-                  </div>
-
-                  <div>
-                    <div className="text-xs mb-1" style={{ color: COLORS.oak }}>再生速度</div>
-                    <div className="flex gap-1.5">
-                      {[1, 0.75, 0.5, 0.25, 0.1].map((rate) => (
-                        <button
-                          key={rate}
-                          type="button"
-                          onClick={() => changeRate(rate)}
-                          className="flex-1 rounded-lg py-2 text-xs"
-                          style={{
-                            background: playbackRate === rate ? COLORS.strike : "white",
-                            color: playbackRate === rate ? "white" : COLORS.ink,
-                            border: `1px solid ${COLORS.oak}`,
-                            fontWeight: 700,
-                          }}
-                        >
-                          {rate === 1 ? "通常" : `${rate}倍`}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="rounded-xl p-3 border bg-white space-y-2" style={{ borderColor: COLORS.oak }}>
-                  <div className="text-xs" style={{ color: COLORS.oak }}>
-                    AIが解析します
-                  </div>
-                  <button
-                    type="button"
-                    onClick={analyzeWholeThrow}
-                    disabled={formAnalyzing}
-                    className="w-full rounded-lg py-2 flex items-center justify-center gap-2 text-sm"
-                    style={{ background: COLORS.strike, color: "white", fontWeight: 700, opacity: formAnalyzing ? 0.6 : 1 }}
-                  >
-                    {formAnalyzing ? <Loader2 className="animate-spin" size={16} /> : null}
-                    {formAnalyzing ? "解析中..." : "この投球全体を解析する"}
-                  </button>
-                  {formAnalysisError && (
-                    <div className="text-xs rounded p-2" style={{ background: "#FBEAE5", color: COLORS.strike }}>
-                      {formAnalysisError}
-                    </div>
-                  )}
-                  {formAnalysisResult && (
-                    <div className="rounded-lg p-3" style={{ background: COLORS.cream, color: COLORS.ink, fontSize: 13, whiteSpace: "pre-wrap" }}>
-                      {formAnalysisResult}
-                    </div>
-                  )}
-                </div>
-
-                <button
-                  type="button"
-                  onClick={clearVideo}
-                  className="w-full rounded-lg py-2 text-sm"
-                  style={{ border: `1px solid ${COLORS.oak}`, color: COLORS.oak }}
-                >
-                  別の動画に変える
-                </button>
-              </>
-            )}
-          </div>
-        )}
       </main>
 
       {/* bottom nav */}
@@ -4065,7 +3722,6 @@ export default function StrikeLog() {
             { key: "scan", label: "スコア記録", icon: Camera },
             { key: "history", label: "履歴", icon: History },
             { key: "stats", label: "統計", icon: BarChart3 },
-            { key: "form", label: "フォーム分析", icon: Video },
             { key: "profile", label: "プロフィール", icon: User },
           ].map(({ key, label, icon: Icon }) => {
             const active = tab === key;
