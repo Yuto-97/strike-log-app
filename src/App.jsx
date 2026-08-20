@@ -623,19 +623,19 @@ function RollMark({ val, split }) {
   if (val === undefined || val === "") return null;
   let content;
   if (val === "X") {
-    // Strike: solid triangle filling the cell's corner, like the triangle/
-    // flag marks used on paper scoresheets and electronic boards.
+    // Strike: two triangles meeting point-to-point (bowtie shape), the
+    // classic strike icon seen on paper scoresheets and electronic boards.
     content = (
       <svg width="17" height="17" viewBox="0 0 17 17" style={{ display: "block" }}>
-        <polygon points="2,15 15,15 15,2" fill={COLORS.strike} />
+        <polygon points="2,2 2,15 8.5,8.5" fill={COLORS.ink} />
+        <polygon points="15,2 15,15 8.5,8.5" fill={COLORS.ink} />
       </svg>
     );
   } else if (val === "/") {
-    // Spare: a single diagonal stroke corner-to-corner, the classic paper
-    // scoresheet spare mark.
+    // Spare: a single solid triangle filling the cell's corner.
     content = (
       <svg width="17" height="17" viewBox="0 0 17 17" style={{ display: "block" }}>
-        <line x1="2" y1="15" x2="15" y2="2" stroke={COLORS.gold} strokeWidth="2.75" strokeLinecap="round" />
+        <polygon points="2,15 15,15 15,2" fill={COLORS.ink} />
       </svg>
     );
   } else {
