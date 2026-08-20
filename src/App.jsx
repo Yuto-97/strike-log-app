@@ -220,10 +220,9 @@ function preprocessImage(file) {
         try {
           // JPEG at high quality keeps text legible while producing a much
           // smaller payload than PNG — large PNG uploads have been failing
-          // partway through the request.
-          // Compressed as small as reasonably possible while the text stays
-          // legible, as a stopgap while investigating the mobile Safari issue.
-          outUrl = canvas.toDataURL("image/jpeg", 0.85);
+          // partway through the request. Quality raised to 0.95 (was 0.85)
+          // so small digits/marks on scoresheets stay crisp for the AI reader.
+          outUrl = canvas.toDataURL("image/jpeg", 0.95);
         } catch (e) {
           reject(new Error("画像の処理中にエラーが発生しました。別の写真でお試しください。"));
           return;
@@ -2311,34 +2310,17 @@ export default function StrikeLog() {
 
             {pendingResult && pendingResult.player_matched !== false && (
               <div className="space-y-3">
-                <div style={{ color: COLORS.oak, fontSize: 11 }}>
-                  マスをタップすると、数字やストライク・スペア・ガーター・スプリットを選んで修正できます
-                  {pendingResult.games?.length > 1 && `(この写真から${pendingResult.games.length}ゲーム分を検出しました)`}
+                <div style={{ color: COLORS.ink, fontSize: 16, fontWeight: 700 }}>
+                  マスをタップして、正しいスコアに修正できます。
                 </div>
-                {pendingResult.other_players_detected?.length > 0 && (
-                  <div style={{ color: COLORS.oak, fontSize: 11 }}>
-                    他に検出された参加者: {pendingResult.other_players_detected.join(" / ")}(記録対象外)
-                  </div>
-                )}
 
                 {(pendingResult.games || []).map((game, gameIdx) => (
                   <div key={gameIdx} className="rounded-xl p-3 border" style={{ borderColor: COLORS.oak, background: "white" }}>
-                    <div className="flex items-center justify-between mb-2 text-xs" style={{ color: COLORS.oak }}>
-                      <span className="flex items-center gap-2">
-                        <Pencil size={14} />
-                        {game.gameLabel
-                          ? game.gameLabel
-                          : pendingResult.games.length > 1
-                          ? `${gameIdx + 1}ゲーム目`
-                          : "読み取り結果"}
-                        (マスをタップして修正できます)
-                      </span>
-                      {gameIdx === 0 && pendingResult.matched_name_on_screen && (
-                        <span style={{ color: COLORS.gold, fontWeight: 700 }}>
-                          {pendingResult.matched_name_on_screen} さんの列
-                        </span>
-                      )}
-                    </div>
+                    {pendingResult.games.length > 1 && (
+                      <div className="mb-2 text-xs" style={{ color: COLORS.oak }}>
+                        {game.gameLabel || `${gameIdx + 1}ゲーム目`}
+                      </div>
+                    )}
                     <ScoreSheet
                       frames={game.frames}
                       editable
@@ -2358,26 +2340,8 @@ export default function StrikeLog() {
                         className="mt-2 rounded p-2 text-xs"
                         style={{ background: "#FBEAE5", color: COLORS.strike, fontWeight: 700 }}
                       >
-                        ⚠ 投球結果からの計算値({game.totalMismatch.computed})と、画面のTOTAL表示から読み取った値(
-                        {game.totalMismatch.ocrRead})が一致しません。どこかのフレームの読み取りがズレている可能性があります。上のマスを写真と見比べて修正してください。
+                        ⚠ 合計が写真のTOTAL表示と一致しません。マスを写真と見比べて修正してください。
                       </div>
-                    )}
-                    {game.confidence_notes && (
-                      <div className="mt-2 text-xs" style={{ color: COLORS.gold }}>
-                        ⚠ {game.confidence_notes}
-                      </div>
-                    )}
-                    {game.frame_by_frame_reading?.length > 0 && (
-                      <details className="mt-2">
-                        <summary className="cursor-pointer" style={{ color: COLORS.oak, fontSize: 11 }}>
-                          フレームごとの読み取り根拠を見る(写真と見比べて確認できます)
-                        </summary>
-                        <ul className="mt-1 space-y-0.5" style={{ color: COLORS.ink, fontSize: 11 }}>
-                          {game.frame_by_frame_reading.map((line, i) => (
-                            <li key={i}>{line}</li>
-                          ))}
-                        </ul>
-                      </details>
                     )}
                   </div>
                 ))}
