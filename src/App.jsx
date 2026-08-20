@@ -526,6 +526,7 @@ async function analyzeScoreImage(base64, mediaType, playerName) {
   "games": [
     {
       "game_label": "1ゲーム目のように画面上のラベル、なければ null",
+      "detected_date": "画面や紙に印字・記入されている日付があれば YYYY-MM-DD 形式に変換して。西暦2桁表記(例: 26/8/9)は20を補って西暦4桁にする。年が書かれておらず月日のみの場合は、その月日と今日の日付から最も自然な年を推測する。日付が一切見当たらない場合は null",
       "frame_by_frame_reading": ["1F: 7,スペア → 累計17", "2F: ストライク → 累計37", "..."],
       "frames": [
         {"rolls": ["7","/"], "score": 17, "split_roll_index": null},
@@ -1860,6 +1861,7 @@ export default function StrikeLog() {
               : null;
           return {
             gameLabel: game.game_label || null,
+            detectedDate: game.detected_date || null,
             frames: norm.frames,
             total_score: norm.total !== null ? norm.total : hasOcrTotal ? ocrTotal : null,
             ocrTotal: hasOcrTotal ? ocrTotal : null,
@@ -1868,6 +1870,10 @@ export default function StrikeLog() {
             frame_by_frame_reading: game.frame_by_frame_reading || [],
           };
         });
+        const firstDetectedDate = normalizedGames.find((g) => g.detectedDate)?.detectedDate;
+        if (firstDetectedDate && /^\d{4}-\d{2}-\d{2}$/.test(firstDetectedDate)) {
+          setGameDate(firstDetectedDate);
+        }
         setPendingResult({
           player_matched: result.player_matched,
           matched_name_on_screen: result.matched_name_on_screen,
@@ -2214,12 +2220,23 @@ export default function StrikeLog() {
             </div>
             <div className="text-xs mt-0.5" style={{ color: COLORS.oak }}>スコア記録 &amp; 統計</div>
           </div>
-          <img
-            src="/icons/icon-192.png"
-            alt="STRIKE LOG"
-            className="w-10 h-10 rounded-full"
-            style={{ objectFit: "cover" }}
-          />
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setChatOpen(true)}
+              className="rounded-full flex items-center justify-center"
+              style={{ width: 36, height: 36, background: COLORS.strike, color: "white" }}
+              aria-label="使い方について質問する"
+            >
+              <MessageCircle size={18} />
+            </button>
+            <img
+              src="/icons/icon-192.png"
+              alt="STRIKE LOG"
+              className="w-10 h-10 rounded-full"
+              style={{ objectFit: "cover" }}
+            />
+          </div>
         </div>
       </header>
 
@@ -3723,27 +3740,7 @@ export default function StrikeLog() {
         </div>
       </nav>
 
-      {/* floating help-chat button */}
-      {!chatOpen && (
-        <button
-          type="button"
-          onClick={() => setChatOpen(true)}
-          className="fixed rounded-full flex items-center justify-center shadow-lg"
-          style={{
-            bottom: 76,
-            right: 16,
-            width: 52,
-            height: 52,
-            background: COLORS.strike,
-            color: "white",
-            zIndex: 40,
-          }}
-          aria-label="使い方について質問する"
-        >
-          <MessageCircle size={24} />
-        </button>
-      )}
-
+      {/* help-chat button now lives in the header */}
       {chatOpen && (
         <div
           className="fixed inset-0 flex flex-col"
