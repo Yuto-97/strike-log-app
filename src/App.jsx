@@ -2214,29 +2214,29 @@ export default function StrikeLog() {
       {/* header */}
       <header className="px-5 pt-6 pb-4" style={{ background: COLORS.ink }}>
         <div className="flex items-center justify-between max-w-md mx-auto">
-          <div>
-            <div className="text-2xl tracking-wide" style={{ color: COLORS.cream, fontFamily: "'Oswald', sans-serif", fontWeight: 700 }}>
-              STRIKE LOG
-            </div>
-            <div className="text-xs mt-0.5" style={{ color: COLORS.oak }}>スコア記録 &amp; 統計</div>
-          </div>
           <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => setChatOpen(true)}
-              className="rounded-full flex items-center justify-center"
-              style={{ width: 36, height: 36, background: COLORS.strike, color: "white" }}
-              aria-label="使い方について質問する"
-            >
-              <MessageCircle size={18} />
-            </button>
             <img
               src="/icons/icon-192.png"
               alt="STRIKE LOG"
               className="w-10 h-10 rounded-full"
               style={{ objectFit: "cover" }}
             />
+            <div>
+              <div className="text-2xl tracking-wide" style={{ color: COLORS.cream, fontFamily: "'Oswald', sans-serif", fontWeight: 700 }}>
+                STRIKE LOG
+              </div>
+              <div className="text-xs mt-0.5" style={{ color: COLORS.oak }}>スコア記録 &amp; 統計</div>
+            </div>
           </div>
+          <button
+            type="button"
+            onClick={() => setChatOpen(true)}
+            className="rounded-full flex items-center justify-center"
+            style={{ width: 36, height: 36, background: COLORS.strike, color: "white" }}
+            aria-label="使い方について質問する"
+          >
+            <MessageCircle size={18} />
+          </button>
         </div>
       </header>
 
@@ -2268,9 +2268,6 @@ export default function StrikeLog() {
                 <Camera size={40} style={{ color: COLORS.strike }} />
                 <div style={{ color: COLORS.ink, fontWeight: 700 }}>スコア画面を撮影 / アップロード</div>
                 <div className="text-xs" style={{ color: COLORS.oak }}>電光掲示板や紙のスコアシートでOK</div>
-                <div className="text-xs text-center px-4" style={{ color: COLORS.gold }}>
-                  できるだけ正面から、明るく鮮明に撮ると解析の精度が上がります
-                </div>
               </button>
             )}
             <input
