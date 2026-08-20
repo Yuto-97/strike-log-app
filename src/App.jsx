@@ -621,7 +621,26 @@ function SplitWrap({ children }) {
 
 function RollMark({ val, split }) {
   if (val === undefined || val === "") return null;
-  const content = val === "0" ? "-" : val;
+  let content;
+  if (val === "X") {
+    // Strike: solid triangle filling the cell's corner, like the triangle/
+    // flag marks used on paper scoresheets and electronic boards.
+    content = (
+      <svg width="17" height="17" viewBox="0 0 17 17" style={{ display: "block" }}>
+        <polygon points="2,15 15,15 15,2" fill={COLORS.strike} />
+      </svg>
+    );
+  } else if (val === "/") {
+    // Spare: a single diagonal stroke corner-to-corner, the classic paper
+    // scoresheet spare mark.
+    content = (
+      <svg width="17" height="17" viewBox="0 0 17 17" style={{ display: "block" }}>
+        <line x1="2" y1="15" x2="15" y2="2" stroke={COLORS.gold} strokeWidth="2.75" strokeLinecap="round" />
+      </svg>
+    );
+  } else {
+    content = val === "0" ? "-" : val;
+  }
   return split ? <SplitWrap>{content}</SplitWrap> : content;
 }
 
