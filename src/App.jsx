@@ -1383,7 +1383,7 @@ sy.bsk.1209@docomo.ne.jp
 
 返品・返金について:サービスの性質上、返金・返品には対応しておりません。解約はいつでも可能ですが、既にお支払いいただいた分の返金は行いません。
 
-解約方法:アプリ内プロフィール画面、または上記お問い合わせ先までご連絡ください。次回請求日以降の課金が停止します。`,
+解約方法:アプリ内設定画面、または上記お問い合わせ先までご連絡ください。次回請求日以降の課金が停止します。`,
     },
   };
 
@@ -2245,7 +2245,7 @@ export default function StrikeLog() {
           <div className="space-y-4">
             <div className="rounded-xl p-3 border bg-white" style={{ borderColor: COLORS.oak }}>
               <label className="text-xs flex items-center justify-between mb-1" style={{ color: COLORS.oak }}>
-                <span>スコア画面に表示されている、自分の名前</span>
+                <span>スコア画面に表示されている自分の名前</span>
                 {nameSaved && <span style={{ color: COLORS.gold }}>保存しました</span>}
               </label>
               <input
@@ -2486,7 +2486,7 @@ export default function StrikeLog() {
 
                   {myBalls.filter((b) => (b.type || "own") === ballType).length === 0 ? (
                     <div className="text-xs" style={{ color: COLORS.oak }}>
-                      登録済みの{ballType === "house" ? "ハウスボール" : "マイボール"}がありません。「プロフィール」タブで登録してください
+                      登録済みの{ballType === "house" ? "ハウスボール" : "マイボール"}がありません。「設定」タブで登録してください
                     </div>
                   ) : (
                     <select
@@ -2615,7 +2615,7 @@ export default function StrikeLog() {
 
                   {shoeType === "rental" ? null : myShoes.length === 0 ? (
                     <div className="text-xs" style={{ color: COLORS.oak }}>
-                      登録済みのマイシューズがありません。「プロフィール」タブで登録してください
+                      登録済みのマイシューズがありません。「設定」タブで登録してください
                     </div>
                   ) : (
                     <select
@@ -3719,7 +3719,7 @@ export default function StrikeLog() {
             { key: "scan", label: "スコア記録", icon: Camera },
             { key: "history", label: "履歴", icon: History },
             { key: "stats", label: "統計", icon: BarChart3 },
-            { key: "profile", label: "プロフィール", icon: User },
+            { key: "profile", label: "設定", icon: User },
           ].map(({ key, label, icon: Icon }) => {
             const active = tab === key;
             return (

@@ -2,6 +2,7 @@
 // POST   /api/admin/requests { password, deviceId, status } -> approve/reject
 // DELETE /api/admin/requests { password, deviceId }          -> delete a request
 import { db } from "../_firebaseAdmin.js";
+import { generateUniqueId } from "../_idGenerator.js";
 
 function isAuthed(req) {
   const password = req.method === "GET" ? req.query.password : (req.body || {}).password;
@@ -17,7 +18,18 @@ export default async function handler(req, res) {
   try {
     if (req.method === "GET") {
       const snap = await db.collection("accessRequests").orderBy("requestedAt", "desc").get();
-      res.status(200).json({ items: snap.docs.map((d) => ({ id: d.id, ...d.data() })) });
+      const items = [];
+      for (const d of snap.docs) {
+        const data = d.data();
+        if (!data.requestNumber) {
+          // Backfill: older records created before ID numbers existed.
+          const requestNumber = await generateUniqueId();
+          await d.ref.set({ requestNumber }, { merge: true });
+          data.requestNumber = requestNumber;
+        }
+        items.push({ id: d.id, ...data });
+      }
+      res.status(200).json({ items });
       return;
     }
 
