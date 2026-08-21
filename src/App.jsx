@@ -3346,21 +3346,17 @@ export default function StrikeLog() {
 
         {tab === "profile" && (
           <div className="space-y-4">
-            {myRequestNumber && (
-              <div className="rounded-xl p-3 border bg-white text-center" style={{ borderColor: COLORS.oak }}>
-                <div className="text-xs" style={{ color: COLORS.oak }}>あなたの登録番号</div>
-                <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 20, color: COLORS.gold }}>
-                  {formatRequestNumber(myRequestNumber)}
-                </div>
-              </div>
-            )}
-
             <div className="flex items-center justify-between">
               <div className="text-sm" style={{ color: COLORS.oak }}>基本情報</div>
               {profileSaved && <span style={{ color: COLORS.gold, fontSize: 11 }}>保存しました</span>}
             </div>
 
             <div className="rounded-xl p-3 border bg-white space-y-3" style={{ borderColor: COLORS.oak }}>
+              {myRequestNumber && (
+                <div style={{ color: COLORS.ink, fontSize: 13, fontWeight: 700 }}>
+                  ID:{formatRequestNumber(myRequestNumber)}
+                </div>
+              )}
               <div>
                 <div className="text-xs mb-1" style={{ color: COLORS.oak }}>ニックネーム</div>
                 <input
