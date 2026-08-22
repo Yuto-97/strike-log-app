@@ -15,7 +15,8 @@ const COLORS = {
   cream: "#F5F1E4",
   strike: "#FFFFFF",
   gold: "#E0A800",
-  navyBg: "#1D2540",
+  navyBg: "#232C4D",
+  navyLight: "#374873",
   danger: "#C0392B",
 };
 
@@ -858,7 +859,7 @@ function GateScreen({ mode, name, setName, onSubmit, requestNumber }) {
 
   return (
     <div
-      style={{ minHeight: "100vh", background: COLORS.navyBg, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}
+      style={{ minHeight: "100vh", background: `linear-gradient(160deg, ${COLORS.navyLight} 0%, ${COLORS.navyBg} 55%, #161D38 100%)`, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}
     >
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Noto+Sans+JP:wght@400;500;700&display=swap');`}</style>
       <div style={{ maxWidth: 340, width: "100%", fontFamily: "'Noto Sans JP', sans-serif" }} className="text-center space-y-4">
@@ -987,7 +988,7 @@ function AdminPanel() {
 
   if (!authed) {
     return (
-      <div style={{ minHeight: "100vh", background: COLORS.navyBg, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <div style={{ minHeight: "100vh", background: `linear-gradient(160deg, ${COLORS.navyLight} 0%, ${COLORS.navyBg} 55%, #161D38 100%)`, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
         <div style={{ maxWidth: 320, width: "100%" }} className="space-y-3">
           <div className="flex items-center gap-2">
             <ShieldCheck size={22} style={{ color: COLORS.gold }} />
@@ -1033,7 +1034,7 @@ function AdminPanel() {
   const handledFeedback = feedbackList.filter((f) => f.status === "handled");
 
   return (
-    <div style={{ minHeight: "100vh", background: COLORS.navyBg, padding: 16 }}>
+    <div style={{ minHeight: "100vh", background: `linear-gradient(160deg, ${COLORS.navyLight} 0%, ${COLORS.navyBg} 55%, #161D38 100%)`, padding: 16 }}>
       <div className="max-w-2xl mx-auto space-y-6">
         <div className="flex items-center gap-2">
           <ShieldCheck size={24} style={{ color: COLORS.gold }} />
@@ -1392,7 +1393,7 @@ sy.bsk.1209@docomo.ne.jp
   const content = pages[page];
 
   return (
-    <div style={{ minHeight: "100vh", background: COLORS.navyBg, padding: 24 }}>
+    <div style={{ minHeight: "100vh", background: `linear-gradient(160deg, ${COLORS.navyLight} 0%, ${COLORS.navyBg} 55%, #161D38 100%)`, padding: 24 }}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Noto+Sans+JP:wght@400;500;700&display=swap');`}</style>
       <div className="max-w-xl mx-auto" style={{ fontFamily: "'Noto Sans JP', sans-serif" }}>
         <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 22, color: COLORS.gold, marginBottom: 4 }}>
@@ -2211,7 +2212,7 @@ export default function StrikeLog() {
     <div
       className="min-h-screen w-full"
       style={{
-        background: `radial-gradient(ellipse 120% 40% at 50% 0%, rgba(201,162,39,0.16) 0%, rgba(201,162,39,0) 60%), ${COLORS.navyBg}`,
+        background: `radial-gradient(ellipse 120% 40% at 50% 0%, rgba(201,162,39,0.18) 0%, rgba(201,162,39,0) 60%), linear-gradient(160deg, ${COLORS.navyLight} 0%, ${COLORS.navyBg} 55%, #161D38 100%)`,
         fontFamily: "'Noto Sans JP', 'Hiragino Sans', sans-serif",
       }}
     >
@@ -3746,7 +3747,7 @@ export default function StrikeLog() {
                 key={key}
                 onClick={() => setTab(key)}
                 className="flex-1 flex flex-col items-center gap-1 py-3"
-                style={{ color: active ? COLORS.strike : COLORS.oak }}
+                style={{ color: active ? COLORS.gold : COLORS.oak }}
               >
                 <Icon size={20} />
                 <span style={{ fontSize: 12 }}>{label}</span>
@@ -3760,7 +3761,7 @@ export default function StrikeLog() {
       {chatOpen && (
         <div
           className="fixed inset-0 flex flex-col"
-          style={{ background: COLORS.navyBg, zIndex: 50 }}
+          style={{ background: `linear-gradient(160deg, ${COLORS.navyLight} 0%, ${COLORS.navyBg} 55%, #161D38 100%)`, zIndex: 50 }}
         >
           <div
             className="flex items-center justify-between px-4 py-4"
