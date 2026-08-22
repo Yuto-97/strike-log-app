@@ -630,7 +630,7 @@ function SplitWrap({ children }) {
   );
 }
 
-function RollMark({ val, split }) {
+function RollMark({ val, split, markColor = COLORS.ink }) {
   if (val === undefined || val === "") return null;
   let content;
   if (val === "X") {
@@ -638,15 +638,15 @@ function RollMark({ val, split }) {
     // classic strike icon seen on paper scoresheets and electronic boards.
     content = (
       <svg width="17" height="17" viewBox="0 0 17 17" style={{ display: "block" }}>
-        <polygon points="2,2 2,15 8.5,8.5" fill={COLORS.ink} />
-        <polygon points="15,2 15,15 8.5,8.5" fill={COLORS.ink} />
+        <polygon points="2,2 2,15 8.5,8.5" fill={markColor} />
+        <polygon points="15,2 15,15 8.5,8.5" fill={markColor} />
       </svg>
     );
   } else if (val === "/") {
     // Spare: a single solid triangle filling the cell's corner.
     content = (
       <svg width="17" height="17" viewBox="0 0 17 17" style={{ display: "block" }}>
-        <polygon points="2,15 15,15 15,2" fill={COLORS.ink} />
+        <polygon points="2,15 15,15 15,2" fill={markColor} />
       </svg>
     );
   } else {
@@ -670,7 +670,7 @@ function FrameBox({ frame, index, isTenth, editable, activeCell, onCellTap }) {
       }}
       className="flex flex-col"
     >
-      <div className="text-center tracking-widest py-0.5" style={{ color: COLORS.oak, fontFamily: "'Oswald', sans-serif", fontSize: 12 }}>
+      <div className="text-center tracking-widest py-0.5" style={{ color: COLORS.ink, fontFamily: "'Oswald', sans-serif", fontSize: 12 }}>
         {index + 1}
       </div>
       <div className="flex border-t" style={{ borderColor: COLORS.ink }}>
@@ -775,7 +775,7 @@ function RollPicker({ frameIdx, rollIdx, splitEligible, onSelect, onSplitToggle,
           className="glass-card rounded-lg py-2 flex flex-col items-center justify-center gap-0.5 text-sm"
           style={{ border: `1px solid ${COLORS.strike}`, color: COLORS.strike, fontFamily: "'Oswald', sans-serif", fontWeight: 700 }}
         >
-          <RollMark val="X" />
+          <RollMark val="X" markColor={COLORS.strike} />
           <span style={{ fontSize: 10 }}>ストライク</span>
         </button>
       </div>
@@ -787,7 +787,7 @@ function RollPicker({ frameIdx, rollIdx, splitEligible, onSelect, onSplitToggle,
           className="glass-card rounded-lg py-2 flex flex-col items-center justify-center gap-0.5 text-sm"
           style={{ border: `1px solid ${COLORS.strike}`, color: COLORS.strike, fontFamily: "'Oswald', sans-serif", fontWeight: 700 }}
         >
-          <RollMark val="/" />
+          <RollMark val="/" markColor={COLORS.strike} />
           <span style={{ fontSize: 10 }}>スペア</span>
         </button>
         <button
@@ -3295,8 +3295,8 @@ export default function StrikeLog() {
                       <ResponsiveContainer width="100%" height={240}>
                         <LineChart data={chartData} margin={{ top: 20, right: 10, left: -20, bottom: 0 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#E5DCC8" />
-                          <XAxis dataKey="label" tick={{ fontSize: 13, fill: COLORS.oak }} />
-                          <YAxis domain={[0, 300]} ticks={[0, 50, 100, 150, 200, 250, 300]} tick={{ fontSize: 13, fill: COLORS.oak }} />
+                          <XAxis dataKey="label" tick={{ fontSize: 13, fill: COLORS.strike }} />
+                          <YAxis domain={[0, 300]} ticks={[0, 50, 100, 150, 200, 250, 300]} tick={{ fontSize: 13, fill: COLORS.strike }} />
                           <Tooltip contentStyle={{ fontSize: 14, borderColor: COLORS.oak }} />
                           <Line
                             type="monotone"
