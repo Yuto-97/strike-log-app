@@ -418,13 +418,11 @@ function computeGameSetStats(gamesList) {
   let totalBalls = 0;
   let gutters = 0;
   let fouls = 0;
-  let noHeads = 0;
   gamesList.forEach((g) => {
     (g.frames || []).forEach((f) => {
       const r0 = f.rolls?.[0];
       if (r0 !== undefined && r0 !== "") {
         frameCount += 1;
-        if (f.noHead) noHeads += 1;
         if (r0 === "X") {
           strikes += 1;
         } else {
@@ -473,7 +471,6 @@ function computeGameSetStats(gamesList) {
     splitCoverCount: splitCovers, splitCoverRate: pct(splitCovers, splitOpenCount),
     gutterCount: gutters, gutterRate: pct(gutters, totalBalls),
     foulCount: fouls, foulRate: pct(fouls, totalBalls),
-    noHeadCount: noHeads, noHeadRate: pct(noHeads, frameCount),
   };
 }
 
@@ -490,9 +487,6 @@ function normalizeGame(frames) {
     // happen on any ball (including a 10th-frame bonus ball), not just the
     // frame's opening roll, so this is tracked per roll index.
     splitRolls: arr[i].splitRolls || [],
-    // Whether the frame's first ball missed the headpin ("no head"), when
-    // that's determinable from a pin-fall diagram in the source photo.
-    noHead: !!arr[i].noHead,
   }));
   const reversedScores = [...scores].reverse();
   const total = reversedScores.find((s) => s !== null && s !== undefined) ?? null;
@@ -538,10 +532,10 @@ async function analyzeScoreImage(base64, mediaType, playerName) {
       "detected_date": "画面や紙に印字・記入されている日付があれば YYYY-MM-DD 形式に変換して。西暦2桁表記(例: 26/8/9)は20を補って西暦4桁にする。年が書かれておらず月日のみの場合は、その月日と今日の日付から最も自然な年を推測する。日付が一切見当たらない場合は null",
       "frame_by_frame_reading": ["1F: 7,スペア → 累計17", "2F: ストライク → 累計37", "..."],
       "frames": [
-        {"rolls": ["7","/"], "score": 17, "split_roll_index": null, "no_head": false},
-        {"rolls": ["X"], "score": 37, "split_roll_index": null, "no_head": false},
-        {"rolls": ["8","1"], "score": 46, "split_roll_index": 0, "no_head": false},
-        {"rolls": ["X","X","6"], "score": 300, "split_roll_index": 2, "no_head": false}
+        {"rolls": ["7","/"], "score": 17, "split_roll_index": null},
+        {"rolls": ["X"], "score": 37, "split_roll_index": null},
+        {"rolls": ["8","1"], "score": 46, "split_roll_index": 0},
+        {"rolls": ["X","X","6"], "score": 300, "split_roll_index": 2}
       ],
       "total_score": 178,
       "confidence_notes": ""
@@ -556,7 +550,6 @@ async function analyzeScoreImage(base64, mediaType, playerName) {
 - 10フレーム目は最大3投
 - score は各フレーム終了時点の累計スコア(手順3で検算した値)。10フレーム目まで画像に表示されている場合は、必ず10個分のscoreを埋めること。最終フレームの累計が画面上の「TOTAL」の値と一致するか必ず確認する
 - split_roll_index は、そのフレームの中で数字が丸で囲まれている(スプリットを示す)投球が何投目か(0始まりのインデックス)を表す。スプリットは1投目とは限らず、10フレーム目のボーナス球(2投目・3投目)に付くこともあるので、実際に丸が付いている投球の位置を必ず確認すること。丸が付いた投球がなければ null
-- no_head は、そのフレームの1投目が「ノーヘッド」(ヘッドピン=1番ピンに触れずに終わった投球)だったかを表す真偽値。画面にピン配置図(残ったピンを示す図やドット)が表示されている場合、1番ピンの位置が「倒れていない」ことを示していれば true。ピン配置図がなく数字の記載しかない場合や、判断できない場合は false にする(無理に推測しない)
 - frame_by_frame_reading は手順2〜3の思考過程を1フレームずつ短い日本語で記載する(この項目を必ず frames より先に埋めること)
 - 指定された名前に一致する列が画面内に見つからない場合は player_matched を false にし、games は空配列、confidence_notes に「該当する名前が見つかりませんでした」等を記載(この場合 confidence_notes はJSONの一番外側に置いてよい)
 - 名前の指定がない場合は player_matched を true とし、画面内の(唯一の、または最初の)プレイヤーのスコアを読み取る
@@ -1862,7 +1855,7 @@ export default function StrikeLog() {
           const framesWithSplitRolls = (game.frames || []).map((f) => {
             const splitRolls = [];
             if (typeof f.split_roll_index === "number") splitRolls[f.split_roll_index] = true;
-            return { ...f, splitRolls, noHead: !!f.no_head };
+            return { ...f, splitRolls };
           });
           const norm = normalizeGame(framesWithSplitRolls);
           const ocrTotal = Number(game.total_score);
@@ -2172,7 +2165,6 @@ export default function StrikeLog() {
     splitCoverCount, splitCoverRate,
     gutterCount, gutterRate,
     foulCount, foulRate,
-    noHeadCount, noHeadRate,
   } = computeGameSetStats(periodGames);
 
   // "day" compares individual games side by side (a line across a few hours
@@ -2768,7 +2760,7 @@ export default function StrikeLog() {
                     />
                   )}
 
-                  <div className="rounded-xl p-3 border space-y-2" style={{ borderColor: COLORS.oak, background: COLORS.cream }}>
+                  <div className="rounded-xl p-3 glass-card space-y-2">
                     <div className="text-xs" style={{ color: COLORS.oak }}>ボール</div>
                     <div className="flex gap-2">
                       {[
@@ -2824,7 +2816,7 @@ export default function StrikeLog() {
                       + 2つ目のボールを追加
                     </button>
                   ) : (
-                    <div className="rounded-xl p-3 border space-y-2" style={{ borderColor: COLORS.oak, background: COLORS.cream }}>
+                    <div className="rounded-xl p-3 glass-card space-y-2">
                       <div className="flex items-center justify-between">
                         <div className="text-xs" style={{ color: COLORS.oak }}>ボール(2つ目)</div>
                         <button type="button" onClick={() => setEditUseSecondBall(false)} aria-label="削除">
@@ -2876,7 +2868,7 @@ export default function StrikeLog() {
                     </div>
                   )}
 
-                  <div className="rounded-xl p-3 border space-y-2" style={{ borderColor: COLORS.oak, background: COLORS.cream }}>
+                  <div className="rounded-xl p-3 glass-card space-y-2">
                     <div className="text-xs" style={{ color: COLORS.oak }}>シューズ</div>
                     <div className="flex gap-2">
                       {[
@@ -3210,7 +3202,6 @@ export default function StrikeLog() {
                         { label: "スプリットカバー", count: splitCoverCount, rate: splitCoverRate },
                         { label: "ガター", count: gutterCount, rate: gutterRate },
                         { label: "ファール", count: foulCount, rate: foulRate },
-                        { label: "ノーヘッド", count: noHeadCount, rate: noHeadRate },
                       ].map((row, i) => (
                         <div
                           key={row.label}
@@ -3271,11 +3262,6 @@ export default function StrikeLog() {
                             label: "ファール率",
                             meaning: "投球時にファールラインを踏み越える、またはライン上の設備に触れることを「ファール」という(0本として記録される)",
                             formula: "計算式:ファール数 ÷ 投球した全ボール数",
-                          },
-                          {
-                            label: "ノーヘッド率",
-                            meaning: "1投目でヘッドピン(1番ピン)に触れずに終わることを「ノーヘッド」という。ピン配置図が写っている写真からのみ判定できる",
-                            formula: "計算式:ノーヘッド数 ÷ 投球フレーム数",
                           },
                         ].map((row) => (
                           <div key={row.label}>
@@ -3345,7 +3331,6 @@ export default function StrikeLog() {
                                   { label: "スプリットカバー", count: gs.splitCoverCount, rate: gs.splitCoverRate },
                                   { label: "ガター", count: gs.gutterCount, rate: gs.gutterRate },
                                   { label: "ファール", count: gs.foulCount, rate: gs.foulRate },
-                                  { label: "ノーヘッド", count: gs.noHeadCount, rate: gs.noHeadRate },
                                 ].map((row) => (
                                   <div
                                     key={row.label}
