@@ -820,7 +820,7 @@ function RollPicker({ frameIdx, rollIdx, splitEligible, onSelect, onSplitToggle,
           onClick={onSplitToggle}
           className="w-full rounded-lg py-2 text-xs flex items-center justify-center gap-2"
           style={{
-            background: splitActive ? COLORS.gold : "rgba(6, 9, 20, 0.45)",
+            background: splitActive ? COLORS.gold : "rgba(40, 55, 95, 0.55)",
             border: `1px solid ${COLORS.gold}`,
             color: splitActive ? "white" : COLORS.cream,
             fontWeight: 700,
@@ -2218,11 +2218,11 @@ export default function StrikeLog() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Noto+Sans+JP:wght@400;500;700&display=swap');
         .glass-card {
-          background: rgba(6, 9, 20, 0.45);
+          background: linear-gradient(135deg, rgba(58, 82, 138, 0.55) 0%, rgba(12, 16, 32, 0.65) 65%);
           backdrop-filter: blur(18px);
           -webkit-backdrop-filter: blur(18px);
           border: 1px solid rgba(224, 168, 0, 0.55);
-          box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+          box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.08);
         }
         .glass-input {
           background: rgba(6, 9, 20, 0.45) !important;
@@ -2496,7 +2496,7 @@ export default function StrikeLog() {
                         onClick={() => setBallType(opt.key)}
                         className="flex-1 rounded-lg py-2 text-xs"
                         style={{
-                          background: ballType === opt.key ? COLORS.ink : "rgba(6, 9, 20, 0.45)",
+                          background: ballType === opt.key ? COLORS.ink : "rgba(40, 55, 95, 0.55)",
                           color: COLORS.cream,
                           border: `1px solid ${COLORS.oak}`,
                           fontWeight: 700,
@@ -2571,7 +2571,7 @@ export default function StrikeLog() {
                           onClick={() => setBallType2(opt.key)}
                           className="flex-1 rounded-lg py-2 text-xs"
                           style={{
-                            background: ballType2 === opt.key ? COLORS.ink : "rgba(6, 9, 20, 0.45)",
+                            background: ballType2 === opt.key ? COLORS.ink : "rgba(40, 55, 95, 0.55)",
                             color: COLORS.cream,
                             border: `1px solid ${COLORS.oak}`,
                             fontWeight: 700,
@@ -2625,7 +2625,7 @@ export default function StrikeLog() {
                         }}
                         className="flex-1 rounded-lg py-2 text-xs"
                         style={{
-                          background: shoeType === opt.key ? COLORS.ink : "rgba(6, 9, 20, 0.45)",
+                          background: shoeType === opt.key ? COLORS.ink : "rgba(40, 55, 95, 0.55)",
                           color: COLORS.cream,
                           border: `1px solid ${COLORS.oak}`,
                           fontWeight: 700,
@@ -2770,7 +2770,7 @@ export default function StrikeLog() {
                           onClick={() => setEditBallType(opt.key)}
                           className="flex-1 rounded-lg py-2 text-xs"
                           style={{
-                            background: editBallType === opt.key ? COLORS.ink : "rgba(6, 9, 20, 0.45)",
+                            background: editBallType === opt.key ? COLORS.ink : "rgba(40, 55, 95, 0.55)",
                             color: COLORS.cream,
                             border: `1px solid ${COLORS.oak}`,
                             fontWeight: 700,
@@ -2831,7 +2831,7 @@ export default function StrikeLog() {
                             onClick={() => setEditBallType2(opt.key)}
                             className="flex-1 rounded-lg py-2 text-xs"
                             style={{
-                              background: editBallType2 === opt.key ? COLORS.ink : "rgba(6, 9, 20, 0.45)",
+                              background: editBallType2 === opt.key ? COLORS.ink : "rgba(40, 55, 95, 0.55)",
                               color: COLORS.cream,
                               border: `1px solid ${COLORS.oak}`,
                               fontWeight: 700,
@@ -2878,7 +2878,7 @@ export default function StrikeLog() {
                           onClick={() => setEditShoeType(opt.key)}
                           className="flex-1 rounded-lg py-2 text-xs"
                           style={{
-                            background: editShoeType === opt.key ? COLORS.ink : "rgba(6, 9, 20, 0.45)",
+                            background: editShoeType === opt.key ? COLORS.ink : "rgba(40, 55, 95, 0.55)",
                             color: COLORS.cream,
                             border: `1px solid ${COLORS.oak}`,
                             fontWeight: 700,
@@ -3008,7 +3008,7 @@ export default function StrikeLog() {
                       onClick={() => setPeriodMode(p.key)}
                       className="flex-1 rounded-lg py-2 text-sm"
                       style={{
-                        background: periodMode === p.key ? COLORS.ink : "rgba(6, 9, 20, 0.45)",
+                        background: periodMode === p.key ? COLORS.ink : "rgba(40, 55, 95, 0.55)",
                         color: COLORS.cream,
                         border: `1px solid ${COLORS.oak}`,
                         fontWeight: 700,
@@ -3409,7 +3409,7 @@ export default function StrikeLog() {
                       }}
                       className="flex-1 rounded-lg py-2 text-sm"
                       style={{
-                        background: dominantHand === opt.key ? COLORS.ink : "rgba(6, 9, 20, 0.45)",
+                        background: dominantHand === opt.key ? COLORS.ink : "rgba(40, 55, 95, 0.55)",
                         color: COLORS.cream,
                         border: `1px solid ${COLORS.oak}`,
                         fontWeight: 700,
@@ -3790,7 +3790,7 @@ export default function StrikeLog() {
                   style={{
                     maxWidth: "80%",
                     whiteSpace: "pre-wrap",
-                    background: m.role === "user" ? COLORS.ink : "rgba(6, 9, 20, 0.45)",
+                    background: m.role === "user" ? COLORS.ink : "rgba(40, 55, 95, 0.55)",
                     color: COLORS.cream,
                     border: m.role === "user" ? "none" : `1px solid rgba(201, 162, 39, 0.28)`,
                     backdropFilter: m.role === "user" ? "none" : "blur(18px)",
