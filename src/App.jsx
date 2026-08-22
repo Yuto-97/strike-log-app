@@ -743,7 +743,7 @@ function RollPicker({ frameIdx, rollIdx, splitEligible, onSelect, onSplitToggle,
       type="button"
       onClick={() => onSelect(value)}
       className="glass-card rounded-lg py-2 text-sm"
-      style={{ color: COLORS.ink, fontFamily: "'Oswald', sans-serif", fontWeight: 700 }}
+      style={{ color: COLORS.cream, fontFamily: "'Oswald', sans-serif", fontWeight: 700 }}
     >
       {label}
     </button>
@@ -765,7 +765,7 @@ function RollPicker({ frameIdx, rollIdx, splitEligible, onSelect, onSplitToggle,
           type="button"
           onClick={() => onSelect("X")}
           className="glass-card rounded-lg py-2 flex items-center justify-center text-sm"
-          style={{ border: `1px solid ${COLORS.ink}`, color: COLORS.ink, fontFamily: "'Oswald', sans-serif", fontWeight: 700 }}
+          style={{ border: `1px solid ${COLORS.strike}`, color: COLORS.strike, fontFamily: "'Oswald', sans-serif", fontWeight: 700 }}
         >
           X
         </button>
@@ -784,7 +784,7 @@ function RollPicker({ frameIdx, rollIdx, splitEligible, onSelect, onSplitToggle,
           type="button"
           onClick={() => onSelect("G")}
           className="glass-card rounded-lg py-2 text-xs"
-          style={{ color: COLORS.ink, fontWeight: 700 }}
+          style={{ color: COLORS.cream, fontWeight: 700 }}
         >
           G(ガーター)
         </button>
@@ -792,7 +792,7 @@ function RollPicker({ frameIdx, rollIdx, splitEligible, onSelect, onSplitToggle,
           type="button"
           onClick={() => onSelect("F")}
           className="glass-card rounded-lg py-2 text-xs"
-          style={{ border: `1px solid ${COLORS.danger}`, color: COLORS.danger, fontWeight: 700 }}
+          style={{ border: `1px solid ${COLORS.strike}`, color: COLORS.strike, fontWeight: 700 }}
         >
           F(ファール)
         </button>
@@ -800,7 +800,7 @@ function RollPicker({ frameIdx, rollIdx, splitEligible, onSelect, onSplitToggle,
           type="button"
           onClick={() => onSelect("-")}
           className="glass-card rounded-lg py-2 text-xs"
-          style={{ color: COLORS.ink, fontWeight: 700 }}
+          style={{ color: COLORS.cream, fontWeight: 700 }}
         >
           -(オープン)
         </button>
@@ -1058,7 +1058,7 @@ function AdminPanel() {
             {pending.map((r) => (
               <div key={r.id} className="rounded-xl p-3 border glass-card flex items-center justify-between" style={{ borderColor: COLORS.oak }}>
                 <div>
-                  <div style={{ color: COLORS.ink, fontWeight: 700 }}>
+                  <div style={{ color: COLORS.cream, fontWeight: 700 }}>
                     <span style={{ color: COLORS.gold }}>No.{formatRequestNumber(r.requestNumber)}</span> {r.name}
                   </div>
                   <div style={{ color: COLORS.oak, fontSize: 13 }}>{r.requestedAt}</div>
@@ -1093,7 +1093,7 @@ function AdminPanel() {
             {approved.map((r) => (
               <div key={r.id} className="rounded-xl p-3 border glass-card flex items-center justify-between" style={{ borderColor: COLORS.oak }}>
                 <div>
-                  <div style={{ color: COLORS.ink, fontWeight: 700 }}>
+                  <div style={{ color: COLORS.cream, fontWeight: 700 }}>
                     <span style={{ color: COLORS.gold }}>No.{formatRequestNumber(r.requestNumber)}</span> {r.name}
                   </div>
                   <div style={{ color: COLORS.oak, fontSize: 13 }}>承認済み ・ {r.updatedAt}</div>
@@ -1101,7 +1101,7 @@ function AdminPanel() {
                 <button
                   onClick={() => updateStatus(r.id, "rejected")}
                   className="rounded px-3 py-1 text-xs"
-                  style={{ border: `1px solid ${COLORS.oak}`, color: COLORS.ink, fontWeight: 700 }}
+                  style={{ border: `1px solid ${COLORS.oak}`, color: COLORS.cream, fontWeight: 700 }}
                 >
                   却下に変更
                 </button>
@@ -1120,7 +1120,7 @@ function AdminPanel() {
               <div key={r.id} className="rounded-xl p-3 border glass-card" style={{ borderColor: COLORS.oak }}>
                 <div className="flex items-center justify-between">
                   <div>
-                    <div style={{ color: COLORS.ink, fontWeight: 700 }}>
+                    <div style={{ color: COLORS.cream, fontWeight: 700 }}>
                       <span style={{ color: COLORS.gold }}>No.{formatRequestNumber(r.requestNumber)}</span> {r.name}
                     </div>
                     <div style={{ color: COLORS.oak, fontSize: 13 }}>却下 ・ {r.updatedAt}</div>
@@ -1129,7 +1129,7 @@ function AdminPanel() {
                     <button
                       onClick={() => updateStatus(r.id, "approved")}
                       className="rounded px-3 py-1 text-xs"
-                      style={{ border: `1px solid ${COLORS.oak}`, color: COLORS.ink, fontWeight: 700 }}
+                      style={{ border: `1px solid ${COLORS.oak}`, color: COLORS.cream, fontWeight: 700 }}
                     >
                       承認に変更
                     </button>
@@ -1150,7 +1150,7 @@ function AdminPanel() {
                       <button
                         onClick={() => setConfirmDeleteRequestId(null)}
                         className="text-xs rounded px-2 py-1 border"
-                        style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                        style={{ borderColor: COLORS.oak, color: COLORS.cream }}
                       >
                         キャンセル
                       </button>
@@ -1177,7 +1177,7 @@ function AdminPanel() {
             {unhandledFeedback.length === 0 && <div className="text-xs" style={{ color: COLORS.oak }}>未対応の要望はありません</div>}
             {unhandledFeedback.map((f) => (
               <div key={f.id} className="rounded-xl p-3 border glass-card" style={{ borderColor: COLORS.oak }}>
-                <div style={{ color: COLORS.ink, whiteSpace: "pre-wrap" }}>{f.message}</div>
+                <div style={{ color: COLORS.cream, whiteSpace: "pre-wrap" }}>{f.message}</div>
                 <div className="flex items-center justify-between mt-2">
                   <div style={{ color: COLORS.oak, fontSize: 13 }}>
                     {f.name || "匿名"} ・ {f.createdAt}
@@ -1207,7 +1207,7 @@ function AdminPanel() {
                       <button
                         onClick={() => setConfirmDeleteFeedbackId(null)}
                         className="text-xs rounded px-2 py-1 border"
-                        style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                        style={{ borderColor: COLORS.oak, color: COLORS.cream }}
                       >
                         キャンセル
                       </button>
@@ -1234,7 +1234,7 @@ function AdminPanel() {
             {handledFeedback.length === 0 && <div className="text-xs" style={{ color: COLORS.oak }}>対応済みの要望はありません</div>}
             {handledFeedback.map((f) => (
               <div key={f.id} className="rounded-xl p-3 border glass-card" style={{ borderColor: COLORS.oak, opacity: 0.7 }}>
-                <div style={{ color: COLORS.ink, whiteSpace: "pre-wrap" }}>{f.message}</div>
+                <div style={{ color: COLORS.cream, whiteSpace: "pre-wrap" }}>{f.message}</div>
                 <div className="flex items-center justify-between mt-2">
                   <div style={{ color: COLORS.oak, fontSize: 13 }}>
                     {f.name || "匿名"} ・ {f.createdAt}
@@ -1243,7 +1243,7 @@ function AdminPanel() {
                     <button
                       onClick={() => updateFeedbackStatus(f.id, "unhandled")}
                       className="rounded px-3 py-1 text-xs"
-                      style={{ border: `1px solid ${COLORS.oak}`, color: COLORS.ink, fontWeight: 700 }}
+                      style={{ border: `1px solid ${COLORS.oak}`, color: COLORS.cream, fontWeight: 700 }}
                     >
                       未対応に戻す
                     </button>
@@ -1264,7 +1264,7 @@ function AdminPanel() {
                       <button
                         onClick={() => setConfirmDeleteFeedbackId(null)}
                         className="text-xs rounded px-2 py-1 border"
-                        style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                        style={{ borderColor: COLORS.oak, color: COLORS.cream }}
                       >
                         キャンセル
                       </button>
@@ -2218,9 +2218,11 @@ export default function StrikeLog() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Noto+Sans+JP:wght@400;500;700&display=swap');
         .glass-card {
-          background: #F5F1E4;
+          background: rgba(6, 9, 20, 0.45);
+          backdrop-filter: blur(18px);
+          -webkit-backdrop-filter: blur(18px);
           border: 1px solid rgba(224, 168, 0, 0.55);
-          box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+          box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
         }
         .glass-input {
           background: rgba(6, 9, 20, 0.45) !important;
@@ -2244,7 +2246,7 @@ export default function StrikeLog() {
               style={{ objectFit: "cover" }}
             />
             <div>
-              <div className="text-2xl tracking-wide" style={{ color: COLORS.ink, fontFamily: "'Oswald', sans-serif", fontWeight: 700 }}>
+              <div className="text-2xl tracking-wide" style={{ color: COLORS.cream, fontFamily: "'Oswald', sans-serif", fontWeight: 700 }}>
                 STRIKE LOG
               </div>
               <div className="text-xs mt-0.5" style={{ color: COLORS.oak }}>スコア分析 &amp; 記録</div>
@@ -2286,8 +2288,8 @@ export default function StrikeLog() {
                 onClick={() => fileInputRef.current?.click()}
                 className="glass-card w-full flex flex-col items-center justify-center gap-3 rounded-xl py-14 -2 border-dashed"
               >
-                <Camera size={40} style={{ color: COLORS.gold }} />
-                <div style={{ color: COLORS.ink, fontWeight: 700 }}>スコア画面を撮影 / アップロード</div>
+                <Camera size={40} style={{ color: COLORS.strike }} />
+                <div style={{ color: COLORS.cream, fontWeight: 700 }}>スコア画面を撮影 / アップロード</div>
                 <div className="text-xs" style={{ color: COLORS.oak }}>電光掲示板や紙のスコアシートでOK</div>
               </button>
             )}
@@ -2323,7 +2325,7 @@ export default function StrikeLog() {
                     setAnalyzeError("");
                   }}
                   className="rounded-lg px-4 py-3 border"
-                  style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                  style={{ borderColor: COLORS.oak, color: COLORS.cream }}
                 >
                   撮り直す
                 </button>
@@ -2384,7 +2386,7 @@ export default function StrikeLog() {
                     <div className="mt-2 flex items-center justify-between">
                       <span className="text-xs" style={{ color: COLORS.oak }}>このゲームの合計</span>
                       <span
-                        style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 18, color: COLORS.gold }}
+                        style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 18, color: COLORS.strike }}
                       >
                         {game.total_score ?? "-"}
                       </span>
@@ -2418,7 +2420,7 @@ export default function StrikeLog() {
                 </div>
 
                 <div className="glass-card rounded-xl p-3 flex items-center justify-between">
-                  <span className="text-sm flex items-center gap-2" style={{ color: COLORS.ink }}>
+                  <span className="text-sm flex items-center gap-2" style={{ color: COLORS.cream }}>
                     <Calendar size={16} /> プレー日
                   </span>
                   <input
@@ -2432,7 +2434,7 @@ export default function StrikeLog() {
 
                 <div className="glass-card rounded-xl p-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm flex items-center gap-2" style={{ color: COLORS.ink }}>
+                    <span className="text-sm flex items-center gap-2" style={{ color: COLORS.cream }}>
                       <Hash size={16} /> {pendingResult.games?.length > 1 ? "何ゲーム目から" : "何ゲーム目"}
                     </span>
                     <div className="flex items-center gap-2">
@@ -2443,7 +2445,7 @@ export default function StrikeLog() {
                         setGameNumber((n) => Math.max(1, Number(n) - 1));
                       }}
                       className="w-7 h-7 rounded border flex items-center justify-center"
-                      style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                      style={{ borderColor: COLORS.oak, color: COLORS.cream }}
                     >
                       −
                     </button>
@@ -2465,7 +2467,7 @@ export default function StrikeLog() {
                         setGameNumber((n) => Number(n) + 1);
                       }}
                       className="w-7 h-7 rounded border flex items-center justify-center"
-                      style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                      style={{ borderColor: COLORS.oak, color: COLORS.cream }}
                     >
                       +
                     </button>
@@ -2479,7 +2481,7 @@ export default function StrikeLog() {
                 </div>
 
                 <div className="glass-card rounded-xl p-3 space-y-2">
-                  <div className="text-sm flex items-center gap-2" style={{ color: COLORS.ink }}>
+                  <div className="text-sm flex items-center gap-2" style={{ color: COLORS.cream }}>
                     <CircleDot size={16} /> 使用ボール
                   </div>
 
@@ -2540,7 +2542,7 @@ export default function StrikeLog() {
                 ) : (
                   <div className="glass-card rounded-xl p-3 space-y-2">
                     <div className="flex items-center justify-between">
-                      <div className="text-sm flex items-center gap-2" style={{ color: COLORS.ink }}>
+                      <div className="text-sm flex items-center gap-2" style={{ color: COLORS.cream }}>
                         <CircleDot size={16} /> 使用ボール(2つ目)
                       </div>
                       <button
@@ -2605,7 +2607,7 @@ export default function StrikeLog() {
                 )}
 
                 <div className="glass-card rounded-xl p-3 space-y-2">
-                  <div className="text-sm flex items-center gap-2" style={{ color: COLORS.ink }}>
+                  <div className="text-sm flex items-center gap-2" style={{ color: COLORS.cream }}>
                     <CircleDot size={16} /> 使用シューズ
                   </div>
 
@@ -2706,7 +2708,7 @@ export default function StrikeLog() {
                         type="button"
                         onClick={cancelEditGame}
                         className="rounded-lg px-2 py-1 text-xs border"
-                        style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                        style={{ borderColor: COLORS.oak, color: COLORS.cream }}
                       >
                         キャンセル
                       </button>
@@ -2714,7 +2716,7 @@ export default function StrikeLog() {
                         type="button"
                         onClick={saveEditedGame}
                         className="rounded-lg px-3 py-1 text-xs flex items-center gap-1"
-                        style={{ background: COLORS.ink, color: COLORS.ink, fontWeight: 700 }}
+                        style={{ background: COLORS.ink, color: COLORS.cream, fontWeight: 700 }}
                       >
                         <Check size={12} /> 保存
                       </button>
@@ -2910,12 +2912,12 @@ export default function StrikeLog() {
                 <div className="flex items-center justify-between mb-2">
                   <div style={{ color: COLORS.oak, fontSize: 14 }}>
                     {g.date}
-                    <span className="ml-2" style={{ color: COLORS.ink, fontWeight: 700 }}>
+                    <span className="ml-2" style={{ color: COLORS.cream, fontWeight: 700 }}>
                       {g.gameNumber ? `${g.gameNumber}ゲーム目` : ""}
                     </span>
                   </div>
                   <div className="flex items-center gap-3">
-                    <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 20, color: COLORS.gold }}>
+                    <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 20, color: COLORS.strike }}>
                       {g.total}
                     </div>
                     <button onClick={() => startEditGame(g)} aria-label="編集">
@@ -2939,7 +2941,7 @@ export default function StrikeLog() {
                         type="button"
                         onClick={() => setConfirmDeleteId(null)}
                         className="text-xs rounded px-2 py-1 border"
-                        style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                        style={{ borderColor: COLORS.oak, color: COLORS.cream }}
                       >
                         キャンセル
                       </button>
@@ -3024,7 +3026,7 @@ export default function StrikeLog() {
                         type="button"
                         onClick={() => setDayAnchor((d) => shiftDate(d, -1))}
                         className="w-8 h-8 rounded border flex items-center justify-center"
-                        style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                        style={{ borderColor: COLORS.oak, color: COLORS.cream }}
                       >
                         ‹
                       </button>
@@ -3039,7 +3041,7 @@ export default function StrikeLog() {
                         type="button"
                         onClick={() => setDayAnchor((d) => shiftDate(d, 1))}
                         className="w-8 h-8 rounded border flex items-center justify-center"
-                        style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                        style={{ borderColor: COLORS.oak, color: COLORS.cream }}
                       >
                         ›
                       </button>
@@ -3053,7 +3055,7 @@ export default function StrikeLog() {
                           type="button"
                           onClick={() => setWeekAnchor((d) => shiftDate(d, -7))}
                           className="w-8 h-8 rounded border flex items-center justify-center"
-                          style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                          style={{ borderColor: COLORS.oak, color: COLORS.cream }}
                         >
                           ‹
                         </button>
@@ -3142,28 +3144,28 @@ export default function StrikeLog() {
                     <div className="grid grid-cols-2 gap-2">
                       <div className="rounded-xl p-3 border glass-card text-center" style={{ borderColor: COLORS.oak }}>
                         <div className="text-xs" style={{ color: COLORS.oak }}>ゲーム数</div>
-                        <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 22, color: COLORS.ink }}>{periodGames.length}</div>
+                        <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 22, color: COLORS.cream }}>{periodGames.length}</div>
                       </div>
                       <div className="rounded-xl p-3 border glass-card text-center" style={{ borderColor: COLORS.oak }}>
                         <div className="text-xs" style={{ color: COLORS.oak }}>アベレージ</div>
-                        <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 22, color: COLORS.ink }}>{avg}</div>
+                        <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 22, color: COLORS.cream }}>{avg}</div>
                       </div>
                       <div className="rounded-xl p-3 border glass-card text-center" style={{ borderColor: COLORS.oak }}>
                         <div className="text-xs flex items-center justify-center gap-1" style={{ color: COLORS.oak }}>
                           <Trophy size={12} /> ハイゲーム
                         </div>
-                        <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 22, color: COLORS.gold }}>{highGame}</div>
+                        <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 22, color: COLORS.strike }}>{highGame}</div>
                       </div>
                       <div className="rounded-xl p-3 border glass-card text-center" style={{ borderColor: COLORS.oak }}>
                         <div className="text-xs" style={{ color: COLORS.oak }}>ローゲーム</div>
-                        <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 22, color: COLORS.ink }}>{lowGame}</div>
+                        <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 22, color: COLORS.cream }}>{lowGame}</div>
                       </div>
                     </div>
 
                     {(goalAverage || goalScore) && (
                       <div className="rounded-xl p-3 border glass-card flex items-center gap-4" style={{ borderColor: COLORS.oak }}>
                         <Target size={16} style={{ color: COLORS.gold }} />
-                        <div className="flex-1 text-xs" style={{ color: COLORS.ink }}>
+                        <div className="flex-1 text-xs" style={{ color: COLORS.cream }}>
                           {goalAverage && (
                             <div>
                               目標アベレージ {goalAverage}
@@ -3203,13 +3205,13 @@ export default function StrikeLog() {
                           className="flex items-center justify-between px-3 py-2"
                           style={{ borderTop: i === 0 ? "none" : `1px solid #EFE4CC` }}
                         >
-                          <span className="text-sm" style={{ color: COLORS.ink }}>{row.label}</span>
+                          <span className="text-sm" style={{ color: COLORS.cream }}>{row.label}</span>
                           <span className="flex items-baseline gap-2">
-                            <span style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 16, color: COLORS.ink }}>
+                            <span style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 16, color: COLORS.cream }}>
                               {row.count}
                             </span>
                             <span style={{ color: COLORS.oak, fontSize: 13 }}>回</span>
-                            <span style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 16, color: COLORS.gold, minWidth: 42, textAlign: "right" }}>
+                            <span style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 16, color: COLORS.strike, minWidth: 42, textAlign: "right" }}>
                               {row.rate}%
                             </span>
                           </span>
@@ -3282,9 +3284,9 @@ export default function StrikeLog() {
                           <Line
                             type="monotone"
                             dataKey="total"
-                            stroke={COLORS.gold}
+                            stroke={COLORS.strike}
                             strokeWidth={2.5}
-                            dot={{ r: 3, fill: COLORS.gold }}
+                            dot={{ r: 3, fill: COLORS.strike }}
                             label={{ position: "top", fontSize: 13, fontWeight: 700, fill: COLORS.ink }}
                           />
                         </LineChart>
@@ -3306,11 +3308,11 @@ export default function StrikeLog() {
                                   className="flex items-center justify-between px-3 py-2"
                                   style={{ background: COLORS.cream }}
                                 >
-                                  <span className="text-sm" style={{ color: COLORS.ink, fontWeight: 700 }}>
+                                  <span className="text-sm" style={{ color: COLORS.cream, fontWeight: 700 }}>
                                     {g.gameNumber ? `第${g.gameNumber}ゲーム` : "ゲーム"}
                                   </span>
                                   <span
-                                    style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 18, color: COLORS.gold }}
+                                    style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 18, color: COLORS.strike }}
                                   >
                                     {g.total}
                                   </span>
@@ -3332,9 +3334,9 @@ export default function StrikeLog() {
                                     className="flex items-center justify-between px-3 py-1.5"
                                     style={{ borderTop: `1px solid #EFE4CC` }}
                                   >
-                                    <span style={{ color: COLORS.ink, fontSize: 14 }}>{row.label}</span>
+                                    <span style={{ color: COLORS.cream, fontSize: 14 }}>{row.label}</span>
                                     <span className="flex items-baseline gap-2">
-                                      <span style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 15, color: COLORS.ink }}>
+                                      <span style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 15, color: COLORS.cream }}>
                                         {row.count}
                                       </span>
                                       <span style={{ color: COLORS.oak, fontSize: 12 }}>回</span>
@@ -3343,7 +3345,7 @@ export default function StrikeLog() {
                                           fontFamily: "'Oswald', sans-serif",
                                           fontWeight: 700,
                                           fontSize: 15,
-                                          color: COLORS.gold,
+                                          color: COLORS.strike,
                                           minWidth: 36,
                                           textAlign: "right",
                                         }}
@@ -3374,7 +3376,7 @@ export default function StrikeLog() {
 
             <div className="rounded-xl p-3 border glass-card space-y-3" style={{ borderColor: COLORS.oak }}>
               {myRequestNumber && (
-                <div style={{ color: COLORS.ink, fontSize: 15, fontWeight: 700 }}>
+                <div style={{ color: COLORS.cream, fontSize: 15, fontWeight: 700 }}>
                   ID:{formatRequestNumber(myRequestNumber)}
                 </div>
               )}
@@ -3488,7 +3490,7 @@ export default function StrikeLog() {
                     style={{ borderTop: i === 0 ? "none" : `1px solid #EFE4CC` }}
                   >
                     <div>
-                      <div className="text-sm" style={{ color: COLORS.ink, fontWeight: 700 }}>
+                      <div className="text-sm" style={{ color: COLORS.cream, fontWeight: 700 }}>
                         {b.label}
                         <span style={{ color: COLORS.oak, fontWeight: 400, fontSize: 13 }}>
                           {" "}
@@ -3544,7 +3546,7 @@ export default function StrikeLog() {
                   style={{ borderColor: COLORS.oak, color: COLORS.ink }}
                 />
                 <span className="text-xs" style={{ color: COLORS.oak }}>ポンド</span>
-                <label className="flex items-center gap-1 text-xs" style={{ color: COLORS.ink }}>
+                <label className="flex items-center gap-1 text-xs" style={{ color: COLORS.cream }}>
                   <input
                     type="checkbox"
                     checked={newBallThumbless}
@@ -3656,7 +3658,7 @@ export default function StrikeLog() {
                     className="flex items-center justify-between px-3 py-2"
                     style={{ borderTop: i === 0 ? "none" : `1px solid #EFE4CC` }}
                   >
-                    <div className="text-sm" style={{ color: COLORS.ink, fontWeight: 700 }}>{s.label}</div>
+                    <div className="text-sm" style={{ color: COLORS.cream, fontWeight: 700 }}>{s.label}</div>
                     <button onClick={() => deleteMyShoe(s.id)} aria-label="削除">
                       <Trash2 size={16} style={{ color: COLORS.oak }} />
                     </button>
@@ -3685,7 +3687,7 @@ export default function StrikeLog() {
                 onClick={addMyShoe}
                 disabled={!newShoeName.trim()}
                 className="w-full rounded-lg py-2 text-sm"
-                style={{ background: COLORS.ink, color: COLORS.ink, fontWeight: 700, opacity: newShoeName.trim() ? 1 : 0.5 }}
+                style={{ background: COLORS.ink, color: COLORS.cream, fontWeight: 700, opacity: newShoeName.trim() ? 1 : 0.5 }}
               >
                 追加する
               </button>
