@@ -2238,7 +2238,7 @@ export default function StrikeLog() {
               <div className="text-2xl tracking-wide" style={{ color: COLORS.cream, fontFamily: "'Oswald', sans-serif", fontWeight: 700 }}>
                 STRIKE LOG
               </div>
-              <div className="text-xs mt-0.5" style={{ color: COLORS.oak }}>スコア記録 &amp; 統計</div>
+              <div className="text-xs mt-0.5" style={{ color: COLORS.oak }}>スコア分析 &amp; 記録</div>
             </div>
           </div>
           <button
@@ -3376,7 +3376,7 @@ export default function StrikeLog() {
                   value={nickname}
                   onChange={(e) => setNickname(e.target.value)}
                   onBlur={(e) => saveProfile({ nickname: e.target.value })}
-                  placeholder="例: ユウト"
+                  placeholder="例: ヤマダ"
                   className="w-full px-3 py-2 rounded border text-sm"
                   style={{ borderColor: COLORS.oak, color: COLORS.ink }}
                 />
@@ -3457,7 +3457,7 @@ export default function StrikeLog() {
                   value={homeCenter}
                   onChange={(e) => setHomeCenter(e.target.value)}
                   onBlur={(e) => saveProfile({ homeCenter: e.target.value })}
-                  placeholder="例: ラウンドワン◯◯店"
+                  placeholder="例: 〇〇ボウル"
                   className="w-full px-3 py-2 rounded border text-sm"
                   style={{ borderColor: COLORS.oak, color: COLORS.ink }}
                 />
@@ -3724,9 +3724,9 @@ export default function StrikeLog() {
       >
         <div className="max-w-md mx-auto flex">
           {[
-            { key: "scan", label: "スコア記録", icon: Camera },
+            { key: "scan", label: "スコア分析", icon: Camera },
             { key: "history", label: "履歴", icon: History },
-            { key: "stats", label: "統計", icon: BarChart3 },
+            { key: "stats", label: "記録", icon: BarChart3 },
             { key: "profile", label: "設定", icon: Settings },
           ].map(({ key, label, icon: Icon }) => {
             const active = tab === key;
