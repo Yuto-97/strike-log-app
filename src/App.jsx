@@ -13,9 +13,10 @@ const COLORS = {
   ink: "#152238",
   oak: "#B89968",
   cream: "#F5F1E4",
-  strike: "#D5482B",
+  strike: "#FFFFFF",
   gold: "#C9A227",
   navyBg: "#1D2540",
+  danger: "#C0392B",
 };
 
 const STORAGE_KEY = "games";
@@ -1073,7 +1074,7 @@ function AdminPanel() {
                   <button
                     onClick={() => updateStatus(r.id, "rejected")}
                     className="rounded px-3 py-1 text-xs"
-                    style={{ background: COLORS.strike, color: "white", fontWeight: 700 }}
+                    style={{ background: COLORS.strike, color: COLORS.ink, fontWeight: 700 }}
                   >
                     却下
                   </button>
@@ -1144,7 +1145,7 @@ function AdminPanel() {
                 </div>
                 {confirmDeleteRequestId === r.id && (
                   <div className="mt-2 rounded-lg p-2 flex items-center justify-between" style={{ background: "#FBEAE5" }}>
-                    <span className="text-xs" style={{ color: COLORS.strike, fontWeight: 700 }}>本当に削除しますか?</span>
+                    <span className="text-xs" style={{ color: COLORS.danger, fontWeight: 700 }}>本当に削除しますか?</span>
                     <div className="flex gap-2">
                       <button
                         onClick={() => setConfirmDeleteRequestId(null)}
@@ -1156,7 +1157,7 @@ function AdminPanel() {
                       <button
                         onClick={() => deleteRequest(r.id)}
                         className="text-xs rounded px-2 py-1"
-                        style={{ background: COLORS.strike, color: "white", fontWeight: 700 }}
+                        style={{ background: COLORS.danger, color: "white", fontWeight: 700 }}
                       >
                         削除する
                       </button>
@@ -1201,7 +1202,7 @@ function AdminPanel() {
                 </div>
                 {confirmDeleteFeedbackId === f.id && (
                   <div className="mt-2 rounded-lg p-2 flex items-center justify-between" style={{ background: "#FBEAE5" }}>
-                    <span className="text-xs" style={{ color: COLORS.strike, fontWeight: 700 }}>本当に削除しますか?</span>
+                    <span className="text-xs" style={{ color: COLORS.danger, fontWeight: 700 }}>本当に削除しますか?</span>
                     <div className="flex gap-2">
                       <button
                         onClick={() => setConfirmDeleteFeedbackId(null)}
@@ -1213,7 +1214,7 @@ function AdminPanel() {
                       <button
                         onClick={() => deleteFeedback(f.id)}
                         className="text-xs rounded px-2 py-1"
-                        style={{ background: COLORS.strike, color: "white", fontWeight: 700 }}
+                        style={{ background: COLORS.danger, color: "white", fontWeight: 700 }}
                       >
                         削除する
                       </button>
@@ -1258,7 +1259,7 @@ function AdminPanel() {
                 </div>
                 {confirmDeleteFeedbackId === f.id && (
                   <div className="mt-2 rounded-lg p-2 flex items-center justify-between" style={{ background: "#FBEAE5" }}>
-                    <span className="text-xs" style={{ color: COLORS.strike, fontWeight: 700 }}>本当に削除しますか?</span>
+                    <span className="text-xs" style={{ color: COLORS.danger, fontWeight: 700 }}>本当に削除しますか?</span>
                     <div className="flex gap-2">
                       <button
                         onClick={() => setConfirmDeleteFeedbackId(null)}
@@ -1270,7 +1271,7 @@ function AdminPanel() {
                       <button
                         onClick={() => deleteFeedback(f.id)}
                         className="text-xs rounded px-2 py-1"
-                        style={{ background: COLORS.strike, color: "white", fontWeight: 700 }}
+                        style={{ background: COLORS.danger, color: "white", fontWeight: 700 }}
                       >
                         削除する
                       </button>
@@ -2251,7 +2252,7 @@ export default function StrikeLog() {
             type="button"
             onClick={() => setChatOpen(true)}
             className="rounded-full flex items-center justify-center"
-            style={{ width: 36, height: 36, background: COLORS.strike, color: "white" }}
+            style={{ width: 36, height: 36, background: COLORS.strike, color: COLORS.ink }}
             aria-label="使い方について質問する"
           >
             <MessageCircle size={18} />
@@ -2308,7 +2309,7 @@ export default function StrikeLog() {
                   onClick={runAnalysis}
                   disabled={analyzing}
                   className="flex-1 rounded-lg py-3 flex items-center justify-center gap-2"
-                  style={{ background: COLORS.strike, color: "white", fontWeight: 700 }}
+                  style={{ background: COLORS.strike, color: COLORS.ink, fontWeight: 700 }}
                 >
                   {analyzing ? <Loader2 className="animate-spin" size={18} /> : null}
                   {analyzing ? "解析中..." : "解析する"}
@@ -2328,14 +2329,14 @@ export default function StrikeLog() {
             )}
 
             {analyzeError && (
-              <div className="text-sm rounded-lg p-3" style={{ background: "#FBEAE5", color: COLORS.strike }}>
+              <div className="text-sm rounded-lg p-3" style={{ background: "#FBEAE5", color: COLORS.danger }}>
                 {analyzeError}
               </div>
             )}
 
             {pendingResult && pendingResult.player_matched === false && (
-              <div className="rounded-xl p-4 border space-y-2" style={{ borderColor: COLORS.strike, background: "#FBEAE5" }}>
-                <div className="text-sm font-bold" style={{ color: COLORS.strike }}>
+              <div className="rounded-xl p-4 border space-y-2" style={{ borderColor: COLORS.danger, background: "#FBEAE5" }}>
+                <div className="text-sm font-bold" style={{ color: COLORS.danger }}>
                   「{playerName || "(名前未入力)"}」に一致する列が見つかりませんでした
                 </div>
                 {pendingResult.other_players_detected?.length > 0 && (
@@ -2352,7 +2353,7 @@ export default function StrikeLog() {
                 <button
                   onClick={() => setPendingResult(null)}
                   className="text-sm rounded-lg px-3 py-2 border mt-1"
-                  style={{ borderColor: COLORS.strike, color: COLORS.strike }}
+                  style={{ borderColor: COLORS.danger, color: COLORS.danger }}
                 >
                   やり直す
                 </button>
@@ -2389,7 +2390,7 @@ export default function StrikeLog() {
                     {game.totalMismatch && (
                       <div
                         className="mt-2 rounded p-2 text-xs"
-                        style={{ background: "#FBEAE5", color: COLORS.strike, fontWeight: 700 }}
+                        style={{ background: "#FBEAE5", color: COLORS.danger, fontWeight: 700 }}
                       >
                         ⚠ 合計が写真のTOTAL表示と一致しません。マスを写真と見比べて修正してください。
                       </div>
@@ -2695,9 +2696,9 @@ export default function StrikeLog() {
             )}
             {[...games].reverse().map((g) =>
               editingGameId === g.id ? (
-                <div key={g.id} className="rounded-xl p-3 border glass-card space-y-3" style={{ borderColor: COLORS.strike }}>
+                <div key={g.id} className="rounded-xl p-3 border glass-card space-y-3" style={{ borderColor: COLORS.gold }}>
                   <div className="flex items-center justify-between">
-                    <div style={{ color: COLORS.strike, fontWeight: 700, fontSize: 13 }}>記録を編集中</div>
+                    <div style={{ color: COLORS.gold, fontWeight: 700, fontSize: 13 }}>記録を編集中</div>
                     <div className="flex gap-2">
                       <button
                         type="button"
@@ -2944,7 +2945,7 @@ export default function StrikeLog() {
                         type="button"
                         onClick={() => deleteGame(g.id)}
                         className="text-xs rounded px-2 py-1"
-                        style={{ background: COLORS.strike, color: "white", fontWeight: 700 }}
+                        style={{ background: COLORS.danger, color: "white", fontWeight: 700 }}
                       >
                         削除する
                       </button>
@@ -2978,7 +2979,7 @@ export default function StrikeLog() {
               </div>
               )
             )}
-            {storageError && <div className="text-xs text-center" style={{ color: COLORS.strike }}>{storageError}</div>}
+            {storageError && <div className="text-xs text-center" style={{ color: COLORS.danger }}>{storageError}</div>}
           </div>
         )}
 
@@ -3705,7 +3706,7 @@ export default function StrikeLog() {
                 className="w-full rounded-lg py-2 text-sm flex items-center justify-center gap-2"
                 style={{
                   background: COLORS.strike,
-                  color: "white",
+                  color: COLORS.ink,
                   fontWeight: 700,
                   opacity: feedbackMessage.trim() ? 1 : 0.5,
                 }}
@@ -3807,7 +3808,7 @@ export default function StrikeLog() {
               </div>
             )}
             {chatError && (
-              <div className="text-xs rounded-lg p-2" style={{ background: "#FBEAE5", color: COLORS.strike }}>
+              <div className="text-xs rounded-lg p-2" style={{ background: "#FBEAE5", color: COLORS.danger }}>
                 {chatError}
               </div>
             )}
@@ -3833,7 +3834,7 @@ export default function StrikeLog() {
               onClick={sendChatMessage}
               disabled={chatSending || !chatInput.trim()}
               className="rounded-lg px-3 py-2 flex items-center justify-center"
-              style={{ background: COLORS.strike, color: "white", opacity: chatInput.trim() ? 1 : 0.5 }}
+              style={{ background: COLORS.strike, color: COLORS.ink, opacity: chatInput.trim() ? 1 : 0.5 }}
               aria-label="送信"
             >
               <Send size={18} />
