@@ -11,11 +11,11 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 
 const COLORS = {
   ink: "#152238",
-  oak: "#9C8552",
+  oak: "#B89968",
   cream: "#F5F1E4",
   strike: "#D5482B",
   gold: "#C9A227",
-  navyBg: "#10182B",
+  navyBg: "#1D2540",
 };
 
 const STORAGE_KEY = "games";
@@ -819,7 +819,7 @@ function RollPicker({ frameIdx, rollIdx, splitEligible, onSelect, onSplitToggle,
           onClick={onSplitToggle}
           className="w-full rounded-lg py-2 text-xs flex items-center justify-center gap-2"
           style={{
-            background: splitActive ? COLORS.gold : "rgba(245, 241, 228, 0.08)",
+            background: splitActive ? COLORS.gold : "rgba(245, 241, 228, 0.13)",
             border: `1px solid ${COLORS.gold}`,
             color: splitActive ? "white" : COLORS.cream,
             fontWeight: 700,
@@ -2207,18 +2207,24 @@ export default function StrikeLog() {
   }
 
   return (
-    <div className="min-h-screen w-full" style={{ background: COLORS.navyBg, fontFamily: "'Noto Sans JP', 'Hiragino Sans', sans-serif" }}>
+    <div
+      className="min-h-screen w-full"
+      style={{
+        background: `radial-gradient(ellipse 120% 40% at 50% 0%, rgba(201,162,39,0.16) 0%, rgba(201,162,39,0) 60%), ${COLORS.navyBg}`,
+        fontFamily: "'Noto Sans JP', 'Hiragino Sans', sans-serif",
+      }}
+    >
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Noto+Sans+JP:wght@400;500;700&display=swap');
         .glass-card {
-          background: rgba(245, 241, 228, 0.06);
+          background: rgba(245, 241, 228, 0.11);
           backdrop-filter: blur(18px);
           -webkit-backdrop-filter: blur(18px);
-          border: 1px solid rgba(201, 162, 39, 0.28);
-          box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+          border: 1px solid rgba(201, 162, 39, 0.35);
+          box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
         }
         .glass-input {
-          background: rgba(245, 241, 228, 0.08) !important;
+          background: rgba(245, 241, 228, 0.13) !important;
           color: #F5F1E4 !important;
         }
         .glass-input::placeholder { color: rgba(245, 241, 228, 0.45); }
@@ -2485,7 +2491,7 @@ export default function StrikeLog() {
                         onClick={() => setBallType(opt.key)}
                         className="flex-1 rounded-lg py-2 text-xs"
                         style={{
-                          background: ballType === opt.key ? COLORS.ink : "rgba(245, 241, 228, 0.08)",
+                          background: ballType === opt.key ? COLORS.ink : "rgba(245, 241, 228, 0.13)",
                           color: COLORS.cream,
                           border: `1px solid ${COLORS.oak}`,
                           fontWeight: 700,
@@ -2560,7 +2566,7 @@ export default function StrikeLog() {
                           onClick={() => setBallType2(opt.key)}
                           className="flex-1 rounded-lg py-2 text-xs"
                           style={{
-                            background: ballType2 === opt.key ? COLORS.ink : "rgba(245, 241, 228, 0.08)",
+                            background: ballType2 === opt.key ? COLORS.ink : "rgba(245, 241, 228, 0.13)",
                             color: COLORS.cream,
                             border: `1px solid ${COLORS.oak}`,
                             fontWeight: 700,
@@ -2614,7 +2620,7 @@ export default function StrikeLog() {
                         }}
                         className="flex-1 rounded-lg py-2 text-xs"
                         style={{
-                          background: shoeType === opt.key ? COLORS.ink : "rgba(245, 241, 228, 0.08)",
+                          background: shoeType === opt.key ? COLORS.ink : "rgba(245, 241, 228, 0.13)",
                           color: COLORS.cream,
                           border: `1px solid ${COLORS.oak}`,
                           fontWeight: 700,
@@ -2759,7 +2765,7 @@ export default function StrikeLog() {
                           onClick={() => setEditBallType(opt.key)}
                           className="flex-1 rounded-lg py-2 text-xs"
                           style={{
-                            background: editBallType === opt.key ? COLORS.ink : "rgba(245, 241, 228, 0.08)",
+                            background: editBallType === opt.key ? COLORS.ink : "rgba(245, 241, 228, 0.13)",
                             color: COLORS.cream,
                             border: `1px solid ${COLORS.oak}`,
                             fontWeight: 700,
@@ -2820,7 +2826,7 @@ export default function StrikeLog() {
                             onClick={() => setEditBallType2(opt.key)}
                             className="flex-1 rounded-lg py-2 text-xs"
                             style={{
-                              background: editBallType2 === opt.key ? COLORS.ink : "rgba(245, 241, 228, 0.08)",
+                              background: editBallType2 === opt.key ? COLORS.ink : "rgba(245, 241, 228, 0.13)",
                               color: COLORS.cream,
                               border: `1px solid ${COLORS.oak}`,
                               fontWeight: 700,
@@ -2867,7 +2873,7 @@ export default function StrikeLog() {
                           onClick={() => setEditShoeType(opt.key)}
                           className="flex-1 rounded-lg py-2 text-xs"
                           style={{
-                            background: editShoeType === opt.key ? COLORS.ink : "rgba(245, 241, 228, 0.08)",
+                            background: editShoeType === opt.key ? COLORS.ink : "rgba(245, 241, 228, 0.13)",
                             color: COLORS.cream,
                             border: `1px solid ${COLORS.oak}`,
                             fontWeight: 700,
@@ -2997,7 +3003,7 @@ export default function StrikeLog() {
                       onClick={() => setPeriodMode(p.key)}
                       className="flex-1 rounded-lg py-2 text-sm"
                       style={{
-                        background: periodMode === p.key ? COLORS.ink : "rgba(245, 241, 228, 0.08)",
+                        background: periodMode === p.key ? COLORS.ink : "rgba(245, 241, 228, 0.13)",
                         color: COLORS.cream,
                         border: `1px solid ${COLORS.oak}`,
                         fontWeight: 700,
@@ -3398,7 +3404,7 @@ export default function StrikeLog() {
                       }}
                       className="flex-1 rounded-lg py-2 text-sm"
                       style={{
-                        background: dominantHand === opt.key ? COLORS.ink : "rgba(245, 241, 228, 0.08)",
+                        background: dominantHand === opt.key ? COLORS.ink : "rgba(245, 241, 228, 0.13)",
                         color: COLORS.cream,
                         border: `1px solid ${COLORS.oak}`,
                         fontWeight: 700,
@@ -3779,7 +3785,7 @@ export default function StrikeLog() {
                   style={{
                     maxWidth: "80%",
                     whiteSpace: "pre-wrap",
-                    background: m.role === "user" ? COLORS.ink : "rgba(245, 241, 228, 0.08)",
+                    background: m.role === "user" ? COLORS.ink : "rgba(245, 241, 228, 0.13)",
                     color: COLORS.cream,
                     border: m.role === "user" ? "none" : `1px solid rgba(201, 162, 39, 0.28)`,
                     backdropFilter: m.role === "user" ? "none" : "blur(18px)",
