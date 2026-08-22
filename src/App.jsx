@@ -758,11 +758,11 @@ function RollPicker({ frameIdx, rollIdx, splitEligible, onSelect, onSplitToggle,
   );
   return (
     <div className="glass-card rounded-xl p-3 space-y-2">
-      <div className="flex items-center justify-between text-xs" style={{ color: COLORS.oak }}>
+      <div className="flex items-center justify-between text-xs" style={{ color: COLORS.strike }}>
         <span>
           フレーム{frameIdx + 1} ・ {rollIdx + 1}投目を選択
         </span>
-        <button type="button" onClick={onClose} className="flex items-center gap-1" style={{ color: COLORS.oak }}>
+        <button type="button" onClick={onClose} className="flex items-center gap-1" style={{ color: COLORS.strike }}>
           <X size={14} /> 閉じる
         </button>
       </div>
@@ -818,7 +818,7 @@ function RollPicker({ frameIdx, rollIdx, splitEligible, onSelect, onSplitToggle,
           type="button"
           onClick={onClear}
           className="glass-card rounded-lg py-2 text-xs"
-          style={{ color: COLORS.oak, fontWeight: 700 }}
+          style={{ color: COLORS.strike, fontWeight: 700 }}
         >
           クリア
         </button>
@@ -876,7 +876,7 @@ function GateScreen({ mode, name, setName, onSubmit, requestNumber }) {
           STRIKE LOG
         </div>
 
-        {mode === "checking" && <div style={{ color: COLORS.oak }}>確認中...</div>}
+        {mode === "checking" && <div style={{ color: COLORS.strike }}>確認中...</div>}
 
         {(mode === "not_found" || mode === "error") && (
           <>
@@ -1060,18 +1060,18 @@ function AdminPanel() {
         />
 
         <div>
-          <div className="text-sm mb-2" style={{ color: COLORS.oak, fontWeight: 700 }}>
+          <div className="text-sm mb-2" style={{ color: COLORS.strike, fontWeight: 700 }}>
             承認待ち ({pending.length})
           </div>
           <div className="space-y-2">
-            {pending.length === 0 && <div className="text-xs" style={{ color: COLORS.oak }}>承認待ちの申請はありません</div>}
+            {pending.length === 0 && <div className="text-xs" style={{ color: COLORS.strike }}>承認待ちの申請はありません</div>}
             {pending.map((r) => (
               <div key={r.id} className="rounded-xl p-3 border glass-card flex items-center justify-between" style={{ borderColor: COLORS.oak }}>
                 <div>
                   <div style={{ color: COLORS.cream, fontWeight: 700 }}>
                     <span style={{ color: COLORS.strike }}>No.{formatRequestNumber(r.requestNumber)}</span> {r.name}
                   </div>
-                  <div style={{ color: COLORS.oak, fontSize: 13 }}>{r.requestedAt}</div>
+                  <div style={{ color: COLORS.strike, fontSize: 13 }}>{r.requestedAt}</div>
                 </div>
                 <div className="flex gap-2">
                   <button
@@ -1095,18 +1095,18 @@ function AdminPanel() {
         </div>
 
         <div>
-          <div className="text-sm mb-2" style={{ color: COLORS.oak, fontWeight: 700 }}>
+          <div className="text-sm mb-2" style={{ color: COLORS.strike, fontWeight: 700 }}>
             承認済み ({approved.length})
           </div>
           <div className="space-y-2">
-            {approved.length === 0 && <div className="text-xs" style={{ color: COLORS.oak }}>承認済みの申請はありません</div>}
+            {approved.length === 0 && <div className="text-xs" style={{ color: COLORS.strike }}>承認済みの申請はありません</div>}
             {approved.map((r) => (
               <div key={r.id} className="rounded-xl p-3 border glass-card flex items-center justify-between" style={{ borderColor: COLORS.oak }}>
                 <div>
                   <div style={{ color: COLORS.cream, fontWeight: 700 }}>
                     <span style={{ color: COLORS.strike }}>No.{formatRequestNumber(r.requestNumber)}</span> {r.name}
                   </div>
-                  <div style={{ color: COLORS.oak, fontSize: 13 }}>承認済み ・ {r.updatedAt}</div>
+                  <div style={{ color: COLORS.strike, fontSize: 13 }}>承認済み ・ {r.updatedAt}</div>
                 </div>
                 <button
                   onClick={() => updateStatus(r.id, "rejected")}
@@ -1121,11 +1121,11 @@ function AdminPanel() {
         </div>
 
         <div>
-          <div className="text-sm mb-2" style={{ color: COLORS.oak, fontWeight: 700 }}>
+          <div className="text-sm mb-2" style={{ color: COLORS.strike, fontWeight: 700 }}>
             却下 ({rejected.length})
           </div>
           <div className="space-y-2">
-            {rejected.length === 0 && <div className="text-xs" style={{ color: COLORS.oak }}>却下した申請はありません</div>}
+            {rejected.length === 0 && <div className="text-xs" style={{ color: COLORS.strike }}>却下した申請はありません</div>}
             {rejected.map((r) => (
               <div key={r.id} className="rounded-xl p-3 border glass-card" style={{ borderColor: COLORS.oak }}>
                 <div className="flex items-center justify-between">
@@ -1133,7 +1133,7 @@ function AdminPanel() {
                     <div style={{ color: COLORS.cream, fontWeight: 700 }}>
                       <span style={{ color: COLORS.strike }}>No.{formatRequestNumber(r.requestNumber)}</span> {r.name}
                     </div>
-                    <div style={{ color: COLORS.oak, fontSize: 13 }}>却下 ・ {r.updatedAt}</div>
+                    <div style={{ color: COLORS.strike, fontSize: 13 }}>却下 ・ {r.updatedAt}</div>
                   </div>
                   <div className="flex gap-2">
                     <button
@@ -1149,7 +1149,7 @@ function AdminPanel() {
                       style={{ border: `1px solid ${COLORS.oak}` }}
                       aria-label="削除"
                     >
-                      <Trash2 size={14} style={{ color: COLORS.oak }} />
+                      <Trash2 size={14} style={{ color: COLORS.strike }} />
                     </button>
                   </div>
                 </div>
@@ -1180,16 +1180,16 @@ function AdminPanel() {
         </div>
 
         <div>
-          <div className="text-sm mb-2" style={{ color: COLORS.oak, fontWeight: 700 }}>
+          <div className="text-sm mb-2" style={{ color: COLORS.strike, fontWeight: 700 }}>
             改善要望 ・ 未対応 ({unhandledFeedback.length})
           </div>
           <div className="space-y-2">
-            {unhandledFeedback.length === 0 && <div className="text-xs" style={{ color: COLORS.oak }}>未対応の要望はありません</div>}
+            {unhandledFeedback.length === 0 && <div className="text-xs" style={{ color: COLORS.strike }}>未対応の要望はありません</div>}
             {unhandledFeedback.map((f) => (
               <div key={f.id} className="rounded-xl p-3 border glass-card" style={{ borderColor: COLORS.oak }}>
                 <div style={{ color: COLORS.cream, whiteSpace: "pre-wrap" }}>{f.message}</div>
                 <div className="flex items-center justify-between mt-2">
-                  <div style={{ color: COLORS.oak, fontSize: 13 }}>
+                  <div style={{ color: COLORS.strike, fontSize: 13 }}>
                     {f.name || "匿名"} ・ {f.createdAt}
                   </div>
                   <div className="flex gap-2">
@@ -1206,7 +1206,7 @@ function AdminPanel() {
                       style={{ border: `1px solid ${COLORS.oak}` }}
                       aria-label="削除"
                     >
-                      <Trash2 size={14} style={{ color: COLORS.oak }} />
+                      <Trash2 size={14} style={{ color: COLORS.strike }} />
                     </button>
                   </div>
                 </div>
@@ -1237,16 +1237,16 @@ function AdminPanel() {
         </div>
 
         <div>
-          <div className="text-sm mb-2" style={{ color: COLORS.oak, fontWeight: 700 }}>
+          <div className="text-sm mb-2" style={{ color: COLORS.strike, fontWeight: 700 }}>
             改善要望 ・ 対応済み ({handledFeedback.length})
           </div>
           <div className="space-y-2">
-            {handledFeedback.length === 0 && <div className="text-xs" style={{ color: COLORS.oak }}>対応済みの要望はありません</div>}
+            {handledFeedback.length === 0 && <div className="text-xs" style={{ color: COLORS.strike }}>対応済みの要望はありません</div>}
             {handledFeedback.map((f) => (
               <div key={f.id} className="rounded-xl p-3 border glass-card" style={{ borderColor: COLORS.oak, opacity: 0.7 }}>
                 <div style={{ color: COLORS.cream, whiteSpace: "pre-wrap" }}>{f.message}</div>
                 <div className="flex items-center justify-between mt-2">
-                  <div style={{ color: COLORS.oak, fontSize: 13 }}>
+                  <div style={{ color: COLORS.strike, fontSize: 13 }}>
                     {f.name || "匿名"} ・ {f.createdAt}
                   </div>
                   <div className="flex gap-2">
@@ -1263,7 +1263,7 @@ function AdminPanel() {
                       style={{ border: `1px solid ${COLORS.oak}` }}
                       aria-label="削除"
                     >
-                      <Trash2 size={14} style={{ color: COLORS.oak }} />
+                      <Trash2 size={14} style={{ color: COLORS.strike }} />
                     </button>
                   </div>
                 </div>
@@ -2260,7 +2260,7 @@ export default function StrikeLog() {
               <div className="text-2xl tracking-wide" style={{ color: COLORS.cream, fontFamily: "'Oswald', sans-serif", fontWeight: 700 }}>
                 STRIKE LOG
               </div>
-              <div className="text-xs mt-0.5" style={{ color: COLORS.oak }}>スコア分析 &amp; 記録</div>
+              <div className="text-xs mt-0.5" style={{ color: COLORS.strike }}>スコア分析 &amp; 記録</div>
             </div>
           </div>
           <button
@@ -2279,7 +2279,7 @@ export default function StrikeLog() {
         {tab === "scan" && (
           <div className="space-y-4">
             <div className="rounded-xl p-3 border glass-card" style={{ borderColor: COLORS.oak }}>
-              <label className="text-xs flex items-center justify-between mb-1" style={{ color: COLORS.oak }}>
+              <label className="text-xs flex items-center justify-between mb-1" style={{ color: COLORS.strike }}>
                 <span>スコア画面に表示されている自分の名前</span>
                 {nameSaved && <span style={{ color: COLORS.strike }}>保存しました</span>}
               </label>
@@ -2301,7 +2301,7 @@ export default function StrikeLog() {
               >
                 <Camera size={40} style={{ color: COLORS.strike }} />
                 <div style={{ color: COLORS.cream, fontWeight: 700 }}>スコア画面を撮影 / アップロード</div>
-                <div className="text-xs" style={{ color: COLORS.oak }}>電光掲示板や紙のスコアシートでOK</div>
+                <div className="text-xs" style={{ color: COLORS.strike }}>電光掲示板や紙のスコアシートでOK</div>
               </button>
             )}
             <input
@@ -2384,7 +2384,7 @@ export default function StrikeLog() {
                 {(pendingResult.games || []).map((game, gameIdx) => (
                   <div key={gameIdx} className="glass-card rounded-xl p-3">
                     {pendingResult.games.length > 1 && (
-                      <div className="mb-2 text-xs" style={{ color: COLORS.oak }}>
+                      <div className="mb-2 text-xs" style={{ color: COLORS.strike }}>
                         {game.gameLabel || `${gameIdx + 1}ゲーム目`}
                       </div>
                     )}
@@ -2395,7 +2395,7 @@ export default function StrikeLog() {
                       onCellTap={(frameIdx, rollIdx) => handleCellTap(gameIdx, frameIdx, rollIdx)}
                     />
                     <div className="mt-2 flex items-center justify-between">
-                      <span className="text-xs" style={{ color: COLORS.oak }}>このゲームの合計</span>
+                      <span className="text-xs" style={{ color: COLORS.strike }}>このゲームの合計</span>
                       <span
                         style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 18, color: COLORS.strike }}
                       >
@@ -2426,7 +2426,7 @@ export default function StrikeLog() {
                   />
                 )}
 
-                <div className="text-xs" style={{ color: COLORS.oak }}>
+                <div className="text-xs" style={{ color: COLORS.strike }}>
                   合計スコアは公式ルールに沿って自動計算されます
                 </div>
 
@@ -2485,7 +2485,7 @@ export default function StrikeLog() {
                   </div>
                   </div>
                   {pendingResult.games?.length > 1 && (
-                    <div className="mt-1 text-xs" style={{ color: COLORS.oak }}>
+                    <div className="mt-1 text-xs" style={{ color: COLORS.strike }}>
                       {pendingResult.games.length}ゲーム分を、{gameNumber}ゲーム目から連番で保存します
                     </div>
                   )}
@@ -2519,7 +2519,7 @@ export default function StrikeLog() {
                   </div>
 
                   {myBalls.filter((b) => (b.type || "own") === ballType).length === 0 ? (
-                    <div className="text-xs" style={{ color: COLORS.oak }}>
+                    <div className="text-xs" style={{ color: COLORS.strike }}>
                       登録済みの{ballType === "house" ? "ハウスボール" : "マイボール"}がありません。「設定」タブで登録してください
                     </div>
                   ) : (
@@ -2546,7 +2546,7 @@ export default function StrikeLog() {
                     type="button"
                     onClick={() => setUseSecondBall(true)}
                     className="w-full rounded-lg py-2 text-xs"
-                    style={{ border: `1px dashed ${COLORS.oak}`, color: COLORS.oak }}
+                    style={{ border: `1px dashed ${COLORS.oak}`, color: COLORS.strike }}
                   >
                     + 2つ目のボールを記録する
                   </button>
@@ -2567,7 +2567,7 @@ export default function StrikeLog() {
                         }}
                         aria-label="2つ目のボールを削除"
                       >
-                        <X size={16} style={{ color: COLORS.oak }} />
+                        <X size={16} style={{ color: COLORS.strike }} />
                       </button>
                     </div>
 
@@ -2594,7 +2594,7 @@ export default function StrikeLog() {
                     </div>
 
                     {myBalls.filter((b) => (b.type || "own") === ballType2).length === 0 ? (
-                      <div className="text-xs" style={{ color: COLORS.oak }}>
+                      <div className="text-xs" style={{ color: COLORS.strike }}>
                         登録済みの{ballType2 === "house" ? "ハウスボール" : "マイボール"}がありません
                       </div>
                     ) : (
@@ -2648,7 +2648,7 @@ export default function StrikeLog() {
                   </div>
 
                   {shoeType === "rental" ? null : myShoes.length === 0 ? (
-                    <div className="text-xs" style={{ color: COLORS.oak }}>
+                    <div className="text-xs" style={{ color: COLORS.strike }}>
                       登録済みのマイシューズがありません。「設定」タブで登録してください
                     </div>
                   ) : (
@@ -2703,9 +2703,9 @@ export default function StrikeLog() {
 
         {tab === "history" && (
           <div className="space-y-3">
-            {loadingGames && <div className="text-sm text-center py-10" style={{ color: COLORS.oak }}>読み込み中...</div>}
+            {loadingGames && <div className="text-sm text-center py-10" style={{ color: COLORS.strike }}>読み込み中...</div>}
             {!loadingGames && games.length === 0 && (
-              <div className="text-sm text-center py-16" style={{ color: COLORS.oak }}>
+              <div className="text-sm text-center py-16" style={{ color: COLORS.strike }}>
                 まだ記録がありません。「スコア記録」タブから撮影してみましょう。
               </div>
             )}
@@ -2750,7 +2750,7 @@ export default function StrikeLog() {
                       className="w-16 px-2 py-1 rounded border text-sm text-center"
                       style={{ borderColor: COLORS.oak, color: COLORS.ink }}
                     />
-                    <span className="text-xs" style={{ color: COLORS.oak }}>ゲーム目</span>
+                    <span className="text-xs" style={{ color: COLORS.strike }}>ゲーム目</span>
                   </div>
 
                   <ScoreSheet frames={editFrames} editable activeCell={editActiveCell} onCellTap={handleEditCellTap} />
@@ -2792,7 +2792,7 @@ export default function StrikeLog() {
                       ))}
                     </div>
                     {myBalls.filter((b) => (b.type || "own") === editBallType).length === 0 ? (
-                      <div className="text-xs" style={{ color: COLORS.oak }}>
+                      <div className="text-xs" style={{ color: COLORS.strike }}>
                         登録済みの{editBallType === "house" ? "ハウスボール" : "マイボール"}がありません
                       </div>
                     ) : (
@@ -2819,7 +2819,7 @@ export default function StrikeLog() {
                       type="button"
                       onClick={() => setEditUseSecondBall(true)}
                       className="w-full rounded-lg py-2 text-xs"
-                      style={{ border: `1px dashed ${COLORS.oak}`, color: COLORS.oak }}
+                      style={{ border: `1px dashed ${COLORS.oak}`, color: COLORS.strike }}
                     >
                       + 2つ目のボールを追加
                     </button>
@@ -2853,7 +2853,7 @@ export default function StrikeLog() {
                         ))}
                       </div>
                       {myBalls.filter((b) => (b.type || "own") === editBallType2).length === 0 ? (
-                        <div className="text-xs" style={{ color: COLORS.oak }}>
+                        <div className="text-xs" style={{ color: COLORS.strike }}>
                           登録済みの{editBallType2 === "house" ? "ハウスボール" : "マイボール"}がありません
                         </div>
                       ) : (
@@ -2921,7 +2921,7 @@ export default function StrikeLog() {
               ) : (
               <div key={g.id} className="rounded-xl p-3 border glass-card" style={{ borderColor: COLORS.oak }}>
                 <div className="flex items-center justify-between mb-2">
-                  <div style={{ color: COLORS.oak, fontSize: 14 }}>
+                  <div style={{ color: COLORS.strike, fontSize: 14 }}>
                     {g.date}
                     <span className="ml-2" style={{ color: COLORS.cream, fontWeight: 700 }}>
                       {g.gameNumber ? `${g.gameNumber}ゲーム目` : ""}
@@ -2932,10 +2932,10 @@ export default function StrikeLog() {
                       {g.total}
                     </div>
                     <button onClick={() => startEditGame(g)} aria-label="編集">
-                      <Pencil size={16} style={{ color: COLORS.oak }} />
+                      <Pencil size={16} style={{ color: COLORS.strike }} />
                     </button>
                     <button onClick={() => setConfirmDeleteId(g.id)} aria-label="削除">
-                      <X size={16} style={{ color: COLORS.oak }} />
+                      <X size={16} style={{ color: COLORS.strike }} />
                     </button>
                   </div>
                 </div>
@@ -2968,7 +2968,7 @@ export default function StrikeLog() {
                   </div>
                 )}
                 {g.ball && (g.ball.weight || g.ball.type) && (
-                  <div className="mb-2 flex items-center gap-1" style={{ color: COLORS.oak, fontSize: 13 }}>
+                  <div className="mb-2 flex items-center gap-1" style={{ color: COLORS.strike, fontSize: 13 }}>
                     <CircleDot size={11} />
                     {g.ball.label ? g.ball.label : g.ball.type === "own" ? "マイボール" : "ハウスボール"}
                     {g.ball.weight ? ` ${g.ball.weight}lb` : ""}
@@ -2976,7 +2976,7 @@ export default function StrikeLog() {
                   </div>
                 )}
                 {g.ball2 && (g.ball2.weight || g.ball2.type) && (
-                  <div className="mb-2 flex items-center gap-1" style={{ color: COLORS.oak, fontSize: 13 }}>
+                  <div className="mb-2 flex items-center gap-1" style={{ color: COLORS.strike, fontSize: 13 }}>
                     <CircleDot size={11} />
                     {g.ball2.label ? g.ball2.label : g.ball2.type === "own" ? "マイボール" : "ハウスボール"}
                     {g.ball2.weight ? ` ${g.ball2.weight}lb` : ""}
@@ -2985,7 +2985,7 @@ export default function StrikeLog() {
                   </div>
                 )}
                 {g.shoe && g.shoe.type && (
-                  <div className="mb-2 flex items-center gap-1" style={{ color: COLORS.oak, fontSize: 13 }}>
+                  <div className="mb-2 flex items-center gap-1" style={{ color: COLORS.strike, fontSize: 13 }}>
                     <CircleDot size={11} />
                     {g.shoe.label ? g.shoe.label : g.shoe.type === "own" ? "マイシューズ" : "レンタル"}
                   </div>
@@ -3001,7 +3001,7 @@ export default function StrikeLog() {
         {tab === "stats" && (
           <div className="space-y-4">
             {games.length === 0 ? (
-              <div className="text-sm text-center py-16" style={{ color: COLORS.oak }}>
+              <div className="text-sm text-center py-16" style={{ color: COLORS.strike }}>
                 データがまだありません。記録を保存すると統計が表示されます。
               </div>
             ) : (
@@ -3086,7 +3086,7 @@ export default function StrikeLog() {
                           ›
                         </button>
                       </div>
-                      <div className="text-center text-xs" style={{ color: COLORS.oak }}>
+                      <div className="text-center text-xs" style={{ color: COLORS.strike }}>
                         {formatMDWeekday(periodRange.start)} 〜 {formatMDWeekday(periodRange.end)}
                       </div>
                     </div>
@@ -3119,7 +3119,7 @@ export default function StrikeLog() {
                           ›
                         </button>
                       </div>
-                      <div className="text-center text-xs" style={{ color: COLORS.oak }}>
+                      <div className="text-center text-xs" style={{ color: COLORS.strike }}>
                         {formatMD(periodRange.start)} 〜 {formatMD(periodRange.end)}
                       </div>
                     </div>
@@ -3134,7 +3134,7 @@ export default function StrikeLog() {
                         className="px-2 py-1 rounded border text-sm flex-1"
                         style={{ borderColor: COLORS.oak, color: COLORS.ink }}
                       />
-                      <span style={{ color: COLORS.oak }}>〜</span>
+                      <span style={{ color: COLORS.strike }}>〜</span>
                       <input
                         type="date"
                         value={customEnd}
@@ -3147,28 +3147,28 @@ export default function StrikeLog() {
                 </div>
 
                 {periodGames.length === 0 ? (
-                  <div className="text-sm text-center py-10" style={{ color: COLORS.oak }}>
+                  <div className="text-sm text-center py-10" style={{ color: COLORS.strike }}>
                     この期間の記録はまだありません
                   </div>
                 ) : (
                   <>
                     <div className="grid grid-cols-2 gap-2">
                       <div className="rounded-xl p-3 border glass-card text-center" style={{ borderColor: COLORS.oak }}>
-                        <div className="text-xs" style={{ color: COLORS.oak }}>ゲーム数</div>
+                        <div className="text-xs" style={{ color: COLORS.strike }}>ゲーム数</div>
                         <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 22, color: COLORS.cream }}>{periodGames.length}</div>
                       </div>
                       <div className="rounded-xl p-3 border glass-card text-center" style={{ borderColor: COLORS.oak }}>
-                        <div className="text-xs" style={{ color: COLORS.oak }}>アベレージ</div>
+                        <div className="text-xs" style={{ color: COLORS.strike }}>アベレージ</div>
                         <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 22, color: COLORS.cream }}>{avg}</div>
                       </div>
                       <div className="rounded-xl p-3 border glass-card text-center" style={{ borderColor: COLORS.oak }}>
-                        <div className="text-xs flex items-center justify-center gap-1" style={{ color: COLORS.oak }}>
+                        <div className="text-xs flex items-center justify-center gap-1" style={{ color: COLORS.strike }}>
                           <Trophy size={12} /> ハイゲーム
                         </div>
                         <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 22, color: COLORS.strike }}>{highGame}</div>
                       </div>
                       <div className="rounded-xl p-3 border glass-card text-center" style={{ borderColor: COLORS.oak }}>
-                        <div className="text-xs" style={{ color: COLORS.oak }}>ローゲーム</div>
+                        <div className="text-xs" style={{ color: COLORS.strike }}>ローゲーム</div>
                         <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 22, color: COLORS.cream }}>{lowGame}</div>
                       </div>
                     </div>
@@ -3222,7 +3222,7 @@ export default function StrikeLog() {
                             <span style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 16, color: COLORS.cream }}>
                               {row.count}
                             </span>
-                            <span style={{ color: COLORS.oak, fontSize: 13 }}>回</span>
+                            <span style={{ color: COLORS.strike, fontSize: 13 }}>回</span>
                             <span style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 16, color: COLORS.strike, minWidth: 42, textAlign: "right" }}>
                               {row.rate}%
                             </span>
@@ -3232,7 +3232,7 @@ export default function StrikeLog() {
                     </div>
 
                     <details className="rounded-xl border glass-card overflow-hidden" style={{ borderColor: COLORS.oak }}>
-                      <summary className="px-3 py-2 cursor-pointer text-sm" style={{ color: COLORS.oak }}>
+                      <summary className="px-3 py-2 cursor-pointer text-sm" style={{ color: COLORS.strike }}>
                         用語と計算式
                       </summary>
                       <div className="px-3 pb-3 space-y-3" style={{ borderTop: `1px solid #EFE4CC`, paddingTop: 8 }}>
@@ -3281,14 +3281,14 @@ export default function StrikeLog() {
                           <div key={row.label}>
                             <div className="text-xs" style={{ color: COLORS.cream, fontWeight: 700 }}>{row.label}</div>
                             <div className="text-xs" style={{ color: COLORS.cream }}>{row.meaning}</div>
-                            <div className="text-xs" style={{ color: COLORS.oak }}>{row.formula}</div>
+                            <div className="text-xs" style={{ color: COLORS.strike }}>{row.formula}</div>
                           </div>
                         ))}
                       </div>
                     </details>
 
                     <div className="rounded-xl p-3 border glass-card" style={{ borderColor: COLORS.oak }}>
-                      <div className="text-xs mb-2 flex items-center gap-1" style={{ color: COLORS.oak }}>
+                      <div className="text-xs mb-2 flex items-center gap-1" style={{ color: COLORS.strike }}>
                         <TrendingUp size={14} />
                         {periodMode === "day" ? "本日のゲームごとのスコア" : "日ごとの平均スコア推移"}
                       </div>
@@ -3312,7 +3312,7 @@ export default function StrikeLog() {
 
                     {periodMode === "day" && periodGames.length > 0 && (
                       <div className="space-y-2">
-                        <div className="text-xs flex items-center gap-1" style={{ color: COLORS.oak }}>
+                        <div className="text-xs flex items-center gap-1" style={{ color: COLORS.strike }}>
                           <Hash size={12} /> ゲームごとの内訳
                         </div>
                         {[...periodGames]
@@ -3357,7 +3357,7 @@ export default function StrikeLog() {
                                       <span style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 15, color: COLORS.cream }}>
                                         {row.count}
                                       </span>
-                                      <span style={{ color: COLORS.oak, fontSize: 12 }}>回</span>
+                                      <span style={{ color: COLORS.strike, fontSize: 12 }}>回</span>
                                       <span
                                         style={{
                                           fontFamily: "'Oswald', sans-serif",
@@ -3388,7 +3388,7 @@ export default function StrikeLog() {
         {tab === "profile" && (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <div className="text-sm" style={{ color: COLORS.oak }}>基本情報</div>
+              <div className="text-sm" style={{ color: COLORS.strike }}>基本情報</div>
               {profileSaved && <span style={{ color: COLORS.strike, fontSize: 13 }}>保存しました</span>}
             </div>
 
@@ -3399,7 +3399,7 @@ export default function StrikeLog() {
                 </div>
               )}
               <div>
-                <div className="text-xs mb-1" style={{ color: COLORS.oak }}>ニックネーム</div>
+                <div className="text-xs mb-1" style={{ color: COLORS.strike }}>ニックネーム</div>
                 <input
                   type="text"
                   value={nickname}
@@ -3412,7 +3412,7 @@ export default function StrikeLog() {
               </div>
 
               <div>
-                <div className="text-xs mb-1" style={{ color: COLORS.oak }}>利き手</div>
+                <div className="text-xs mb-1" style={{ color: COLORS.strike }}>利き手</div>
                 <div className="flex gap-2">
                   {[
                     { key: "right", label: "右" },
@@ -3440,7 +3440,7 @@ export default function StrikeLog() {
               </div>
 
               <div>
-                <div className="text-xs mb-1 flex items-center gap-1" style={{ color: COLORS.oak }}>
+                <div className="text-xs mb-1 flex items-center gap-1" style={{ color: COLORS.strike }}>
                   <Target size={12} /> 目標アベレージ
                 </div>
                 <input
@@ -3460,7 +3460,7 @@ export default function StrikeLog() {
               </div>
 
               <div>
-                <div className="text-xs mb-1 flex items-center gap-1" style={{ color: COLORS.oak }}>
+                <div className="text-xs mb-1 flex items-center gap-1" style={{ color: COLORS.strike }}>
                   <Target size={12} /> 目標スコア(ハイゲーム)
                 </div>
                 <input
@@ -3480,7 +3480,7 @@ export default function StrikeLog() {
               </div>
 
               <div>
-                <div className="text-xs mb-1" style={{ color: COLORS.oak }}>ホームセンター(よく行くボウリング場)</div>
+                <div className="text-xs mb-1" style={{ color: COLORS.strike }}>ホームセンター(よく行くボウリング場)</div>
                 <input
                   type="text"
                   value={homeCenter}
@@ -3493,11 +3493,11 @@ export default function StrikeLog() {
               </div>
             </div>
 
-            <div className="text-sm" style={{ color: COLORS.oak }}>登録済みのボール</div>
+            <div className="text-sm" style={{ color: COLORS.strike }}>登録済みのボール</div>
 
             <div className="rounded-xl border glass-card overflow-hidden" style={{ borderColor: COLORS.oak }}>
               {myBalls.length === 0 ? (
-                <div className="p-3 text-xs text-center" style={{ color: COLORS.oak }}>
+                <div className="p-3 text-xs text-center" style={{ color: COLORS.strike }}>
                   まだ登録されていません
                 </div>
               ) : (
@@ -3510,12 +3510,12 @@ export default function StrikeLog() {
                     <div>
                       <div className="text-sm" style={{ color: COLORS.cream, fontWeight: 700 }}>
                         {b.label}
-                        <span style={{ color: COLORS.oak, fontWeight: 400, fontSize: 13 }}>
+                        <span style={{ color: COLORS.strike, fontWeight: 400, fontSize: 13 }}>
                           {" "}
                           ({b.type === "house" ? "ハウスボール" : "マイボール"})
                         </span>
                       </div>
-                      <div className="text-xs" style={{ color: COLORS.oak }}>
+                      <div className="text-xs" style={{ color: COLORS.strike }}>
                         {b.weight}lb{b.thumbless ? " ・ サムレス" : ""}
                       </div>
                       {(b.core || b.coverstock || b.motion || b.laneCondition) && (
@@ -3532,7 +3532,7 @@ export default function StrikeLog() {
                       )}
                     </div>
                     <button onClick={() => deleteMyBall(b.id)} aria-label="削除">
-                      <Trash2 size={16} style={{ color: COLORS.oak }} />
+                      <Trash2 size={16} style={{ color: COLORS.strike }} />
                     </button>
                   </div>
                 ))
@@ -3540,7 +3540,7 @@ export default function StrikeLog() {
             </div>
 
             <div className="rounded-xl p-3 border glass-card space-y-2" style={{ borderColor: COLORS.oak }}>
-              <div className="text-xs" style={{ color: COLORS.oak }}>新しいボールを登録</div>
+              <div className="text-xs" style={{ color: COLORS.strike }}>新しいボールを登録</div>
 
               <select
                 value={newBallType}
@@ -3563,7 +3563,7 @@ export default function StrikeLog() {
                   className="w-16 px-2 py-1 rounded border text-sm"
                   style={{ borderColor: COLORS.oak, color: COLORS.ink }}
                 />
-                <span className="text-xs" style={{ color: COLORS.oak }}>ポンド</span>
+                <span className="text-xs" style={{ color: COLORS.strike }}>ポンド</span>
                 <label className="flex items-center gap-1 text-xs" style={{ color: COLORS.cream }}>
                   <input
                     type="checkbox"
@@ -3577,7 +3577,7 @@ export default function StrikeLog() {
               {newBallType === "own" && (
                 <>
                   <div>
-                    <div className="text-xs mb-1" style={{ color: COLORS.oak }}>コアタイプ</div>
+                    <div className="text-xs mb-1" style={{ color: COLORS.strike }}>コアタイプ</div>
                     <select
                       value={newBallCore}
                       onChange={(e) => setNewBallCore(e.target.value)}
@@ -3591,7 +3591,7 @@ export default function StrikeLog() {
                   </div>
 
                   <div>
-                    <div className="text-xs mb-1" style={{ color: COLORS.oak }}>カバーストック</div>
+                    <div className="text-xs mb-1" style={{ color: COLORS.strike }}>カバーストック</div>
                     <select
                       value={newBallCoverstock}
                       onChange={(e) => setNewBallCoverstock(e.target.value)}
@@ -3607,7 +3607,7 @@ export default function StrikeLog() {
                   </div>
 
                   <div>
-                    <div className="text-xs mb-1" style={{ color: COLORS.oak }}>球質(回転タイプ)</div>
+                    <div className="text-xs mb-1" style={{ color: COLORS.strike }}>球質(回転タイプ)</div>
                     <select
                       value={newBallMotion}
                       onChange={(e) => setNewBallMotion(e.target.value)}
@@ -3623,7 +3623,7 @@ export default function StrikeLog() {
                   </div>
 
                   <div>
-                    <div className="text-xs mb-1" style={{ color: COLORS.oak }}>適したレーンコンディション</div>
+                    <div className="text-xs mb-1" style={{ color: COLORS.strike }}>適したレーンコンディション</div>
                     <select
                       value={newBallLaneCondition}
                       onChange={(e) => setNewBallLaneCondition(e.target.value)}
@@ -3640,7 +3640,7 @@ export default function StrikeLog() {
               )}
 
               <div>
-                <div className="text-xs mb-1" style={{ color: COLORS.oak }}>登録名</div>
+                <div className="text-xs mb-1" style={{ color: COLORS.strike }}>登録名</div>
                 <input
                   type="text"
                   value={newBallName}
@@ -3662,11 +3662,11 @@ export default function StrikeLog() {
               </button>
             </div>
 
-            <div className="text-sm" style={{ color: COLORS.oak }}>登録済みのマイシューズ</div>
+            <div className="text-sm" style={{ color: COLORS.strike }}>登録済みのマイシューズ</div>
 
             <div className="rounded-xl border glass-card overflow-hidden" style={{ borderColor: COLORS.oak }}>
               {myShoes.length === 0 ? (
-                <div className="p-3 text-xs text-center" style={{ color: COLORS.oak }}>
+                <div className="p-3 text-xs text-center" style={{ color: COLORS.strike }}>
                   まだ登録されていません
                 </div>
               ) : (
@@ -3678,7 +3678,7 @@ export default function StrikeLog() {
                   >
                     <div className="text-sm" style={{ color: COLORS.cream, fontWeight: 700 }}>{s.label}</div>
                     <button onClick={() => deleteMyShoe(s.id)} aria-label="削除">
-                      <Trash2 size={16} style={{ color: COLORS.oak }} />
+                      <Trash2 size={16} style={{ color: COLORS.strike }} />
                     </button>
                   </div>
                 ))
@@ -3686,10 +3686,10 @@ export default function StrikeLog() {
             </div>
 
             <div className="rounded-xl p-3 border glass-card space-y-2" style={{ borderColor: COLORS.oak }}>
-              <div className="text-xs" style={{ color: COLORS.oak }}>新しいマイシューズを登録</div>
+              <div className="text-xs" style={{ color: COLORS.strike }}>新しいマイシューズを登録</div>
 
               <div>
-                <div className="text-xs mb-1" style={{ color: COLORS.oak }}>登録名</div>
+                <div className="text-xs mb-1" style={{ color: COLORS.strike }}>登録名</div>
                 <input
                   type="text"
                   value={newShoeName}
@@ -3711,7 +3711,7 @@ export default function StrikeLog() {
               </button>
             </div>
 
-            <div className="text-sm" style={{ color: COLORS.oak }}>ご意見・要望</div>
+            <div className="text-sm" style={{ color: COLORS.strike }}>ご意見・要望</div>
             <div className="rounded-xl p-3 border glass-card space-y-2" style={{ borderColor: COLORS.oak }}>
               <textarea
                 value={feedbackMessage}
@@ -3737,7 +3737,7 @@ export default function StrikeLog() {
               </button>
             </div>
 
-            <div className="flex items-center justify-center gap-4 pt-2" style={{ fontSize: 13, color: COLORS.oak }}>
+            <div className="flex items-center justify-center gap-4 pt-2" style={{ fontSize: 13, color: COLORS.strike }}>
               <a href="/terms" style={{ textDecoration: "underline" }}>利用規約</a>
               <a href="/privacy" style={{ textDecoration: "underline" }}>プライバシーポリシー</a>
               <a href="/tokushoho" style={{ textDecoration: "underline" }}>特定商取引法に基づく表記</a>
@@ -3797,7 +3797,7 @@ export default function StrikeLog() {
 
           <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
             {chatMessages.length === 0 && (
-              <div className="text-xs text-center py-6" style={{ color: COLORS.oak }}>
+              <div className="text-xs text-center py-6" style={{ color: COLORS.strike }}>
                 アプリの使い方や、ストライク・スペアなどのボウリング用語について、気軽に聞いてください。
               </div>
             )}
@@ -3823,7 +3823,7 @@ export default function StrikeLog() {
               <div className="flex justify-start">
                 <div
                   className="glass-card rounded-xl px-3 py-2 text-sm flex items-center gap-2"
-                  style={{ color: COLORS.oak }}
+                  style={{ color: COLORS.strike }}
                 >
                   <Loader2 className="animate-spin" size={14} /> 考え中...
                 </div>
