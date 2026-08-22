@@ -773,7 +773,7 @@ function RollPicker({ frameIdx, rollIdx, splitEligible, onSelect, onSplitToggle,
           type="button"
           onClick={() => onSelect("X")}
           className="glass-card rounded-lg py-2 flex flex-col items-center justify-center gap-0.5 text-sm"
-          style={{ border: `1px solid ${COLORS.strike}`, color: COLORS.strike, fontFamily: "'Oswald', sans-serif", fontWeight: 700 }}
+          style={{ border: `1px solid ${COLORS.gold}`, color: COLORS.strike, fontFamily: "'Oswald', sans-serif", fontWeight: 700 }}
         >
           <RollMark val="X" markColor={COLORS.strike} />
           <span style={{ fontSize: 10 }}>ストライク</span>
@@ -785,7 +785,7 @@ function RollPicker({ frameIdx, rollIdx, splitEligible, onSelect, onSplitToggle,
           type="button"
           onClick={() => onSelect("/")}
           className="glass-card rounded-lg py-2 flex flex-col items-center justify-center gap-0.5 text-sm"
-          style={{ border: `1px solid ${COLORS.strike}`, color: COLORS.strike, fontFamily: "'Oswald', sans-serif", fontWeight: 700 }}
+          style={{ border: `1px solid ${COLORS.gold}`, color: COLORS.strike, fontFamily: "'Oswald', sans-serif", fontWeight: 700 }}
         >
           <RollMark val="/" markColor={COLORS.strike} />
           <span style={{ fontSize: 10 }}>スペア</span>
@@ -802,7 +802,7 @@ function RollPicker({ frameIdx, rollIdx, splitEligible, onSelect, onSplitToggle,
           type="button"
           onClick={() => onSelect("F")}
           className="glass-card rounded-lg py-2 text-xs"
-          style={{ border: `1px solid ${COLORS.strike}`, color: COLORS.strike, fontWeight: 700 }}
+          style={{ border: `1px solid ${COLORS.gold}`, color: COLORS.strike, fontWeight: 700 }}
         >
           F(ファール)
         </button>
@@ -3304,7 +3304,7 @@ export default function StrikeLog() {
                             stroke={COLORS.strike}
                             strokeWidth={2.5}
                             dot={{ r: 3, fill: COLORS.strike }}
-                            label={{ position: "top", fontSize: 13, fontWeight: 700, fill: COLORS.ink }}
+                            label={{ position: "top", fontSize: 13, fontWeight: 700, fill: COLORS.strike }}
                           />
                         </LineChart>
                       </ResponsiveContainer>
