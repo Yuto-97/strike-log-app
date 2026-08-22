@@ -717,7 +717,7 @@ function FrameBox({ frame, index, isTenth, editable, activeCell, onCellTap }) {
       </div>
       <div
         className="text-center text-base py-1 border-t"
-        style={{ borderColor: COLORS.ink, color: COLORS.cream, fontWeight: 700, fontFamily: "'Oswald', sans-serif" }}
+        style={{ borderColor: COLORS.ink, color: COLORS.ink, fontWeight: 700, fontFamily: "'Oswald', sans-serif" }}
       >
         {frame?.score ?? ""}
       </div>
@@ -785,7 +785,7 @@ function RollPicker({ frameIdx, rollIdx, splitEligible, onSelect, onSplitToggle,
           type="button"
           onClick={() => onSelect("/")}
           className="glass-card rounded-lg py-2 flex flex-col items-center justify-center gap-0.5 text-sm"
-          style={{ border: `1px solid ${COLORS.gold}`, color: COLORS.gold, fontFamily: "'Oswald', sans-serif", fontWeight: 700 }}
+          style={{ border: `1px solid ${COLORS.strike}`, color: COLORS.strike, fontFamily: "'Oswald', sans-serif", fontWeight: 700 }}
         >
           <RollMark val="/" />
           <span style={{ fontSize: 10 }}>スペア</span>
@@ -909,7 +909,7 @@ function GateScreen({ mode, name, setName, onSubmit, requestNumber }) {
               利用申請を受け付けました。管理者の承認をお待ちください。
             </div>
             {requestNumber && (
-              <div style={{ color: COLORS.gold, fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 16 }}>
+              <div style={{ color: COLORS.strike, fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 16 }}>
                 あなたの登録番号: {formatRequestNumber(requestNumber)}
               </div>
             )}
@@ -1069,7 +1069,7 @@ function AdminPanel() {
               <div key={r.id} className="rounded-xl p-3 border glass-card flex items-center justify-between" style={{ borderColor: COLORS.oak }}>
                 <div>
                   <div style={{ color: COLORS.cream, fontWeight: 700 }}>
-                    <span style={{ color: COLORS.gold }}>No.{formatRequestNumber(r.requestNumber)}</span> {r.name}
+                    <span style={{ color: COLORS.strike }}>No.{formatRequestNumber(r.requestNumber)}</span> {r.name}
                   </div>
                   <div style={{ color: COLORS.oak, fontSize: 13 }}>{r.requestedAt}</div>
                 </div>
@@ -1104,7 +1104,7 @@ function AdminPanel() {
               <div key={r.id} className="rounded-xl p-3 border glass-card flex items-center justify-between" style={{ borderColor: COLORS.oak }}>
                 <div>
                   <div style={{ color: COLORS.cream, fontWeight: 700 }}>
-                    <span style={{ color: COLORS.gold }}>No.{formatRequestNumber(r.requestNumber)}</span> {r.name}
+                    <span style={{ color: COLORS.strike }}>No.{formatRequestNumber(r.requestNumber)}</span> {r.name}
                   </div>
                   <div style={{ color: COLORS.oak, fontSize: 13 }}>承認済み ・ {r.updatedAt}</div>
                 </div>
@@ -1131,7 +1131,7 @@ function AdminPanel() {
                 <div className="flex items-center justify-between">
                   <div>
                     <div style={{ color: COLORS.cream, fontWeight: 700 }}>
-                      <span style={{ color: COLORS.gold }}>No.{formatRequestNumber(r.requestNumber)}</span> {r.name}
+                      <span style={{ color: COLORS.strike }}>No.{formatRequestNumber(r.requestNumber)}</span> {r.name}
                     </div>
                     <div style={{ color: COLORS.oak, fontSize: 13 }}>却下 ・ {r.updatedAt}</div>
                   </div>
@@ -1405,7 +1405,7 @@ sy.bsk.1209@docomo.ne.jp
     <div style={{ minHeight: "100vh", background: `linear-gradient(160deg, ${COLORS.navyLight} 0%, ${COLORS.navyBg} 55%, #161D38 100%)`, padding: 24 }}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Noto+Sans+JP:wght@400;500;700&display=swap');`}</style>
       <div className="max-w-xl mx-auto" style={{ fontFamily: "'Noto Sans JP', sans-serif" }}>
-        <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 22, color: COLORS.gold, marginBottom: 4 }}>
+        <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 22, color: COLORS.strike, marginBottom: 4 }}>
           STRIKE LOG
         </div>
         <h1 style={{ fontSize: 20, fontWeight: 700, color: COLORS.cream, marginBottom: 16 }}>{content.title}</h1>
@@ -2281,7 +2281,7 @@ export default function StrikeLog() {
             <div className="rounded-xl p-3 border glass-card" style={{ borderColor: COLORS.oak }}>
               <label className="text-xs flex items-center justify-between mb-1" style={{ color: COLORS.oak }}>
                 <span>スコア画面に表示されている自分の名前</span>
-                {nameSaved && <span style={{ color: COLORS.gold }}>保存しました</span>}
+                {nameSaved && <span style={{ color: COLORS.strike }}>保存しました</span>}
               </label>
               <input
                 type="text"
@@ -2713,7 +2713,7 @@ export default function StrikeLog() {
               editingGameId === g.id ? (
                 <div key={g.id} className="rounded-xl p-3 border glass-card space-y-3" style={{ borderColor: COLORS.gold }}>
                   <div className="flex items-center justify-between">
-                    <div style={{ color: COLORS.gold, fontWeight: 700, fontSize: 15 }}>記録を編集中</div>
+                    <div style={{ color: COLORS.strike, fontWeight: 700, fontSize: 15 }}>記録を編集中</div>
                     <div className="flex gap-2">
                       <button
                         type="button"
@@ -2981,7 +2981,7 @@ export default function StrikeLog() {
                     {g.ball2.label ? g.ball2.label : g.ball2.type === "own" ? "マイボール" : "ハウスボール"}
                     {g.ball2.weight ? ` ${g.ball2.weight}lb` : ""}
                     {g.ball2.thumbless ? " ・ サムレス" : ""}
-                    <span style={{ color: COLORS.gold }}>(2つ目)</span>
+                    <span style={{ color: COLORS.strike }}>(2つ目)</span>
                   </div>
                 )}
                 {g.shoe && g.shoe.type && (
@@ -3181,7 +3181,7 @@ export default function StrikeLog() {
                             <div>
                               目標アベレージ {goalAverage}
                               {avg >= Number(goalAverage) ? (
-                                <span style={{ color: COLORS.gold, fontWeight: 700 }}> ・ 達成!</span>
+                                <span style={{ color: COLORS.strike, fontWeight: 700 }}> ・ 達成!</span>
                               ) : (
                                 <span> ・ あと{Number(goalAverage) - avg}</span>
                               )}
@@ -3191,7 +3191,7 @@ export default function StrikeLog() {
                             <div>
                               目標スコア {goalScore}
                               {highGame >= Number(goalScore) ? (
-                                <span style={{ color: COLORS.gold, fontWeight: 700 }}> ・ 達成!</span>
+                                <span style={{ color: COLORS.strike, fontWeight: 700 }}> ・ 達成!</span>
                               ) : (
                                 <span> ・ あと{Number(goalScore) - highGame}</span>
                               )}
@@ -3389,7 +3389,7 @@ export default function StrikeLog() {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div className="text-sm" style={{ color: COLORS.oak }}>基本情報</div>
-              {profileSaved && <span style={{ color: COLORS.gold, fontSize: 13 }}>保存しました</span>}
+              {profileSaved && <span style={{ color: COLORS.strike, fontSize: 13 }}>保存しました</span>}
             </div>
 
             <div className="rounded-xl p-3 border glass-card space-y-3" style={{ borderColor: COLORS.oak }}>
@@ -3519,7 +3519,7 @@ export default function StrikeLog() {
                         {b.weight}lb{b.thumbless ? " ・ サムレス" : ""}
                       </div>
                       {(b.core || b.coverstock || b.motion || b.laneCondition) && (
-                        <div className="text-xs" style={{ color: COLORS.gold }}>
+                        <div className="text-xs" style={{ color: COLORS.strike }}>
                           {[
                             b.core && CORE_LABELS[b.core],
                             b.coverstock && COVERSTOCK_LABELS[b.coverstock],
