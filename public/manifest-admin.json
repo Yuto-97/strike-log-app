@@ -4,8 +4,8 @@
   "description": "STRIKE LOG 管理画面(利用申請の承認・改善要望の確認)",
   "start_url": "/?admin=1",
   "display": "standalone",
-  "background_color": "#F6EFE2",
-  "theme_color": "#201811",
+  "background_color": "#F5F1E4",
+  "theme_color": "#152238",
   "icons": [
     { "src": "/icons/icon-admin-192.png", "sizes": "192x192", "type": "image/png" },
     { "src": "/icons/icon-admin-512.png", "sizes": "512x512", "type": "image/png" }

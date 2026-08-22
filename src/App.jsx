@@ -10,11 +10,11 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 // gold:     #D9A441  (foul-line gold, secondary accent / spares)
 
 const COLORS = {
-  ink: "#201811",
-  oak: "#A9713F",
-  cream: "#F6EFE2",
+  ink: "#152238",
+  oak: "#9C8552",
+  cream: "#F5F1E4",
   strike: "#D5482B",
-  gold: "#D9A441",
+  gold: "#C9A227",
 };
 
 const STORAGE_KEY = "games";
