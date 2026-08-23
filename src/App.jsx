@@ -1481,6 +1481,8 @@ export default function StrikeLog() {
   const [ballThumbless2, setBallThumbless2] = useState(false);
   const [selectedBallId2, setSelectedBallId2] = useState(null);
   const [myBalls, setMyBalls] = useState([]); // [{ id, label, weight, thumbless }]
+  const [editingBallNameId, setEditingBallNameId] = useState(null);
+  const [ballNameDraft, setBallNameDraft] = useState("");
   const [dominantHand, setDominantHand] = useState("right"); // "right" | "left"
   const [goalAverage, setGoalAverage] = useState("");
   const [goalScore, setGoalScore] = useState("");
@@ -1499,6 +1501,8 @@ export default function StrikeLog() {
   const [shoeTouched, setShoeTouched] = useState(false);
   const [selectedShoeId, setSelectedShoeId] = useState(null);
   const [myShoes, setMyShoes] = useState([]); // [{ id, type, label }]
+  const [editingShoeNameId, setEditingShoeNameId] = useState(null);
+  const [shoeNameDraft, setShoeNameDraft] = useState("");
   const [newShoeName, setNewShoeName] = useState("");
   const [periodMode, setPeriodMode] = useState("week"); // "day" | "week" | "month" | "custom"
   const [dayAnchor, setDayAnchor] = useState(() => toLocalISODate(new Date()));
@@ -1515,6 +1519,7 @@ export default function StrikeLog() {
   });
   const [customEnd, setCustomEnd] = useState(() => toLocalISODate(new Date()));
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [confirmRetake, setConfirmRetake] = useState(false);
   const [editingGameId, setEditingGameId] = useState(null);
   const [editFrames, setEditFrames] = useState([]);
   const [editActiveCell, setEditActiveCell] = useState(null);
@@ -1775,6 +1780,13 @@ export default function StrikeLog() {
     if (selectedBallId === id) setSelectedBallId(null);
   };
 
+  const renameMyBall = (id, newLabel) => {
+    const trimmed = newLabel.trim();
+    if (!trimmed) return;
+    persistMyBalls(myBalls.map((b) => (b.id === id ? { ...b, label: trimmed } : b)));
+    setEditingBallNameId(null);
+  };
+
   const saveShoeConfig = async (next) => {
     try {
       await storage.set(SHOE_CONFIG_KEY, JSON.stringify(next));
@@ -1806,6 +1818,13 @@ export default function StrikeLog() {
   const deleteMyShoe = (id) => {
     persistMyShoes(myShoes.filter((s) => s.id !== id));
     if (selectedShoeId === id) setSelectedShoeId(null);
+  };
+
+  const renameMyShoe = (id, newLabel) => {
+    const trimmed = newLabel.trim();
+    if (!trimmed) return;
+    persistMyShoes(myShoes.map((s) => (s.id === id ? { ...s, label: trimmed } : s)));
+    setEditingShoeNameId(null);
   };
 
   const persistGames = useCallback(async (next) => {
@@ -1994,6 +2013,25 @@ export default function StrikeLog() {
     });
   };
 
+// After picking a value for one roll, figures out which cell the picker
+// should jump to next, so editing several frames in a row doesn't require
+// re-tapping each cell by hand. Strikes end the frame immediately (no 2nd
+// roll to fill in a normal frame); the 10th frame gets up to 3 slots.
+function getNextRollCell(frameIdx, rollIdx, value) {
+  const isTenth = frameIdx === 9;
+  const maxRollIdx = isTenth ? 2 : 1;
+  if (rollIdx === 0 && value !== "X" && maxRollIdx >= 1) {
+    return { frameIdx, rollIdx: 1 };
+  }
+  if (isTenth && rollIdx < maxRollIdx) {
+    return { frameIdx, rollIdx: rollIdx + 1 };
+  }
+  if (frameIdx < 9) {
+    return { frameIdx: frameIdx + 1, rollIdx: 0 };
+  }
+  return null; // last roll of the game — nothing left to advance to
+}
+
   // Opens the picker for a given cell, pre-loading the split toggle to match
   // whatever that specific roll's current state already is.
   const handleCellTap = (gameIdx, frameIdx, rollIdx) => {
@@ -2008,8 +2046,14 @@ export default function StrikeLog() {
     // the split toggle only applies to non-strike selections.
     const isSplit = value !== "X" && splitPending;
     updateRollValue(gameIdx, frameIdx, rollIdx, value, isSplit);
-    setActiveCell(null);
-    setSplitPending(false);
+    const next = getNextRollCell(frameIdx, rollIdx, value);
+    if (next) {
+      setActiveCell({ gameIdx, ...next });
+      setSplitPending(false);
+    } else {
+      setActiveCell(null);
+      setSplitPending(false);
+    }
   };
 
   const handlePickerClear = () => {
@@ -2077,8 +2121,14 @@ export default function StrikeLog() {
     const { frameIdx, rollIdx } = editActiveCell;
     const isSplit = value !== "X" && editSplitPending;
     updateEditRollValue(frameIdx, rollIdx, value, isSplit);
-    setEditActiveCell(null);
-    setEditSplitPending(false);
+    const next = getNextRollCell(frameIdx, rollIdx, value);
+    if (next) {
+      setEditActiveCell(next);
+      setEditSplitPending(false);
+    } else {
+      setEditActiveCell(null);
+      setEditSplitPending(false);
+    }
   };
 
   const handleEditPickerClear = () => {
@@ -2674,21 +2724,48 @@ export default function StrikeLog() {
                   <Check size={18} /> 記録を保存
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPendingResult(null);
-                    setImagePreview(null);
-                    setImageMeta(null);
-                    setAnalyzeError("");
-                    setActiveCell(null);
-                    setSplitPending(false);
-                  }}
-                  className="w-full rounded-lg py-4 text-base"
-                  style={{ border: `2px solid ${COLORS.oak}`, color: COLORS.cream, fontWeight: 700 }}
-                >
-                  撮り直す
-                </button>
+                {confirmRetake ? (
+                  <div className="rounded-lg p-3" style={{ background: "#FBEAE5" }}>
+                    <div style={{ color: COLORS.danger, fontWeight: 700, fontSize: 13 }}>
+                      編集内容は失われますが、撮り直しますか?
+                    </div>
+                    <div className="flex gap-2 mt-2">
+                      <button
+                        type="button"
+                        onClick={() => setConfirmRetake(false)}
+                        className="flex-1 rounded-lg py-2 text-xs border"
+                        style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                      >
+                        キャンセル
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPendingResult(null);
+                          setImagePreview(null);
+                          setImageMeta(null);
+                          setAnalyzeError("");
+                          setActiveCell(null);
+                          setSplitPending(false);
+                          setConfirmRetake(false);
+                        }}
+                        className="flex-1 rounded-lg py-2 text-xs"
+                        style={{ background: COLORS.danger, color: "white", fontWeight: 700 }}
+                      >
+                        撮り直す
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmRetake(true)}
+                    className="w-full rounded-lg py-4 text-base"
+                    style={{ border: `2px solid ${COLORS.oak}`, color: COLORS.cream, fontWeight: 700 }}
+                  >
+                    撮り直す
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -3310,18 +3387,18 @@ export default function StrikeLog() {
                               <div key={g.id} className="rounded-xl border glass-card overflow-hidden" style={{ borderColor: COLORS.oak }}>
                                 <div
                                   className="flex items-center justify-between px-3 py-2"
-                                  style={{ background: COLORS.cream }}
+                                  style={{ borderBottom: `1px solid rgba(224, 168, 0, 0.35)` }}
                                 >
-                                  <span className="text-sm" style={{ color: COLORS.cream, fontWeight: 700 }}>
+                                  <span className="text-sm" style={{ color: COLORS.strike, fontWeight: 700 }}>
                                     {g.gameNumber ? `第${g.gameNumber}ゲーム` : "ゲーム"}
                                   </span>
                                   <span
-                                    style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 18, color: COLORS.strike }}
+                                    style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 18, color: COLORS.gold }}
                                   >
                                     {g.total}
                                   </span>
                                 </div>
-                                <div className="px-3 pt-2 pb-3" style={{ borderBottom: `1px solid #EFE4CC` }}>
+                                <div className="px-3 pt-2 pb-3" style={{ borderBottom: `1px solid rgba(224, 168, 0, 0.35)` }}>
                                   <ScoreSheet frames={g.frames} />
                                 </div>
                                 {[
@@ -3336,7 +3413,7 @@ export default function StrikeLog() {
                                   <div
                                     key={row.label}
                                     className="flex items-center justify-between px-3 py-1.5"
-                                    style={{ borderTop: `1px solid #EFE4CC` }}
+                                    style={{ borderTop: `1px solid rgba(224, 168, 0, 0.2)` }}
                                   >
                                     <span style={{ color: COLORS.cream, fontSize: 14 }}>{row.label}</span>
                                     <span className="flex items-baseline gap-2">
@@ -3493,14 +3570,33 @@ export default function StrikeLog() {
                     className="flex items-center justify-between px-3 py-2"
                     style={{ borderTop: i === 0 ? "none" : `1px solid #EFE4CC` }}
                   >
-                    <div>
-                      <div className="text-sm" style={{ color: COLORS.cream, fontWeight: 700 }}>
-                        {b.label}
-                        <span style={{ color: COLORS.strike, fontWeight: 400, fontSize: 13 }}>
-                          {" "}
-                          ({b.type === "house" ? "ハウスボール" : "マイボール"})
-                        </span>
-                      </div>
+                    <div className="flex-1">
+                      {editingBallNameId === b.id ? (
+                        <div className="flex items-center gap-2 mb-1">
+                          <input
+                            type="text"
+                            value={ballNameDraft}
+                            onChange={(e) => setBallNameDraft(e.target.value)}
+                            autoFocus
+                            className="flex-1 px-2 py-1 rounded border text-sm"
+                            style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                          />
+                          <button onClick={() => renameMyBall(b.id, ballNameDraft)} aria-label="保存">
+                            <Check size={16} style={{ color: COLORS.gold }} />
+                          </button>
+                          <button onClick={() => setEditingBallNameId(null)} aria-label="キャンセル">
+                            <X size={16} style={{ color: COLORS.strike }} />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="text-sm" style={{ color: COLORS.cream, fontWeight: 700 }}>
+                          {b.label}
+                          <span style={{ color: COLORS.strike, fontWeight: 400, fontSize: 13 }}>
+                            {" "}
+                            ({b.type === "house" ? "ハウスボール" : "マイボール"})
+                          </span>
+                        </div>
+                      )}
                       <div className="text-xs" style={{ color: COLORS.strike }}>
                         {b.weight}lb{b.thumbless ? " ・ サムレス" : ""}
                       </div>
@@ -3517,9 +3613,22 @@ export default function StrikeLog() {
                         </div>
                       )}
                     </div>
-                    <button onClick={() => deleteMyBall(b.id)} aria-label="削除">
-                      <Trash2 size={16} style={{ color: COLORS.strike }} />
-                    </button>
+                    {editingBallNameId !== b.id && (
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => {
+                            setEditingBallNameId(b.id);
+                            setBallNameDraft(b.label);
+                          }}
+                          aria-label="名前を編集"
+                        >
+                          <Pencil size={15} style={{ color: COLORS.gold }} />
+                        </button>
+                        <button onClick={() => deleteMyBall(b.id)} aria-label="削除">
+                          <Trash2 size={16} style={{ color: COLORS.strike }} />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))
               )}
@@ -3662,10 +3771,42 @@ export default function StrikeLog() {
                     className="flex items-center justify-between px-3 py-2"
                     style={{ borderTop: i === 0 ? "none" : `1px solid #EFE4CC` }}
                   >
-                    <div className="text-sm" style={{ color: COLORS.cream, fontWeight: 700 }}>{s.label}</div>
-                    <button onClick={() => deleteMyShoe(s.id)} aria-label="削除">
-                      <Trash2 size={16} style={{ color: COLORS.strike }} />
-                    </button>
+                    {editingShoeNameId === s.id ? (
+                      <div className="flex-1 flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={shoeNameDraft}
+                          onChange={(e) => setShoeNameDraft(e.target.value)}
+                          autoFocus
+                          className="flex-1 px-2 py-1 rounded border text-sm"
+                          style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                        />
+                        <button onClick={() => renameMyShoe(s.id, shoeNameDraft)} aria-label="保存">
+                          <Check size={16} style={{ color: COLORS.gold }} />
+                        </button>
+                        <button onClick={() => setEditingShoeNameId(null)} aria-label="キャンセル">
+                          <X size={16} style={{ color: COLORS.strike }} />
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="text-sm" style={{ color: COLORS.cream, fontWeight: 700 }}>{s.label}</div>
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={() => {
+                              setEditingShoeNameId(s.id);
+                              setShoeNameDraft(s.label);
+                            }}
+                            aria-label="名前を編集"
+                          >
+                            <Pencil size={15} style={{ color: COLORS.gold }} />
+                          </button>
+                          <button onClick={() => deleteMyShoe(s.id)} aria-label="削除">
+                            <Trash2 size={16} style={{ color: COLORS.strike }} />
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </div>
                 ))
               )}
