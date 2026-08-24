@@ -539,8 +539,7 @@ async function analyzeScoreImage(base64, mediaType, playerName) {
         {"rolls": ["X","X","6"], "score": 300, "split_roll_index": 2}
       ],
       "total_score": 178,
-      "confidence_notes": "",
-      "uncertain_frame_indices": []
+      "confidence_notes": ""
     }
   ]
 }
@@ -556,7 +555,6 @@ async function analyzeScoreImage(base64, mediaType, playerName) {
 - 指定された名前に一致する列が画面内に見つからない場合は player_matched を false にし、games は空配列、confidence_notes に「該当する名前が見つかりませんでした」等を記載(この場合 confidence_notes はJSONの一番外側に置いてよい)
 - 名前の指定がない場合は player_matched を true とし、画面内の(唯一の、または最初の)プレイヤーのスコアを読み取る
 - 数字がかすれている・反射で見えにくいなど読み取りに自信がない箇所は、そのゲームの confidence_notes に短く日本語で記載(なければ空文字)
-- uncertain_frame_indices は、そのゲームの中で「特に読み取りに自信がないフレーム」の番号を、0始まりのインデックス(1フレーム目なら0)で列挙した配列。手順4で合計が一致せず修正を繰り返した場合は、最終的にどうしても自信が持てなかったフレームをここに入れる。すべてのフレームに自信があれば空配列
 - JSON以外は一切出力しない`;
 
   let response;
@@ -652,18 +650,17 @@ function RollMark({ val, split, markColor = COLORS.ink, size = 17 }) {
 }
 
 // ---------- frame box (signature scoresheet element) ----------
-function FrameBox({ frame, index, isTenth, editable, activeCell, onCellTap, uncertain }) {
+function FrameBox({ frame, index, isTenth, editable, activeCell, onCellTap }) {
   const rolls = frame?.rolls || [];
   const slots = isTenth ? 3 : 2;
   const splitRolls = frame?.splitRolls || [];
   return (
     <div
       style={{
-        border: uncertain ? `2px solid ${COLORS.gold}` : `2px solid ${COLORS.ink}`,
-        background: uncertain ? "#FDF2D0" : COLORS.cream,
+        border: `2px solid ${COLORS.ink}`,
+        background: COLORS.cream,
         minWidth: isTenth ? 74 : 54,
         flex: isTenth ? "0 0 74px" : "1 0 54px",
-        boxShadow: uncertain ? `0 0 0 2px ${COLORS.gold}` : "none",
       }}
       className="flex flex-col"
     >
@@ -722,7 +719,7 @@ function FrameBox({ frame, index, isTenth, editable, activeCell, onCellTap, unce
   );
 }
 
-function ScoreSheet({ frames, editable, activeCell, onCellTap, uncertainFrames }) {
+function ScoreSheet({ frames, editable, activeCell, onCellTap }) {
   return (
     <div className="flex w-full overflow-x-auto pb-1" style={{ gap: 2 }}>
       {Array.from({ length: 10 }).map((_, i) => (
@@ -734,7 +731,6 @@ function ScoreSheet({ frames, editable, activeCell, onCellTap, uncertainFrames }
           editable={editable}
           activeCell={activeCell}
           onCellTap={onCellTap}
-          uncertain={Array.isArray(uncertainFrames) && uncertainFrames.includes(i)}
         />
       ))}
     </div>
@@ -791,32 +787,32 @@ function RollPicker({ frameIdx, rollIdx, splitEligible, onSelect, onSplitToggle,
         <button
           type="button"
           onClick={() => onSelect("G")}
-          className="glass-card rounded-lg py-1"
-          style={{ color: COLORS.cream, fontWeight: 700, fontSize: 11 }}
+          className="glass-card rounded-lg py-1 px-0.5 whitespace-nowrap"
+          style={{ color: COLORS.cream, fontWeight: 700, fontSize: 9.5 }}
         >
           G(ガーター)
         </button>
         <button
           type="button"
           onClick={() => onSelect("F")}
-          className="glass-card rounded-lg py-1"
-          style={{ border: `1px solid ${COLORS.gold}`, color: COLORS.strike, fontWeight: 700, fontSize: 11 }}
+          className="glass-card rounded-lg py-1 px-0.5 whitespace-nowrap"
+          style={{ border: `1px solid ${COLORS.gold}`, color: COLORS.strike, fontWeight: 700, fontSize: 9.5 }}
         >
           F(ファール)
         </button>
         <button
           type="button"
           onClick={() => onSelect("-")}
-          className="glass-card rounded-lg py-1"
-          style={{ color: COLORS.cream, fontWeight: 700, fontSize: 11 }}
+          className="glass-card rounded-lg py-1 px-0.5 whitespace-nowrap"
+          style={{ color: COLORS.cream, fontWeight: 700, fontSize: 9.5 }}
         >
           -(オープン)
         </button>
         <button
           type="button"
           onClick={onClear}
-          className="glass-card rounded-lg py-1"
-          style={{ color: COLORS.strike, fontWeight: 700, fontSize: 11 }}
+          className="glass-card rounded-lg py-1 px-0.5 whitespace-nowrap"
+          style={{ color: COLORS.strike, fontWeight: 700, fontSize: 9.5 }}
         >
           クリア
         </button>
@@ -1898,7 +1894,6 @@ export default function StrikeLog() {
             totalMismatch: mismatch,
             confidence_notes: game.confidence_notes || "",
             frame_by_frame_reading: game.frame_by_frame_reading || [],
-            uncertainFrames: Array.isArray(game.uncertain_frame_indices) ? game.uncertain_frame_indices : [],
           };
         });
         const firstDetectedDate = normalizedGames.find((g) => g.detectedDate)?.detectedDate;
@@ -2426,10 +2421,6 @@ function getNextRollCell(frameIdx, rollIdx, value) {
 
             {pendingResult && pendingResult.player_matched !== false && (
               <div className="space-y-3">
-                <div style={{ color: COLORS.cream, fontSize: 16, fontWeight: 700 }}>
-                  マスをタップして、正しいスコアに修正できます。
-                </div>
-
                 {(pendingResult.games || []).map((game, gameIdx) => (
                   <div key={gameIdx} className="glass-card rounded-xl p-3">
                     {pendingResult.games.length > 1 && (
@@ -2442,7 +2433,6 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                       editable
                       activeCell={activeCell?.gameIdx === gameIdx ? activeCell : null}
                       onCellTap={(frameIdx, rollIdx) => handleCellTap(gameIdx, frameIdx, rollIdx)}
-                      uncertainFrames={game.totalMismatch ? game.uncertainFrames : []}
                     />
                     <div className="mt-2 flex items-center justify-between">
                       <span className="text-xs" style={{ color: COLORS.strike }}>このゲームの合計</span>
@@ -2457,9 +2447,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                         className="mt-2 rounded p-2 text-xs"
                         style={{ background: "#FBEAE5", color: COLORS.danger, fontWeight: 700 }}
                       >
-                        {game.uncertainFrames && game.uncertainFrames.length > 0
-                          ? "⚠ すみません。うまく読み取れなかったようで、解析スコアと見比べて修正をお願いします。(上の黄色いフレームをご確認ください)"
-                          : "⚠ すみません。うまく読み取れなかったようで、解析スコアと見比べて修正をお願いします。"}
+                        ⚠ すみません。うまく読み取れなかったようで、解析スコアと見比べて修正をお願いします。
                       </div>
                     )}
                   </div>
