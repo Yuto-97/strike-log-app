@@ -1482,6 +1482,7 @@ export default function StrikeLog() {
   const [ballWeight2, setBallWeight2] = useState("");
   const [ballThumbless2, setBallThumbless2] = useState(false);
   const [selectedBallId2, setSelectedBallId2] = useState(null);
+  const [extraBalls, setExtraBalls] = useState([]); // [{ type, id }] for 3rd ball onward
   const [myBalls, setMyBalls] = useState([]); // [{ id, label, weight, thumbless }]
   const [editingBallNameId, setEditingBallNameId] = useState(null);
   const [ballNameDraft, setBallNameDraft] = useState("");
@@ -1537,6 +1538,7 @@ export default function StrikeLog() {
   const [editBallWeight2, setEditBallWeight2] = useState("");
   const [editBallThumbless2, setEditBallThumbless2] = useState(false);
   const [editSelectedBallId2, setEditSelectedBallId2] = useState(null);
+  const [editExtraBalls, setEditExtraBalls] = useState([]); // [{ type, id }] for 3rd ball onward
   const [editShoeType, setEditShoeType] = useState("rental");
   const [editSelectedShoeId, setEditSelectedShoeId] = useState(null);
   const fileInputRef = useRef(null);
@@ -1915,6 +1917,13 @@ export default function StrikeLog() {
     }
   };
 
+  const addExtraBall = () => setExtraBalls((prev) => [...prev, { type: "house", id: null }]);
+  const removeExtraBall = (idx) => setExtraBalls((prev) => prev.filter((_, i) => i !== idx));
+  const updateExtraBallType = (idx, type) =>
+    setExtraBalls((prev) => prev.map((s, i) => (i === idx ? { type, id: null } : s)));
+  const updateExtraBallId = (idx, id) =>
+    setExtraBalls((prev) => prev.map((s, i) => (i === idx ? { ...s, id } : s)));
+
   const saveGame = async () => {
     if (!pendingResult || !pendingResult.games?.length) return;
     const selectedBall = myBalls.find((b) => b.id === selectedBallId);
@@ -1934,6 +1943,12 @@ export default function StrikeLog() {
         label: selectedBall2 ? selectedBall2.label : null,
       };
     }
+    const extraBallsData = extraBalls
+      .filter((sel) => sel.id)
+      .map((sel) => {
+        const b = myBalls.find((x) => x.id === sel.id);
+        return { type: sel.type, weight: b ? b.weight : null, thumbless: b ? b.thumbless : false, label: b ? b.label : null };
+      });
     const selectedShoe = myShoes.find((s) => s.id === selectedShoeId);
     const shoe =
       shoeType === "own"
@@ -1956,6 +1971,7 @@ export default function StrikeLog() {
       total: g.total_score ?? 0,
       ball,
       ball2,
+      extraBalls: extraBallsData,
       shoe,
       createdAt: Date.now() + idx,
     }));
@@ -1971,6 +1987,7 @@ export default function StrikeLog() {
     setBallWeight2("");
     setBallThumbless2(false);
     setSelectedBallId2(null);
+    setExtraBalls([]);
     setPendingResult(null);
     setImagePreview(null);
     setImageMeta(null);
@@ -2068,6 +2085,13 @@ function getNextRollCell(frameIdx, rollIdx, value) {
     setSplitPending(false);
   };
 
+  const addEditExtraBall = () => setEditExtraBalls((prev) => [...prev, { type: "house", id: null }]);
+  const removeEditExtraBall = (idx) => setEditExtraBalls((prev) => prev.filter((_, i) => i !== idx));
+  const updateEditExtraBallType = (idx, type) =>
+    setEditExtraBalls((prev) => prev.map((s, i) => (i === idx ? { type, id: null } : s)));
+  const updateEditExtraBallId = (idx, id) =>
+    setEditExtraBalls((prev) => prev.map((s, i) => (i === idx ? { ...s, id } : s)));
+
   // ---------- history editing (mirrors the scan-tab editing logic above,
   // but operates on a game already saved in history) ----------
   const startEditGame = (g) => {
@@ -2086,6 +2110,12 @@ function getNextRollCell(frameIdx, rollIdx, value) {
     setEditBallWeight2(g.ball2?.weight ? String(g.ball2.weight) : "");
     setEditBallThumbless2(!!g.ball2?.thumbless);
     setEditSelectedBallId2(g.ball2?.label ? myBalls.find((b) => b.label === g.ball2.label)?.id || null : null);
+    setEditExtraBalls(
+      (g.extraBalls || []).map((eb) => ({
+        type: eb.type || "house",
+        id: eb.label ? myBalls.find((b) => b.label === eb.label)?.id || null : null,
+      }))
+    );
     setEditShoeType(g.shoe?.type || "rental");
     setEditSelectedShoeId(g.shoe?.shoeRegistryId || null);
   };
@@ -2162,6 +2192,12 @@ function getNextRollCell(frameIdx, rollIdx, value) {
         label: selectedBall2 ? selectedBall2.label : null,
       };
     }
+    const editExtraBallsData = editExtraBalls
+      .filter((sel) => sel.id)
+      .map((sel) => {
+        const b = myBalls.find((x) => x.id === sel.id);
+        return { type: sel.type, weight: b ? b.weight : null, thumbless: b ? b.thumbless : false, label: b ? b.label : null };
+      });
     const selectedShoe = myShoes.find((s) => s.id === editSelectedShoeId);
     const shoe =
       editShoeType === "own"
@@ -2183,6 +2219,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
               total: norm.total ?? g.total,
               ball,
               ball2,
+              extraBalls: editExtraBallsData,
               shoe,
             }
           : g
@@ -2537,86 +2574,12 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                   )}
                 </div>
 
-                <div className="glass-card rounded-xl p-3 space-y-2">
+                <div className="glass-card rounded-xl p-3 space-y-3">
                   <div className="text-sm flex items-center gap-2" style={{ color: COLORS.cream }}>
                     <CircleDot size={16} /> 使用ボール
                   </div>
 
-                  <div className="flex gap-2">
-                    {[
-                      { key: "house", label: "ハウスボール" },
-                      { key: "own", label: "マイボール" },
-                    ].map((opt) => (
-                      <button
-                        key={opt.key}
-                        type="button"
-                        onClick={() => setBallType(opt.key)}
-                        className="flex-1 rounded-lg py-2 text-xs"
-                        style={{
-                          background: ballType === opt.key ? COLORS.ink : "rgba(40, 55, 95, 0.55)",
-                          color: COLORS.cream,
-                          border: `1px solid ${COLORS.oak}`,
-                          fontWeight: 700,
-                        }}
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
-                  </div>
-
-                  {myBalls.filter((b) => (b.type || "own") === ballType).length === 0 ? (
-                    <div className="text-xs" style={{ color: COLORS.strike }}>
-                      登録済みの{ballType === "house" ? "ハウスボール" : "マイボール"}がありません。「設定」タブで登録してください
-                    </div>
-                  ) : (
-                    <select
-                      value={selectedBallId || ""}
-                      onChange={(e) => setSelectedBallId(e.target.value || null)}
-                      className="w-full px-2 py-2 rounded border text-sm"
-                      style={{ borderColor: COLORS.oak, color: COLORS.ink }}
-                    >
-                      <option value="">ボールを選択</option>
-                      {myBalls
-                        .filter((b) => (b.type || "own") === ballType)
-                        .map((b) => (
-                          <option key={b.id} value={b.id}>
-                            {b.label}({b.weight}lb{b.thumbless ? "・サムレス" : ""})
-                          </option>
-                        ))}
-                    </select>
-                  )}
-                </div>
-
-                {!useSecondBall ? (
-                  <button
-                    type="button"
-                    onClick={() => setUseSecondBall(true)}
-                    className="w-full rounded-lg py-2 text-xs"
-                    style={{ border: `1px dashed ${COLORS.oak}`, color: COLORS.strike }}
-                  >
-                    + 2つ目のボールを記録する
-                  </button>
-                ) : (
-                  <div className="glass-card rounded-xl p-3 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="text-sm flex items-center gap-2" style={{ color: COLORS.cream }}>
-                        <CircleDot size={16} /> 使用ボール(2つ目)
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setUseSecondBall(false);
-                          setBallType2("house");
-                          setBallWeight2("");
-                          setBallThumbless2(false);
-                          setSelectedBallId2(null);
-                        }}
-                        aria-label="2つ目のボールを削除"
-                      >
-                        <X size={16} style={{ color: COLORS.strike }} />
-                      </button>
-                    </div>
-
+                  <div className="space-y-2">
                     <div className="flex gap-2">
                       {[
                         { key: "house", label: "ハウスボール" },
@@ -2625,10 +2588,10 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                         <button
                           key={opt.key}
                           type="button"
-                          onClick={() => setBallType2(opt.key)}
+                          onClick={() => setBallType(opt.key)}
                           className="flex-1 rounded-lg py-2 text-xs"
                           style={{
-                            background: ballType2 === opt.key ? COLORS.ink : "rgba(40, 55, 95, 0.55)",
+                            background: ballType === opt.key ? COLORS.ink : "rgba(40, 55, 95, 0.55)",
                             color: COLORS.cream,
                             border: `1px solid ${COLORS.oak}`,
                             fontWeight: 700,
@@ -2639,20 +2602,20 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                       ))}
                     </div>
 
-                    {myBalls.filter((b) => (b.type || "own") === ballType2).length === 0 ? (
+                    {myBalls.filter((b) => (b.type || "own") === ballType).length === 0 ? (
                       <div className="text-xs" style={{ color: COLORS.strike }}>
-                        登録済みの{ballType2 === "house" ? "ハウスボール" : "マイボール"}がありません
+                        登録済みの{ballType === "house" ? "ハウスボール" : "マイボール"}がありません。「設定」タブで登録してください
                       </div>
                     ) : (
                       <select
-                        value={selectedBallId2 || ""}
-                        onChange={(e) => setSelectedBallId2(e.target.value || null)}
+                        value={selectedBallId || ""}
+                        onChange={(e) => setSelectedBallId(e.target.value || null)}
                         className="w-full px-2 py-2 rounded border text-sm"
                         style={{ borderColor: COLORS.oak, color: COLORS.ink }}
                       >
                         <option value="">ボールを選択</option>
                         {myBalls
-                          .filter((b) => (b.type || "own") === ballType2)
+                          .filter((b) => (b.type || "own") === ballType)
                           .map((b) => (
                             <option key={b.id} value={b.id}>
                               {b.label}({b.weight}lb{b.thumbless ? "・サムレス" : ""})
@@ -2661,7 +2624,144 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                       </select>
                     )}
                   </div>
-                )}
+
+                  {useSecondBall && (
+                    <div className="space-y-2" style={{ borderTop: `1px solid rgba(224, 168, 0, 0.3)`, paddingTop: 10 }}>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs" style={{ color: COLORS.oak }}>2個目のボール</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setUseSecondBall(false);
+                            setBallType2("house");
+                            setBallWeight2("");
+                            setBallThumbless2(false);
+                            setSelectedBallId2(null);
+                            setExtraBalls([]);
+                          }}
+                          aria-label="2つ目のボールを削除"
+                        >
+                          <X size={14} style={{ color: COLORS.strike }} />
+                        </button>
+                      </div>
+
+                      <div className="flex gap-2">
+                        {[
+                          { key: "house", label: "ハウスボール" },
+                          { key: "own", label: "マイボール" },
+                        ].map((opt) => (
+                          <button
+                            key={opt.key}
+                            type="button"
+                            onClick={() => setBallType2(opt.key)}
+                            className="flex-1 rounded-lg py-2 text-xs"
+                            style={{
+                              background: ballType2 === opt.key ? COLORS.ink : "rgba(40, 55, 95, 0.55)",
+                              color: COLORS.cream,
+                              border: `1px solid ${COLORS.oak}`,
+                              fontWeight: 700,
+                            }}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      {myBalls.filter((b) => (b.type || "own") === ballType2).length === 0 ? (
+                        <div className="text-xs" style={{ color: COLORS.strike }}>
+                          登録済みの{ballType2 === "house" ? "ハウスボール" : "マイボール"}がありません
+                        </div>
+                      ) : (
+                        <select
+                          value={selectedBallId2 || ""}
+                          onChange={(e) => setSelectedBallId2(e.target.value || null)}
+                          className="w-full px-2 py-2 rounded border text-sm"
+                          style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                        >
+                          <option value="">ボールを選択</option>
+                          {myBalls
+                            .filter((b) => (b.type || "own") === ballType2)
+                            .map((b) => (
+                              <option key={b.id} value={b.id}>
+                                {b.label}({b.weight}lb{b.thumbless ? "・サムレス" : ""})
+                              </option>
+                            ))}
+                        </select>
+                      )}
+                    </div>
+                  )}
+
+                  {useSecondBall &&
+                    extraBalls.map((sel, idx) => (
+                      <div key={idx} className="space-y-2" style={{ borderTop: `1px solid rgba(224, 168, 0, 0.3)`, paddingTop: 10 }}>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs" style={{ color: COLORS.oak }}>{idx + 3}個目のボール</span>
+                          <button type="button" onClick={() => removeExtraBall(idx)} aria-label="削除">
+                            <X size={14} style={{ color: COLORS.strike }} />
+                          </button>
+                        </div>
+
+                        <div className="flex gap-2">
+                          {[
+                            { key: "house", label: "ハウスボール" },
+                            { key: "own", label: "マイボール" },
+                          ].map((opt) => (
+                            <button
+                              key={opt.key}
+                              type="button"
+                              onClick={() => updateExtraBallType(idx, opt.key)}
+                              className="flex-1 rounded-lg py-2 text-xs"
+                              style={{
+                                background: sel.type === opt.key ? COLORS.ink : "rgba(40, 55, 95, 0.55)",
+                                color: COLORS.cream,
+                                border: `1px solid ${COLORS.oak}`,
+                                fontWeight: 700,
+                              }}
+                            >
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+
+                        {myBalls.filter((b) => (b.type || "own") === sel.type).length === 0 ? (
+                          <div className="text-xs" style={{ color: COLORS.strike }}>
+                            登録済みの{sel.type === "house" ? "ハウスボール" : "マイボール"}がありません
+                          </div>
+                        ) : (
+                          <select
+                            value={sel.id || ""}
+                            onChange={(e) => updateExtraBallId(idx, e.target.value || null)}
+                            className="w-full px-2 py-2 rounded border text-sm"
+                            style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                          >
+                            <option value="">ボールを選択</option>
+                            {myBalls
+                              .filter((b) => (b.type || "own") === sel.type)
+                              .map((b) => (
+                                <option key={b.id} value={b.id}>
+                                  {b.label}({b.weight}lb{b.thumbless ? "・サムレス" : ""})
+                                </option>
+                              ))}
+                          </select>
+                        )}
+                      </div>
+                    ))}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!useSecondBall) {
+                        setUseSecondBall(true);
+                      } else {
+                        addExtraBall();
+                      }
+                    }}
+                    className="w-full rounded-lg py-2 text-xs"
+                    style={{ border: `1px dashed ${COLORS.oak}`, color: COLORS.strike }}
+                  >
+                    + ボールを追加
+                  </button>
+                </div>
 
                 <div className="glass-card rounded-xl p-3 space-y-2">
                   <div className="text-sm flex items-center gap-2" style={{ color: COLORS.cream }}>
@@ -2841,69 +2941,10 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                     />
                   )}
 
-                  <div className="rounded-xl p-3 glass-card space-y-2">
+                  <div className="rounded-xl p-3 glass-card space-y-3">
                     <div className="text-xs" style={{ color: COLORS.oak }}>ボール</div>
-                    <div className="flex gap-2">
-                      {[
-                        { key: "house", label: "ハウスボール" },
-                        { key: "own", label: "マイボール" },
-                      ].map((opt) => (
-                        <button
-                          key={opt.key}
-                          type="button"
-                          onClick={() => setEditBallType(opt.key)}
-                          className="flex-1 rounded-lg py-2 text-xs"
-                          style={{
-                            background: editBallType === opt.key ? COLORS.ink : "rgba(40, 55, 95, 0.55)",
-                            color: COLORS.cream,
-                            border: `1px solid ${COLORS.oak}`,
-                            fontWeight: 700,
-                          }}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
-                    </div>
-                    {myBalls.filter((b) => (b.type || "own") === editBallType).length === 0 ? (
-                      <div className="text-xs" style={{ color: COLORS.strike }}>
-                        登録済みの{editBallType === "house" ? "ハウスボール" : "マイボール"}がありません
-                      </div>
-                    ) : (
-                      <select
-                        value={editSelectedBallId || ""}
-                        onChange={(e) => setEditSelectedBallId(e.target.value || null)}
-                        className="w-full px-2 py-2 rounded border text-sm"
-                        style={{ borderColor: COLORS.oak, color: COLORS.ink }}
-                      >
-                        <option value="">ボールを選択</option>
-                        {myBalls
-                          .filter((b) => (b.type || "own") === editBallType)
-                          .map((b) => (
-                            <option key={b.id} value={b.id}>
-                              {b.label}({b.weight}lb{b.thumbless ? "・サムレス" : ""})
-                            </option>
-                          ))}
-                      </select>
-                    )}
-                  </div>
 
-                  {!editUseSecondBall ? (
-                    <button
-                      type="button"
-                      onClick={() => setEditUseSecondBall(true)}
-                      className="w-full rounded-lg py-2 text-xs"
-                      style={{ border: `1px dashed ${COLORS.oak}`, color: COLORS.strike }}
-                    >
-                      + 2つ目のボールを追加
-                    </button>
-                  ) : (
-                    <div className="rounded-xl p-3 glass-card space-y-2">
-                      <div className="flex items-center justify-between">
-                        <div className="text-xs" style={{ color: COLORS.oak }}>ボール(2つ目)</div>
-                        <button type="button" onClick={() => setEditUseSecondBall(false)} aria-label="削除">
-                          <X size={14} style={{ color: COLORS.oak }} />
-                        </button>
-                      </div>
+                    <div className="space-y-2">
                       <div className="flex gap-2">
                         {[
                           { key: "house", label: "ハウスボール" },
@@ -2912,10 +2953,10 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                           <button
                             key={opt.key}
                             type="button"
-                            onClick={() => setEditBallType2(opt.key)}
+                            onClick={() => setEditBallType(opt.key)}
                             className="flex-1 rounded-lg py-2 text-xs"
                             style={{
-                              background: editBallType2 === opt.key ? COLORS.ink : "rgba(40, 55, 95, 0.55)",
+                              background: editBallType === opt.key ? COLORS.ink : "rgba(40, 55, 95, 0.55)",
                               color: COLORS.cream,
                               border: `1px solid ${COLORS.oak}`,
                               fontWeight: 700,
@@ -2925,20 +2966,20 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                           </button>
                         ))}
                       </div>
-                      {myBalls.filter((b) => (b.type || "own") === editBallType2).length === 0 ? (
+                      {myBalls.filter((b) => (b.type || "own") === editBallType).length === 0 ? (
                         <div className="text-xs" style={{ color: COLORS.strike }}>
-                          登録済みの{editBallType2 === "house" ? "ハウスボール" : "マイボール"}がありません
+                          登録済みの{editBallType === "house" ? "ハウスボール" : "マイボール"}がありません
                         </div>
                       ) : (
                         <select
-                          value={editSelectedBallId2 || ""}
-                          onChange={(e) => setEditSelectedBallId2(e.target.value || null)}
+                          value={editSelectedBallId || ""}
+                          onChange={(e) => setEditSelectedBallId(e.target.value || null)}
                           className="w-full px-2 py-2 rounded border text-sm"
                           style={{ borderColor: COLORS.oak, color: COLORS.ink }}
                         >
                           <option value="">ボールを選択</option>
                           {myBalls
-                            .filter((b) => (b.type || "own") === editBallType2)
+                            .filter((b) => (b.type || "own") === editBallType)
                             .map((b) => (
                               <option key={b.id} value={b.id}>
                                 {b.label}({b.weight}lb{b.thumbless ? "・サムレス" : ""})
@@ -2947,7 +2988,129 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                         </select>
                       )}
                     </div>
-                  )}
+
+                    {editUseSecondBall && (
+                      <div className="space-y-2" style={{ borderTop: `1px solid rgba(224, 168, 0, 0.3)`, paddingTop: 10 }}>
+                        <div className="flex items-center justify-between">
+                          <div className="text-xs" style={{ color: COLORS.oak }}>2個目のボール</div>
+                          <button type="button" onClick={() => setEditUseSecondBall(false)} aria-label="削除">
+                            <X size={14} style={{ color: COLORS.oak }} />
+                          </button>
+                        </div>
+                        <div className="flex gap-2">
+                          {[
+                            { key: "house", label: "ハウスボール" },
+                            { key: "own", label: "マイボール" },
+                          ].map((opt) => (
+                            <button
+                              key={opt.key}
+                              type="button"
+                              onClick={() => setEditBallType2(opt.key)}
+                              className="flex-1 rounded-lg py-2 text-xs"
+                              style={{
+                                background: editBallType2 === opt.key ? COLORS.ink : "rgba(40, 55, 95, 0.55)",
+                                color: COLORS.cream,
+                                border: `1px solid ${COLORS.oak}`,
+                                fontWeight: 700,
+                              }}
+                            >
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+                        {myBalls.filter((b) => (b.type || "own") === editBallType2).length === 0 ? (
+                          <div className="text-xs" style={{ color: COLORS.strike }}>
+                            登録済みの{editBallType2 === "house" ? "ハウスボール" : "マイボール"}がありません
+                          </div>
+                        ) : (
+                          <select
+                            value={editSelectedBallId2 || ""}
+                            onChange={(e) => setEditSelectedBallId2(e.target.value || null)}
+                            className="w-full px-2 py-2 rounded border text-sm"
+                            style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                          >
+                            <option value="">ボールを選択</option>
+                            {myBalls
+                              .filter((b) => (b.type || "own") === editBallType2)
+                              .map((b) => (
+                                <option key={b.id} value={b.id}>
+                                  {b.label}({b.weight}lb{b.thumbless ? "・サムレス" : ""})
+                                </option>
+                              ))}
+                          </select>
+                        )}
+                      </div>
+                    )}
+
+                    {editUseSecondBall &&
+                      editExtraBalls.map((sel, idx) => (
+                        <div key={idx} className="space-y-2" style={{ borderTop: `1px solid rgba(224, 168, 0, 0.3)`, paddingTop: 10 }}>
+                          <div className="flex items-center justify-between">
+                            <div className="text-xs" style={{ color: COLORS.oak }}>{idx + 3}個目のボール</div>
+                            <button type="button" onClick={() => removeEditExtraBall(idx)} aria-label="削除">
+                              <X size={14} style={{ color: COLORS.oak }} />
+                            </button>
+                          </div>
+                          <div className="flex gap-2">
+                            {[
+                              { key: "house", label: "ハウスボール" },
+                              { key: "own", label: "マイボール" },
+                            ].map((opt) => (
+                              <button
+                                key={opt.key}
+                                type="button"
+                                onClick={() => updateEditExtraBallType(idx, opt.key)}
+                                className="flex-1 rounded-lg py-2 text-xs"
+                                style={{
+                                  background: sel.type === opt.key ? COLORS.ink : "rgba(40, 55, 95, 0.55)",
+                                  color: COLORS.cream,
+                                  border: `1px solid ${COLORS.oak}`,
+                                  fontWeight: 700,
+                                }}
+                              >
+                                {opt.label}
+                              </button>
+                            ))}
+                          </div>
+                          {myBalls.filter((b) => (b.type || "own") === sel.type).length === 0 ? (
+                            <div className="text-xs" style={{ color: COLORS.strike }}>
+                              登録済みの{sel.type === "house" ? "ハウスボール" : "マイボール"}がありません
+                            </div>
+                          ) : (
+                            <select
+                              value={sel.id || ""}
+                              onChange={(e) => updateEditExtraBallId(idx, e.target.value || null)}
+                              className="w-full px-2 py-2 rounded border text-sm"
+                              style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                            >
+                              <option value="">ボールを選択</option>
+                              {myBalls
+                                .filter((b) => (b.type || "own") === sel.type)
+                                .map((b) => (
+                                  <option key={b.id} value={b.id}>
+                                    {b.label}({b.weight}lb{b.thumbless ? "・サムレス" : ""})
+                                  </option>
+                                ))}
+                            </select>
+                          )}
+                        </div>
+                      ))}
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!editUseSecondBall) {
+                          setEditUseSecondBall(true);
+                        } else {
+                          addEditExtraBall();
+                        }
+                      }}
+                      className="w-full rounded-lg py-2 text-xs"
+                      style={{ border: `1px dashed ${COLORS.oak}`, color: COLORS.strike }}
+                    >
+                      + ボールを追加
+                    </button>
+                  </div>
 
                   <div className="rounded-xl p-3 glass-card space-y-2">
                     <div className="text-xs" style={{ color: COLORS.oak }}>シューズ</div>
@@ -3057,6 +3220,15 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                     <span style={{ color: COLORS.strike }}>(2つ目)</span>
                   </div>
                 )}
+                {(g.extraBalls || []).map((eb, ebIdx) => (
+                  <div key={ebIdx} className="mb-2 flex items-center gap-1" style={{ color: COLORS.strike, fontSize: 13 }}>
+                    <CircleDot size={11} />
+                    {eb.label ? eb.label : eb.type === "own" ? "マイボール" : "ハウスボール"}
+                    {eb.weight ? ` ${eb.weight}lb` : ""}
+                    {eb.thumbless ? " ・ サムレス" : ""}
+                    <span style={{ color: COLORS.strike }}>({ebIdx + 3}つ目)</span>
+                  </div>
+                ))}
                 {g.shoe && g.shoe.type && (
                   <div className="mb-2 flex items-center gap-1" style={{ color: COLORS.strike, fontSize: 13 }}>
                     <CircleDot size={11} />
