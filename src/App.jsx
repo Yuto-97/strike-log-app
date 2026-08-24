@@ -685,6 +685,7 @@ function FrameBox({ frame, index, isTenth, editable, activeCell, onCellTap }) {
                 height: 28,
                 borderRight: i < slots - 1 ? `1px solid ${COLORS.ink}` : "none",
                 background: isActive ? "#EFE4CC" : "transparent",
+                boxShadow: isActive ? `inset 0 0 0 2px ${COLORS.gold}` : "none",
                 color: cellColor,
                 fontWeight: 700,
                 fontFamily: "'Oswald', sans-serif",
