@@ -2434,37 +2434,42 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                       activeCell={activeCell?.gameIdx === gameIdx ? activeCell : null}
                       onCellTap={(frameIdx, rollIdx) => handleCellTap(gameIdx, frameIdx, rollIdx)}
                     />
-                    <div className="mt-2 flex items-center justify-between">
-                      <span className="text-xs" style={{ color: COLORS.strike }}>このゲームの合計</span>
-                      <span
-                        style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 18, color: COLORS.strike }}
-                      >
-                        {game.total_score ?? "-"}
-                      </span>
-                    </div>
-                    {game.totalMismatch && (
+
+                    {activeCell?.gameIdx === gameIdx && (
+                      <div className="mt-2">
+                        <RollPicker
+                          frameIdx={activeCell.frameIdx}
+                          rollIdx={activeCell.rollIdx}
+                          splitEligible
+                          splitActive={splitPending}
+                          onSplitToggle={() => setSplitPending((s) => !s)}
+                          onSelect={handlePickerSelect}
+                          onClear={handlePickerClear}
+                          onClose={closePicker}
+                        />
+                      </div>
+                    )}
+
+                    {!(activeCell?.gameIdx === gameIdx) && (
+                      <div className="mt-2 flex items-center justify-between">
+                        <span className="text-xs" style={{ color: COLORS.strike }}>このゲームの合計</span>
+                        <span
+                          style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 18, color: COLORS.strike }}
+                        >
+                          {game.total_score ?? "-"}
+                        </span>
+                      </div>
+                    )}
+                    {game.totalMismatch && !activeCell && (
                       <div
                         className="mt-2 rounded p-2 text-xs"
-                        style={{ background: "#FBEAE5", color: COLORS.danger, fontWeight: 700 }}
+                        style={{ color: COLORS.danger, fontWeight: 700 }}
                       >
                         ⚠ すみません。うまく読み取れなかったようで、解析スコアと見比べて修正をお願いします。
                       </div>
                     )}
                   </div>
                 ))}
-
-                {activeCell && (
-                  <RollPicker
-                    frameIdx={activeCell.frameIdx}
-                    rollIdx={activeCell.rollIdx}
-                    splitEligible
-                    splitActive={splitPending}
-                    onSplitToggle={() => setSplitPending((s) => !s)}
-                    onSelect={handlePickerSelect}
-                    onClear={handlePickerClear}
-                    onClose={closePicker}
-                  />
-                )}
 
                 <div className="text-xs" style={{ color: COLORS.strike }}>
                   合計スコアは公式ルールに沿って自動計算されます
