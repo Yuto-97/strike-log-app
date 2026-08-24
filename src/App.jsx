@@ -626,14 +626,14 @@ function SplitWrap({ children }) {
   );
 }
 
-function RollMark({ val, split, markColor = COLORS.ink }) {
+function RollMark({ val, split, markColor = COLORS.ink, size = 17 }) {
   if (val === undefined || val === "") return null;
   let content;
   if (val === "X") {
     // Strike: two triangles meeting point-to-point (bowtie shape), the
     // classic strike icon seen on paper scoresheets and electronic boards.
     content = (
-      <svg width="17" height="17" viewBox="0 0 17 17" style={{ display: "block" }}>
+      <svg width={size} height={size} viewBox="0 0 17 17" style={{ display: "block" }}>
         <polygon points="2,2 2,15 8.5,8.5" fill={markColor} />
         <polygon points="15,2 15,15 8.5,8.5" fill={markColor} />
       </svg>
@@ -641,7 +641,7 @@ function RollMark({ val, split, markColor = COLORS.ink }) {
   } else if (val === "/") {
     // Spare: a single solid triangle filling the cell's corner.
     content = (
-      <svg width="17" height="17" viewBox="0 0 17 17" style={{ display: "block" }}>
+      <svg width={size} height={size} viewBox="0 0 17 17" style={{ display: "block" }}>
         <polygon points="2,15 15,15 15,2" fill={markColor} />
       </svg>
     );
@@ -748,75 +748,75 @@ function RollPicker({ frameIdx, rollIdx, splitEligible, onSelect, onSplitToggle,
       key={label}
       type="button"
       onClick={() => onSelect(value)}
-      className="glass-card rounded-lg py-2 text-sm"
-      style={{ color: COLORS.cream, fontFamily: "'Oswald', sans-serif", fontWeight: 700 }}
+      className="glass-card rounded-lg py-1"
+      style={{ color: COLORS.cream, fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 13 }}
     >
       {label}
     </button>
   );
   return (
-    <div className="glass-card rounded-xl p-3 space-y-2">
-      <div className="flex items-center justify-between text-xs" style={{ color: COLORS.strike }}>
+    <div className="glass-card rounded-xl p-2 space-y-1.5">
+      <div className="flex items-center justify-between" style={{ color: COLORS.strike, fontSize: 11 }}>
         <span>
           フレーム{frameIdx + 1} ・ {rollIdx + 1}投目を選択
         </span>
         <button type="button" onClick={onClose} className="flex items-center gap-1" style={{ color: COLORS.strike }}>
-          <X size={14} /> 閉じる
+          <X size={12} /> 閉じる
         </button>
       </div>
 
-      <div className="grid grid-cols-6 gap-1.5">
+      <div className="grid grid-cols-6 gap-1">
         {Array.from({ length: 11 }).map((_, n) => numberBtn(String(n), String(n)))}
         <button
           type="button"
           onClick={() => onSelect("X")}
-          className="glass-card rounded-lg py-2 flex flex-col items-center justify-center gap-0.5 text-sm"
+          className="glass-card rounded-lg py-1 flex flex-col items-center justify-center gap-0.5"
           style={{ border: `1px solid ${COLORS.gold}`, color: COLORS.strike, fontFamily: "'Oswald', sans-serif", fontWeight: 700 }}
         >
-          <RollMark val="X" markColor={COLORS.strike} />
-          <span style={{ fontSize: 10 }}>ストライク</span>
+          <RollMark val="X" markColor={COLORS.strike} size={13} />
+          <span style={{ fontSize: 8 }}>ストライク</span>
         </button>
       </div>
 
-      <div className="grid grid-cols-5 gap-1.5">
+      <div className="grid grid-cols-5 gap-1">
         <button
           type="button"
           onClick={() => onSelect("/")}
-          className="glass-card rounded-lg py-2 flex flex-col items-center justify-center gap-0.5 text-sm"
+          className="glass-card rounded-lg py-1 flex flex-col items-center justify-center gap-0.5"
           style={{ border: `1px solid ${COLORS.gold}`, color: COLORS.strike, fontFamily: "'Oswald', sans-serif", fontWeight: 700 }}
         >
-          <RollMark val="/" markColor={COLORS.strike} />
-          <span style={{ fontSize: 10 }}>スペア</span>
+          <RollMark val="/" markColor={COLORS.strike} size={13} />
+          <span style={{ fontSize: 8 }}>スペア</span>
         </button>
         <button
           type="button"
           onClick={() => onSelect("G")}
-          className="glass-card rounded-lg py-2 text-xs"
-          style={{ color: COLORS.cream, fontWeight: 700 }}
+          className="glass-card rounded-lg py-1"
+          style={{ color: COLORS.cream, fontWeight: 700, fontSize: 11 }}
         >
           G(ガーター)
         </button>
         <button
           type="button"
           onClick={() => onSelect("F")}
-          className="glass-card rounded-lg py-2 text-xs"
-          style={{ border: `1px solid ${COLORS.gold}`, color: COLORS.strike, fontWeight: 700 }}
+          className="glass-card rounded-lg py-1"
+          style={{ border: `1px solid ${COLORS.gold}`, color: COLORS.strike, fontWeight: 700, fontSize: 11 }}
         >
           F(ファール)
         </button>
         <button
           type="button"
           onClick={() => onSelect("-")}
-          className="glass-card rounded-lg py-2 text-xs"
-          style={{ color: COLORS.cream, fontWeight: 700 }}
+          className="glass-card rounded-lg py-1"
+          style={{ color: COLORS.cream, fontWeight: 700, fontSize: 11 }}
         >
           -(オープン)
         </button>
         <button
           type="button"
           onClick={onClear}
-          className="glass-card rounded-lg py-2 text-xs"
-          style={{ color: COLORS.strike, fontWeight: 700 }}
+          className="glass-card rounded-lg py-1"
+          style={{ color: COLORS.strike, fontWeight: 700, fontSize: 11 }}
         >
           クリア
         </button>
@@ -826,12 +826,13 @@ function RollPicker({ frameIdx, rollIdx, splitEligible, onSelect, onSplitToggle,
         <button
           type="button"
           onClick={onSplitToggle}
-          className="w-full rounded-lg py-2 text-xs flex items-center justify-center gap-2"
+          className="w-full rounded-lg py-1.5 flex items-center justify-center gap-2"
           style={{
             background: splitActive ? COLORS.gold : "rgba(40, 55, 95, 0.55)",
             border: `1px solid ${COLORS.gold}`,
             color: splitActive ? "white" : COLORS.cream,
             fontWeight: 700,
+            fontSize: 11,
           }}
         >
           スプリット(⑧のように丸で囲む){splitActive ? ": ON" : ""}
@@ -2323,7 +2324,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
         </div>
       </header>
 
-      <main className="max-w-md mx-auto px-4 pt-5" style={{ paddingBottom: activeCell || editActiveCell ? 260 : 96 }}>
+      <main className="max-w-md mx-auto px-4 pb-24 pt-5">
         {tab === "scan" && (
           <div className="space-y-4">
             <div className="rounded-xl p-3 border glass-card" style={{ borderColor: COLORS.oak }}>
@@ -2362,12 +2363,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
 
             {imagePreview && (
               <div className="rounded-xl overflow-hidden border" style={{ borderColor: COLORS.oak }}>
-                <img
-                  src={imagePreview}
-                  alt="スコア写真プレビュー"
-                  className="w-full object-cover"
-                  style={{ maxHeight: pendingResult ? 110 : 288 }}
-                />
+                <img src={imagePreview} alt="スコア写真プレビュー" className="w-full object-cover max-h-72" />
               </div>
             )}
 
@@ -2470,23 +2466,16 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                 ))}
 
                 {activeCell && (
-                  <div
-                    className="fixed left-0 right-0 px-4"
-                    style={{ bottom: 76, zIndex: 40 }}
-                  >
-                    <div className="max-w-md mx-auto">
-                      <RollPicker
-                        frameIdx={activeCell.frameIdx}
-                        rollIdx={activeCell.rollIdx}
-                        splitEligible
-                        splitActive={splitPending}
-                        onSplitToggle={() => setSplitPending((s) => !s)}
-                        onSelect={handlePickerSelect}
-                        onClear={handlePickerClear}
-                        onClose={closePicker}
-                      />
-                    </div>
-                  </div>
+                  <RollPicker
+                    frameIdx={activeCell.frameIdx}
+                    rollIdx={activeCell.rollIdx}
+                    splitEligible
+                    splitActive={splitPending}
+                    onSplitToggle={() => setSplitPending((s) => !s)}
+                    onSelect={handlePickerSelect}
+                    onClear={handlePickerClear}
+                    onClose={closePicker}
+                  />
                 )}
 
                 <div className="text-xs" style={{ color: COLORS.strike }}>
@@ -2846,23 +2835,16 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                   <ScoreSheet frames={editFrames} editable activeCell={editActiveCell} onCellTap={handleEditCellTap} />
 
                   {editActiveCell && (
-                    <div
-                      className="fixed left-0 right-0 px-4"
-                      style={{ bottom: 76, zIndex: 40 }}
-                    >
-                      <div className="max-w-md mx-auto">
-                        <RollPicker
-                          frameIdx={editActiveCell.frameIdx}
-                          rollIdx={editActiveCell.rollIdx}
-                          splitEligible={editActiveCell.rollIdx === 0}
-                          splitActive={editSplitPending}
-                          onSplitToggle={() => setEditSplitPending((s) => !s)}
-                          onSelect={handleEditPickerSelect}
-                          onClear={handleEditPickerClear}
-                          onClose={closeEditPicker}
-                        />
-                      </div>
-                    </div>
+                    <RollPicker
+                      frameIdx={editActiveCell.frameIdx}
+                      rollIdx={editActiveCell.rollIdx}
+                      splitEligible={editActiveCell.rollIdx === 0}
+                      splitActive={editSplitPending}
+                      onSplitToggle={() => setEditSplitPending((s) => !s)}
+                      onSelect={handleEditPickerSelect}
+                      onClear={handleEditPickerClear}
+                      onClose={closeEditPicker}
+                    />
                   )}
 
                   <div className="rounded-xl p-3 glass-card space-y-2">
