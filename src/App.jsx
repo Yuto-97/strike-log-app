@@ -539,7 +539,8 @@ async function analyzeScoreImage(base64, mediaType, playerName) {
         {"rolls": ["X","X","6"], "score": 300, "split_roll_index": 2}
       ],
       "total_score": 178,
-      "confidence_notes": ""
+      "confidence_notes": "",
+      "uncertain_frame_indices": []
     }
   ]
 }
@@ -555,6 +556,7 @@ async function analyzeScoreImage(base64, mediaType, playerName) {
 - 指定された名前に一致する列が画面内に見つからない場合は player_matched を false にし、games は空配列、confidence_notes に「該当する名前が見つかりませんでした」等を記載(この場合 confidence_notes はJSONの一番外側に置いてよい)
 - 名前の指定がない場合は player_matched を true とし、画面内の(唯一の、または最初の)プレイヤーのスコアを読み取る
 - 数字がかすれている・反射で見えにくいなど読み取りに自信がない箇所は、そのゲームの confidence_notes に短く日本語で記載(なければ空文字)
+- uncertain_frame_indices は、そのゲームの中で「特に読み取りに自信がないフレーム」の番号を、0始まりのインデックス(1フレーム目なら0)で列挙した配列。手順4で合計が一致せず修正を繰り返した場合は、最終的にどうしても自信が持てなかったフレームをここに入れる。すべてのフレームに自信があれば空配列
 - JSON以外は一切出力しない`;
 
   let response;
@@ -650,17 +652,18 @@ function RollMark({ val, split, markColor = COLORS.ink }) {
 }
 
 // ---------- frame box (signature scoresheet element) ----------
-function FrameBox({ frame, index, isTenth, editable, activeCell, onCellTap }) {
+function FrameBox({ frame, index, isTenth, editable, activeCell, onCellTap, uncertain }) {
   const rolls = frame?.rolls || [];
   const slots = isTenth ? 3 : 2;
   const splitRolls = frame?.splitRolls || [];
   return (
     <div
       style={{
-        border: `2px solid ${COLORS.ink}`,
-        background: COLORS.cream,
+        border: uncertain ? `2px solid ${COLORS.gold}` : `2px solid ${COLORS.ink}`,
+        background: uncertain ? "#FDF2D0" : COLORS.cream,
         minWidth: isTenth ? 74 : 54,
         flex: isTenth ? "0 0 74px" : "1 0 54px",
+        boxShadow: uncertain ? `0 0 0 2px ${COLORS.gold}` : "none",
       }}
       className="flex flex-col"
     >
@@ -719,7 +722,7 @@ function FrameBox({ frame, index, isTenth, editable, activeCell, onCellTap }) {
   );
 }
 
-function ScoreSheet({ frames, editable, activeCell, onCellTap }) {
+function ScoreSheet({ frames, editable, activeCell, onCellTap, uncertainFrames }) {
   return (
     <div className="flex w-full overflow-x-auto pb-1" style={{ gap: 2 }}>
       {Array.from({ length: 10 }).map((_, i) => (
@@ -731,6 +734,7 @@ function ScoreSheet({ frames, editable, activeCell, onCellTap }) {
           editable={editable}
           activeCell={activeCell}
           onCellTap={onCellTap}
+          uncertain={Array.isArray(uncertainFrames) && uncertainFrames.includes(i)}
         />
       ))}
     </div>
@@ -1893,6 +1897,7 @@ export default function StrikeLog() {
             totalMismatch: mismatch,
             confidence_notes: game.confidence_notes || "",
             frame_by_frame_reading: game.frame_by_frame_reading || [],
+            uncertainFrames: Array.isArray(game.uncertain_frame_indices) ? game.uncertain_frame_indices : [],
           };
         });
         const firstDetectedDate = normalizedGames.find((g) => g.detectedDate)?.detectedDate;
@@ -2318,7 +2323,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
         </div>
       </header>
 
-      <main className="max-w-md mx-auto px-4 pb-24 pt-5">
+      <main className="max-w-md mx-auto px-4 pt-5" style={{ paddingBottom: activeCell || editActiveCell ? 260 : 96 }}>
         {tab === "scan" && (
           <div className="space-y-4">
             <div className="rounded-xl p-3 border glass-card" style={{ borderColor: COLORS.oak }}>
@@ -2357,7 +2362,12 @@ function getNextRollCell(frameIdx, rollIdx, value) {
 
             {imagePreview && (
               <div className="rounded-xl overflow-hidden border" style={{ borderColor: COLORS.oak }}>
-                <img src={imagePreview} alt="スコア写真プレビュー" className="w-full object-cover max-h-72" />
+                <img
+                  src={imagePreview}
+                  alt="スコア写真プレビュー"
+                  className="w-full object-cover"
+                  style={{ maxHeight: pendingResult ? 110 : 288 }}
+                />
               </div>
             )}
 
@@ -2436,6 +2446,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                       editable
                       activeCell={activeCell?.gameIdx === gameIdx ? activeCell : null}
                       onCellTap={(frameIdx, rollIdx) => handleCellTap(gameIdx, frameIdx, rollIdx)}
+                      uncertainFrames={game.totalMismatch ? game.uncertainFrames : []}
                     />
                     <div className="mt-2 flex items-center justify-between">
                       <span className="text-xs" style={{ color: COLORS.strike }}>このゲームの合計</span>
@@ -2450,23 +2461,32 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                         className="mt-2 rounded p-2 text-xs"
                         style={{ background: "#FBEAE5", color: COLORS.danger, fontWeight: 700 }}
                       >
-                        ⚠ 合計が写真のTOTAL表示と一致しません。マスを写真と見比べて修正してください。
+                        {game.uncertainFrames && game.uncertainFrames.length > 0
+                          ? "⚠ すみません。うまく読み取れなかったようで、解析スコアと見比べて修正をお願いします。(上の黄色いフレームをご確認ください)"
+                          : "⚠ すみません。うまく読み取れなかったようで、解析スコアと見比べて修正をお願いします。"}
                       </div>
                     )}
                   </div>
                 ))}
 
                 {activeCell && (
-                  <RollPicker
-                    frameIdx={activeCell.frameIdx}
-                    rollIdx={activeCell.rollIdx}
-                    splitEligible
-                    splitActive={splitPending}
-                    onSplitToggle={() => setSplitPending((s) => !s)}
-                    onSelect={handlePickerSelect}
-                    onClear={handlePickerClear}
-                    onClose={closePicker}
-                  />
+                  <div
+                    className="fixed left-0 right-0 px-4"
+                    style={{ bottom: 76, zIndex: 40 }}
+                  >
+                    <div className="max-w-md mx-auto">
+                      <RollPicker
+                        frameIdx={activeCell.frameIdx}
+                        rollIdx={activeCell.rollIdx}
+                        splitEligible
+                        splitActive={splitPending}
+                        onSplitToggle={() => setSplitPending((s) => !s)}
+                        onSelect={handlePickerSelect}
+                        onClear={handlePickerClear}
+                        onClose={closePicker}
+                      />
+                    </div>
+                  </div>
                 )}
 
                 <div className="text-xs" style={{ color: COLORS.strike }}>
@@ -2826,16 +2846,23 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                   <ScoreSheet frames={editFrames} editable activeCell={editActiveCell} onCellTap={handleEditCellTap} />
 
                   {editActiveCell && (
-                    <RollPicker
-                      frameIdx={editActiveCell.frameIdx}
-                      rollIdx={editActiveCell.rollIdx}
-                      splitEligible={editActiveCell.rollIdx === 0}
-                      splitActive={editSplitPending}
-                      onSplitToggle={() => setEditSplitPending((s) => !s)}
-                      onSelect={handleEditPickerSelect}
-                      onClear={handleEditPickerClear}
-                      onClose={closeEditPicker}
-                    />
+                    <div
+                      className="fixed left-0 right-0 px-4"
+                      style={{ bottom: 76, zIndex: 40 }}
+                    >
+                      <div className="max-w-md mx-auto">
+                        <RollPicker
+                          frameIdx={editActiveCell.frameIdx}
+                          rollIdx={editActiveCell.rollIdx}
+                          splitEligible={editActiveCell.rollIdx === 0}
+                          splitActive={editSplitPending}
+                          onSplitToggle={() => setEditSplitPending((s) => !s)}
+                          onSelect={handleEditPickerSelect}
+                          onClear={handleEditPickerClear}
+                          onClose={closeEditPicker}
+                        />
+                      </div>
+                    </div>
                   )}
 
                   <div className="rounded-xl p-3 glass-card space-y-2">
@@ -3622,7 +3649,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                           }}
                           aria-label="名前を編集"
                         >
-                          <Pencil size={15} style={{ color: COLORS.gold }} />
+                          <Pencil size={15} style={{ color: COLORS.strike }} />
                         </button>
                         <button onClick={() => deleteMyBall(b.id)} aria-label="削除">
                           <Trash2 size={16} style={{ color: COLORS.strike }} />
@@ -3799,7 +3826,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                             }}
                             aria-label="名前を編集"
                           >
-                            <Pencil size={15} style={{ color: COLORS.gold }} />
+                            <Pencil size={15} style={{ color: COLORS.strike }} />
                           </button>
                           <button onClick={() => deleteMyShoe(s.id)} aria-label="削除">
                             <Trash2 size={16} style={{ color: COLORS.strike }} />
