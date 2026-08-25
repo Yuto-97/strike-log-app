@@ -768,7 +768,7 @@ function RollPicker({ frameIdx, rollIdx, splitEligible, onSelect, onSplitToggle,
           type="button"
           onClick={() => onSelect("X")}
           className="glass-card rounded-lg py-1 flex flex-col items-center justify-center gap-0.5"
-          style={{ border: `1px solid ${COLORS.gold}`, color: COLORS.strike, fontFamily: "'Oswald', sans-serif", fontWeight: 700 }}
+          style={{ color: COLORS.strike, fontFamily: "'Oswald', sans-serif", fontWeight: 700 }}
         >
           <RollMark val="X" markColor={COLORS.strike} size={13} />
           <span style={{ fontSize: 8 }}>ストライク</span>
@@ -780,7 +780,7 @@ function RollPicker({ frameIdx, rollIdx, splitEligible, onSelect, onSplitToggle,
           type="button"
           onClick={() => onSelect("/")}
           className="glass-card rounded-lg py-1 flex flex-col items-center justify-center gap-0.5"
-          style={{ border: `1px solid ${COLORS.gold}`, color: COLORS.strike, fontFamily: "'Oswald', sans-serif", fontWeight: 700 }}
+          style={{ color: COLORS.strike, fontFamily: "'Oswald', sans-serif", fontWeight: 700 }}
         >
           <RollMark val="/" markColor={COLORS.strike} size={13} />
           <span style={{ fontSize: 8 }}>スペア</span>
@@ -797,7 +797,7 @@ function RollPicker({ frameIdx, rollIdx, splitEligible, onSelect, onSplitToggle,
           type="button"
           onClick={() => onSelect("F")}
           className="glass-card rounded-lg py-1 px-0.5 whitespace-nowrap"
-          style={{ border: `1px solid ${COLORS.gold}`, color: COLORS.strike, fontWeight: 700, fontSize: 9.5 }}
+          style={{ color: COLORS.strike, fontWeight: 700, fontSize: 9.5 }}
         >
           F(ファール)
         </button>
@@ -826,7 +826,7 @@ function RollPicker({ frameIdx, rollIdx, splitEligible, onSelect, onSplitToggle,
           className="w-full rounded-lg py-1.5 flex items-center justify-center gap-2"
           style={{
             background: splitActive ? COLORS.gold : "rgba(40, 55, 95, 0.55)",
-            border: `1px solid ${COLORS.gold}`,
+            border: `1px solid rgba(224, 168, 0, 0.55)`,
             color: splitActive ? "white" : COLORS.cream,
             fontWeight: 700,
             fontSize: 11,
@@ -4039,7 +4039,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
               </button>
             </div>
 
-            <div className="flex items-center justify-center gap-4 pt-2" style={{ fontSize: 13, color: COLORS.strike }}>
+            <div className="flex items-center justify-center gap-2 pt-2 flex-nowrap" style={{ fontSize: 10, color: COLORS.strike, whiteSpace: "nowrap" }}>
               <a href="/terms" style={{ textDecoration: "underline" }}>利用規約</a>
               <a href="/privacy" style={{ textDecoration: "underline" }}>プライバシーポリシー</a>
               <a href="/tokushoho" style={{ textDecoration: "underline" }}>特定商取引法に基づく表記</a>
