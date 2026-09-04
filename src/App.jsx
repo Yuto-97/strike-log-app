@@ -1,6 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Camera, History, BarChart3, Loader2, Check, X, Pencil, Trophy, TrendingUp, Calendar, CircleDot, Hash, User, Target, Trash2, ShieldCheck, CircleCheck, MessageCircle, Send, Settings } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { auth } from "./firebaseClient.js";
+import {
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut,
+} from "firebase/auth";
 
 // ---------- palette ----------
 // ink:      #201811  (deep walnut, headers/text)
@@ -842,9 +849,24 @@ function RollPicker({ frameIdx, rollIdx, splitEligible, onSelect, onSplitToggle,
 // ---------- access gate ----------
 // Shown instead of the app until the person's device has been approved by
 // the admin. "checking" while we ask the server, then one of the statuses.
-function GateScreen({ mode, name, setName, onSubmit, requestNumber }) {
+function GateScreen({
+  mode,
+  name,
+  setName,
+  onSubmit,
+  requestNumber,
+  onLogin,
+  onSignup,
+  authBusy,
+  authErrorMsg,
+  justSignedOut,
+}) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [showAccountForm, setShowAccountForm] = useState(false);
+  const [accountMode, setAccountMode] = useState("login"); // "login" | "signup"
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
 
   const submit = async () => {
     if (!name.trim()) {
@@ -862,6 +884,12 @@ function GateScreen({ mode, name, setName, onSubmit, requestNumber }) {
     }
   };
 
+  const submitAccount = async () => {
+    if (!email.trim() || !password) return;
+    if (accountMode === "login") await onLogin(email.trim(), password);
+    else await onSignup(email.trim(), password);
+  };
+
   return (
     <div
       style={{ minHeight: "100vh", background: `linear-gradient(160deg, ${COLORS.navyLight} 0%, ${COLORS.navyBg} 55%, #161D38 100%)`, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}
@@ -872,9 +900,18 @@ function GateScreen({ mode, name, setName, onSubmit, requestNumber }) {
           STRIKE LOG
         </div>
 
+        {justSignedOut && (
+          <div
+            className="rounded-lg p-3 text-sm"
+            style={{ background: "rgba(224,168,0,0.12)", border: `1px solid ${COLORS.oak}`, color: COLORS.cream }}
+          >
+            別の端末でログインされたため、この端末はログアウトされました。この端末で引き続き使う場合は、もう一度ログインしてください。
+          </div>
+        )}
+
         {mode === "checking" && <div style={{ color: COLORS.strike }}>確認中...</div>}
 
-        {(mode === "not_found" || mode === "error") && (
+        {(mode === "not_found" || mode === "error") && !showAccountForm && (
           <>
             <div style={{ color: COLORS.cream, fontSize: 14 }}>
               このアプリは招待制です。利用するには申請が必要です。
@@ -896,10 +933,85 @@ function GateScreen({ mode, name, setName, onSubmit, requestNumber }) {
             >
               {submitting ? "送信中..." : "利用をリクエストする"}
             </button>
+            <button
+              onClick={() => setShowAccountForm(true)}
+              className="w-full text-sm underline"
+              style={{ color: COLORS.strike }}
+            >
+              アカウントをお持ちの方はこちら
+            </button>
           </>
         )}
 
-        {mode === "pending" && (
+        {(mode === "not_found" || mode === "error" || mode === "pending" || mode === "rejected") && showAccountForm && (
+          <div className="rounded-xl p-4 space-y-3" style={{ border: `1px solid ${COLORS.oak}` }}>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setAccountMode("login")}
+                className="flex-1 rounded-lg py-2 text-xs"
+                style={{
+                  background: accountMode === "login" ? COLORS.ink : "rgba(40, 55, 95, 0.55)",
+                  color: COLORS.cream,
+                  border: `1px solid ${COLORS.oak}`,
+                  fontWeight: 700,
+                }}
+              >
+                ログイン
+              </button>
+              <button
+                onClick={() => setAccountMode("signup")}
+                className="flex-1 rounded-lg py-2 text-xs"
+                style={{
+                  background: accountMode === "signup" ? COLORS.ink : "rgba(40, 55, 95, 0.55)",
+                  color: COLORS.cream,
+                  border: `1px solid ${COLORS.oak}`,
+                  fontWeight: 700,
+                }}
+              >
+                アカウント作成
+              </button>
+            </div>
+            <div className="text-xs text-left" style={{ color: COLORS.strike }}>
+              アカウントを作っておくと、機種変更した時に再度承認を待たずに、ログインするだけで引き継げます。
+              <br />
+              (同時に使えるのは1台のみです。新しい端末でログインすると、前の端末は自動でログアウトされます)
+            </div>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="メールアドレス"
+              className="w-full px-3 py-2 rounded border text-sm"
+              style={{ borderColor: COLORS.oak, background: COLORS.cream, color: COLORS.ink }}
+            />
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="パスワード(6文字以上)"
+              className="w-full px-3 py-2 rounded border text-sm"
+              style={{ borderColor: COLORS.oak, background: COLORS.cream, color: COLORS.ink }}
+            />
+            {authErrorMsg && <div style={{ color: "#E8836A", fontSize: 13 }}>{authErrorMsg}</div>}
+            <button
+              onClick={submitAccount}
+              disabled={authBusy}
+              className="w-full rounded-lg py-3"
+              style={{ background: COLORS.gold, color: COLORS.cream, fontWeight: 700 }}
+            >
+              {authBusy ? "処理中..." : accountMode === "login" ? "ログイン" : "アカウントを作成"}
+            </button>
+            <button
+              onClick={() => setShowAccountForm(false)}
+              className="w-full text-sm underline"
+              style={{ color: COLORS.strike }}
+            >
+              もどる
+            </button>
+          </div>
+        )}
+
+        {mode === "pending" && !showAccountForm && (
           <div className="space-y-2">
             <div style={{ color: COLORS.cream, fontSize: 14 }}>
               利用申請を受け付けました。管理者の承認をお待ちください。
@@ -909,11 +1021,27 @@ function GateScreen({ mode, name, setName, onSubmit, requestNumber }) {
                 あなたの登録番号: {formatRequestNumber(requestNumber)}
               </div>
             )}
+            <button
+              onClick={() => setShowAccountForm(true)}
+              className="w-full text-sm underline"
+              style={{ color: COLORS.strike }}
+            >
+              アカウントをお持ちの方はこちら
+            </button>
           </div>
         )}
 
-        {mode === "rejected" && (
-          <div style={{ color: "#E8836A", fontSize: 14 }}>この端末での利用は承認されませんでした。</div>
+        {mode === "rejected" && !showAccountForm && (
+          <div className="space-y-2">
+            <div style={{ color: "#E8836A", fontSize: 14 }}>この端末での利用は承認されませんでした。</div>
+            <button
+              onClick={() => setShowAccountForm(true)}
+              className="w-full text-sm underline"
+              style={{ color: COLORS.strike }}
+            >
+              アカウントをお持ちの方はこちら
+            </button>
+          </div>
         )}
       </div>
     </div>
@@ -1431,6 +1559,10 @@ export default function StrikeLog() {
     return id;
   });
   const [accessStatus, setAccessStatus] = useState("checking");
+  const [authUser, setAuthUser] = useState(null);
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authErrorMsg, setAuthErrorMsg] = useState("");
+  const [justSignedOut, setJustSignedOut] = useState(false);
   const [myRequestNumber, setMyRequestNumber] = useState(null);
   const [requestName, setRequestName] = useState("");
   const [feedbackMessage, setFeedbackMessage] = useState("");
@@ -1641,7 +1773,7 @@ export default function StrikeLog() {
   }, [gameDate, games, shoeTouched]);
 
   useEffect(() => {
-    if (isAdminRoute || !deviceId) return;
+    if (isAdminRoute || !deviceId || authUser) return;
     (async () => {
       try {
         const res = await fetch(`/api/access/status?deviceId=${encodeURIComponent(deviceId)}`);
@@ -1652,7 +1784,111 @@ export default function StrikeLog() {
         setAccessStatus("error");
       }
     })();
-  }, [isAdminRoute, deviceId]);
+  }, [isAdminRoute, deviceId, authUser]);
+
+  // Tracks Firebase Auth sign-in state. Logging in/signing up here is what
+  // lets someone pick up their account on a new device without waiting on
+  // admin approval again — see the claim-device effect below.
+  useEffect(() => {
+    if (isAdminRoute) return;
+    const unsub = onAuthStateChanged(auth, (user) => setAuthUser(user));
+    return () => unsub();
+  }, [isAdminRoute]);
+
+  // As soon as we have a signed-in account, tell the server this device is
+  // now the active one for it. The server stamps activeDeviceId, which the
+  // polling effect below uses to notice when a *different* device later
+  // takes over the same account.
+  useEffect(() => {
+    if (isAdminRoute || !authUser || !deviceId) return;
+    (async () => {
+      try {
+        const res = await fetch("/api/account/claim-device", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ uid: authUser.uid, deviceId, email: authUser.email }),
+        });
+        const data = await res.json();
+        setAccessStatus(data.status || "pending");
+        if (data.requestNumber) setMyRequestNumber(data.requestNumber);
+      } catch (e) {
+        setAccessStatus("error");
+      }
+    })();
+  }, [isAdminRoute, authUser, deviceId]);
+
+  // While logged into an account, periodically confirms this device is
+  // still the one on file. If another device has since logged into the
+  // same account, this device gets signed out automatically — enforcing
+  // "one account, one active device at a time."
+  useEffect(() => {
+    if (isAdminRoute || !authUser || !deviceId) return;
+    let cancelled = false;
+    const check = async () => {
+      try {
+        const res = await fetch(
+          `/api/account/device-check?uid=${encodeURIComponent(authUser.uid)}&deviceId=${encodeURIComponent(deviceId)}`
+        );
+        const data = await res.json();
+        if (!cancelled && data.active === false) {
+          await signOut(auth);
+          setJustSignedOut(true);
+          setAccessStatus("not_found");
+          setMyRequestNumber(null);
+        } else if (!cancelled) {
+          setAccessStatus(data.status || "pending");
+          if (data.requestNumber) setMyRequestNumber(data.requestNumber);
+        }
+      } catch (e) {
+        // Network hiccup — leave current state alone and try again later.
+      }
+    };
+    check();
+    const interval = setInterval(check, 20000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") check();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [isAdminRoute, authUser, deviceId]);
+
+  const loginWithAccount = async (email, password) => {
+    setAuthBusy(true);
+    setAuthErrorMsg("");
+    setJustSignedOut(false);
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (e) {
+      setAuthErrorMsg("メールアドレスまたはパスワードが正しくありません");
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
+  const signupWithAccount = async (email, password) => {
+    setAuthBusy(true);
+    setAuthErrorMsg("");
+    setJustSignedOut(false);
+    try {
+      await createUserWithEmailAndPassword(auth, email, password);
+    } catch (e) {
+      if (e.code === "auth/email-already-in-use") setAuthErrorMsg("このメールアドレスは既に登録されています");
+      else if (e.code === "auth/weak-password") setAuthErrorMsg("パスワードは6文字以上にしてください");
+      else setAuthErrorMsg("登録に失敗しました。もう一度お試しください");
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
+  const logoutAccount = async () => {
+    await signOut(auth);
+    setAccessStatus("checking");
+    setMyRequestNumber(null);
+  };
 
   const requestAccess = async () => {
     const res = await fetch("/api/access/request", {
@@ -2296,6 +2532,11 @@ function getNextRollCell(frameIdx, rollIdx, value) {
         setName={setRequestName}
         onSubmit={requestAccess}
         requestNumber={myRequestNumber}
+        onLogin={loginWithAccount}
+        onSignup={signupWithAccount}
+        authBusy={authBusy}
+        authErrorMsg={authErrorMsg}
+        justSignedOut={justSignedOut}
       />
     );
   }
@@ -4012,6 +4253,28 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                 追加する
               </button>
             </div>
+
+            {authUser && (
+              <>
+                <div className="text-sm" style={{ color: COLORS.strike }}>アカウント</div>
+                <div className="rounded-xl p-3 border glass-card space-y-2" style={{ borderColor: COLORS.oak }}>
+                  <div className="text-xs" style={{ color: COLORS.strike }}>
+                    ログイン中: {authUser.email}
+                  </div>
+                  <div className="text-xs" style={{ color: COLORS.strike, opacity: 0.7 }}>
+                    この端末が、このアカウントの利用端末として登録されています。他の端末でログインすると、この端末は自動的にログアウトされます。
+                  </div>
+                  <button
+                    type="button"
+                    onClick={logoutAccount}
+                    className="w-full rounded-lg py-2 text-sm"
+                    style={{ border: `1px solid ${COLORS.oak}`, color: COLORS.cream, fontWeight: 700 }}
+                  >
+                    ログアウト
+                  </button>
+                </div>
+              </>
+            )}
 
             <div className="text-sm" style={{ color: COLORS.strike }}>ご意見・要望</div>
             <div className="rounded-xl p-3 border glass-card space-y-2" style={{ borderColor: COLORS.oak }}>
