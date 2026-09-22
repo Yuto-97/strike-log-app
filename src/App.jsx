@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Camera, History, BarChart3, Loader2, Check, X, Pencil, Trophy, TrendingUp, Calendar, CircleDot, Hash, User, Target, Trash2, ShieldCheck, CircleCheck, MessageCircle, Send, Settings } from "lucide-react";
+import { Camera, History, BarChart3, Loader2, Check, X, Pencil, Trophy, TrendingUp, Calendar, CircleDot, Hash, User, Target, Trash2, ShieldCheck, CircleCheck, MessageCircle, Send, Settings, Crop } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { auth } from "./firebaseClient.js";
 import {
@@ -2967,11 +2967,12 @@ function getNextRollCell(frameIdx, rollIdx, value) {
 
             {imagePreview && !pendingResult && (
               <div className="space-y-2">
-                <div className="text-sm" style={{ color: COLORS.strike, fontWeight: 700 }}>
-                  自分のスコアの行を、名前から合計まで指でなぞって囲んでください
+                <div className="flex items-center gap-2">
+                  <Crop size={18} style={{ color: COLORS.gold, flexShrink: 0 }} />
+                  <div style={{ color: COLORS.strike, fontWeight: 700, fontSize: 15 }}>自分の行を指で囲む</div>
                 </div>
-                <div className="text-xs" style={{ color: COLORS.strike, opacity: 0.8 }}>
-                  囲むと読み取りの精度が上がります(囲まずに解析もできます)
+                <div style={{ color: COLORS.strike, opacity: 0.75, fontSize: 12 }}>
+                  名前〜合計まで囲むと精度アップ(省略OK)
                 </div>
                 <CropSelector src={imagePreview} rect={cropRect} onChange={setCropRect} />
                 {cropRect && (
