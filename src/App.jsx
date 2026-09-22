@@ -695,6 +695,62 @@ function reconcileRollsWithReadScores(frames, target) {
   return { frames: fixedFrames, changedFrames };
 }
 
+// Checks every frame — not just the total — against the cumulative numbers
+// the AI copied off the screen. A matching total can hide mistakes inside
+// the game (e.g. a spare misread as a strike, offset by a misread 10th
+// frame), and those would silently corrupt strike/spare stats.
+// Returns null when everything agrees, or { frames: [...] } listing the
+// frames (0-based) whose own score disagrees with the screen. An empty
+// list means "something's off but we can't say where".
+function findReadIssue(normFrames, readScores, ocrTotal, normTotal) {
+  const pinFrames = normFrames.map((f, i) => normalizeFrame(f.rolls, i === 9).pins);
+  const computed = computeGameScores(pinFrames);
+  const hasTotal = Number.isFinite(ocrTotal);
+
+  const read = Array.isArray(readScores) ? readScores.slice(0, 10).map(Number) : [];
+  let readUsable = read.length === 10 && read.every(Number.isFinite) && (!hasTotal || read[9] === ocrTotal);
+  if (readUsable) {
+    let prev = 0;
+    for (const s of read) {
+      if (s - prev < 0 || s - prev > 30) readUsable = false;
+      prev = s;
+    }
+  }
+
+  if (!readUsable) {
+    // Unfinished game or unreliable transcription: fall back to the old
+    // total-only check so we never raise a warning we can't justify.
+    return normTotal !== null && hasTotal && normTotal !== ocrTotal ? { frames: [] } : null;
+  }
+
+  // A misread *roll* shifts the running total for every frame after it.
+  // A mis-copied *number* on the screen affects only that one number. So if
+  // the running totals agree everywhere except at isolated single frames
+  // (and the final total agrees), the rolls are right and it was just a
+  // transcription slip — don't send the user hunting for a non-problem.
+  const cumOff = [];
+  for (let i = 0; i < 10; i++) if (computed[i] !== read[i]) cumOff.push(i);
+  if (
+    cumOff.length > 0 &&
+    computed[9] === read[9] &&
+    cumOff.every((i) => i < 9 && !cumOff.includes(i - 1) && !cumOff.includes(i + 1))
+  ) {
+    return null;
+  }
+
+  const bad = [];
+  let prevC = 0;
+  let prevR = 0;
+  for (let i = 0; i < 10; i++) {
+    const c = computed[i];
+    const own = c === null || c === undefined ? null : c - prevC;
+    if (own === null || own !== read[i] - prevR) bad.push(i);
+    if (c !== null && c !== undefined) prevC = c;
+    prevR = read[i];
+  }
+  return bad.length ? { frames: bad } : null;
+}
+
 async function analyzeScoreImage(images, playerName, { cropped = false, zoomed = false } = {}) {
   const nameInstruction = cropped
     ? `この画像は、ユーザー本人が写真の中から自分のスコアの部分を指で囲んで切り抜いたものです。${
@@ -2429,30 +2485,31 @@ export default function StrikeLog() {
           let norm = normalizeGame(framesWithSplitRolls);
           const ocrTotal = Number(game.total_score);
           const hasOcrTotal = Number.isFinite(ocrTotal);
+          // The per-frame cumulative numbers exactly as copied off the screen.
+          const ocrScores = (game.frames || []).slice(0, 10).map((f) => Number(f?.score));
           let autoCorrectedFrames = null;
-          let suspectFrames = null;
-          if (hasOcrTotal && norm.total !== ocrTotal) {
-            const fix = reconcileRollsWithReadScores(framesWithSplitRolls, ocrTotal);
+          let issue = findReadIssue(norm.frames, ocrScores, ocrTotal, norm.total);
+          if (issue) {
+            const target = hasOcrTotal ? ocrTotal : ocrScores[9];
+            const fix = reconcileRollsWithReadScores(framesWithSplitRolls, target);
             if (fix?.frames) {
               norm = normalizeGame(fix.frames);
               autoCorrectedFrames = fix.changedFrames;
+              issue = findReadIssue(norm.frames, ocrScores, ocrTotal, norm.total);
             } else if (fix?.suspectFrames?.length) {
-              suspectFrames = fix.suspectFrames;
+              issue = { frames: fix.suspectFrames };
             }
           }
-          const mismatch =
-            norm.total !== null && hasOcrTotal && norm.total !== ocrTotal
-              ? { computed: norm.total, ocrRead: ocrTotal }
-              : null;
+          const mismatch = issue;
           return {
             gameLabel: game.game_label || null,
             detectedDate: game.detected_date || null,
             frames: norm.frames,
             total_score: norm.total !== null ? norm.total : hasOcrTotal ? ocrTotal : null,
             ocrTotal: hasOcrTotal ? ocrTotal : null,
+            ocrScores,
             totalMismatch: mismatch,
             autoCorrectedFrames,
-            suspectFrames,
             confidence_notes: game.confidence_notes || "",
             frame_by_frame_reading: game.frame_by_frame_reading || [],
           };
@@ -2576,10 +2633,9 @@ export default function StrikeLog() {
           };
         });
         const norm = normalizeGame(rawFrames);
-        const mismatch =
-          norm.total !== null && game.ocrTotal !== null && norm.total !== game.ocrTotal
-            ? { computed: norm.total, ocrRead: game.ocrTotal }
-            : null;
+        // Re-check every frame on each manual edit, so the warning (and the
+        // frames it names) updates live and clears once everything matches.
+        const mismatch = findReadIssue(norm.frames, game.ocrScores, game.ocrTotal ?? NaN, norm.total);
         return {
           ...game,
           frames: norm.frames,
@@ -3092,8 +3148,12 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                         className="mt-2 rounded p-2 text-xs"
                         style={{ color: COLORS.danger, fontWeight: 700 }}
                       >
-                        {game.suspectFrames?.length > 0
-                          ? `⚠ すみません。${game.suspectFrames.map((i) => i + 1).join("・")}フレーム目がうまく読み取れなかったようで、解析スコアと見比べて修正をお願いします。`
+                        {game.totalMismatch.frames?.length > 0
+                          ? `⚠ すみません。${
+                              game.totalMismatch.frames.length > 3
+                                ? `${game.totalMismatch.frames.slice(0, 3).map((i) => i + 1).join("・")}フレーム目など`
+                                : `${game.totalMismatch.frames.map((i) => i + 1).join("・")}フレーム目`
+                            }がうまく読み取れなかったようで、解析スコアと見比べて修正をお願いします。`
                           : "⚠ すみません。うまく読み取れなかったようで、解析スコアと見比べて修正をお願いします。"}
                       </div>
                     )}
