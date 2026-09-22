@@ -500,6 +500,145 @@ function normalizeGame(frames) {
   return { frames: newFrames, total };
 }
 
+// ---------- auto-correction from the board's cumulative numbers ----------
+// The big cumulative numbers on a scoreboard are easy to read; the small
+// per-roll marks (especially a "G" / "-" squeezed into the 10th frame) are
+// where the AI slips. When the AI's rolls don't add up to the total shown on
+// screen, but the per-frame cumulative numbers it transcribed DO line up with
+// that total, we search for the rolls that reproduce those numbers exactly
+// while changing as few of the AI's rolls as possible. Pure arithmetic in the
+// browser — no extra AI call, no extra cost.
+const RECONCILE_MAX_CHANGES = 4; // beyond this, too speculative — leave it to the user
+const RECONCILE_NODE_LIMIT = 400000; // safety cap so a weird input can never freeze the UI
+
+const NORMAL_FRAME_OPTIONS = (() => {
+  const out = [[10]];
+  for (let a = 0; a <= 9; a++) for (let b = 0; b <= 10 - a; b++) out.push([a, b]);
+  return out;
+})();
+
+const TENTH_FRAME_OPTIONS = (() => {
+  const out = [];
+  for (let b = 0; b <= 10; b++) {
+    if (b === 10) for (let c = 0; c <= 10; c++) out.push([10, 10, c]);
+    else for (let c = 0; c <= 10 - b; c++) out.push([10, b, c]);
+  }
+  for (let a = 0; a <= 9; a++) {
+    for (let c = 0; c <= 10; c++) out.push([a, 10 - a, c]);
+    for (let b = 0; b < 10 - a; b++) out.push([a, b]);
+  }
+  return out;
+})();
+
+function countRollChanges(candidate, aiPins) {
+  const len = Math.max(candidate.length, (aiPins || []).length);
+  let diff = 0;
+  for (let i = 0; i < len; i++) {
+    const a = candidate[i];
+    const b = aiPins ? aiPins[i] : undefined;
+    if ((a ?? null) !== (b ?? null)) diff++;
+  }
+  return diff;
+}
+
+// Checks frames 0..upTo whose score can already be determined from the rolls
+// chosen so far, against the cumulative numbers read off the screen.
+function prefixMatchesReadScores(chosen, upTo, read) {
+  const flat = [];
+  const starts = [];
+  for (let i = 0; i <= upTo; i++) {
+    starts.push(flat.length);
+    flat.push(...chosen[i]);
+  }
+  let cum = 0;
+  for (let j = 0; j <= upTo; j++) {
+    const s = starts[j];
+    let val;
+    if (j === 9) {
+      val = chosen[9].reduce((a, b) => a + b, 0);
+    } else {
+      const r1 = flat[s];
+      if (r1 === 10) {
+        if (flat[s + 1] === undefined || flat[s + 2] === undefined) return true;
+        val = 10 + flat[s + 1] + flat[s + 2];
+      } else {
+        const r2 = flat[s + 1];
+        if (r1 + r2 === 10) {
+          if (flat[s + 2] === undefined) return true;
+          val = 10 + flat[s + 2];
+        } else {
+          val = r1 + r2;
+        }
+      }
+    }
+    cum += val;
+    if (cum !== read[j]) return false;
+  }
+  return true;
+}
+
+// Turns corrected pin counts back into roll labels. Keeps the AI's own label
+// for any roll it got right (so a correctly-read "G" or "F" stays a G/F);
+// a newly-corrected 0 becomes "-" since we can't tell gutter from miss.
+function pinsToRolls(pins, aiPins, aiRolls) {
+  return pins.map((p, idx) => {
+    if (aiPins && aiPins[idx] === p && aiRolls && aiRolls[idx] !== undefined && aiRolls[idx] !== "") return aiRolls[idx];
+    if (p === 10) return "X";
+    if (p === 0) return "-";
+    return String(p);
+  });
+}
+
+// Returns { frames, changedFrames } when a confident fix is found, else null.
+function reconcileRollsWithReadScores(frames, target) {
+  if (!Array.isArray(frames) || frames.length < 10 || !Number.isFinite(target)) return null;
+  const read = frames.slice(0, 10).map((f) => Number(f?.score));
+  if (read.some((s) => !Number.isFinite(s))) return null;
+  if (read[9] !== target) return null; // the two independent reads of the total disagree — don't guess
+  let prev = 0;
+  for (const s of read) {
+    if (s - prev < 0 || s - prev > 30) return null; // cumulative numbers themselves look misread
+    prev = s;
+  }
+
+  const aiPins = frames.slice(0, 10).map((f, i) => normalizeFrame(f.rolls, i === 9).pins);
+  const options = aiPins.map((ap, i) =>
+    (i === 9 ? TENTH_FRAME_OPTIONS : NORMAL_FRAME_OPTIONS)
+      .map((pins) => ({ pins, cost: countRollChanges(pins, ap) }))
+      .sort((a, b) => a.cost - b.cost)
+  );
+
+  let best = null;
+  let bestCost = RECONCILE_MAX_CHANGES + 1;
+  let nodes = 0;
+  const chosen = [];
+  const dfs = (i, cost) => {
+    if (++nodes > RECONCILE_NODE_LIMIT) return;
+    if (i === 10) {
+      best = chosen.slice();
+      bestCost = cost;
+      return;
+    }
+    for (const opt of options[i]) {
+      if (cost + opt.cost >= bestCost) break; // options are sorted by cost
+      chosen[i] = opt.pins;
+      if (prefixMatchesReadScores(chosen, i, read)) dfs(i + 1, cost + opt.cost);
+    }
+    chosen.length = i;
+  };
+  dfs(0, 0);
+  if (!best || bestCost === 0) return null;
+
+  const changedFrames = [];
+  const fixedFrames = frames.slice(0, 10).map((f, i) => {
+    if (countRollChanges(best[i], aiPins[i]) === 0) return f;
+    changedFrames.push(i);
+    const splitRolls = (f.splitRolls || []).map((isSplit, idx) => (isSplit && best[i][idx] !== 10 ? isSplit : false));
+    return { ...f, rolls: pinsToRolls(best[i], aiPins[i], f.rolls), splitRolls };
+  });
+  return { frames: fixedFrames, changedFrames };
+}
+
 async function analyzeScoreImage(base64, mediaType, playerName) {
   const nameInstruction = playerName
     ? `この画像には複数人のスコアが表示されている可能性があります。名前「${playerName}」の行/列のスコアだけを読み取ってください。表記ゆれ(ひらがな・カタカナ・ローマ字・ニックネームなど)も考慮して、最も一致する列を選んでください。`
@@ -513,8 +652,17 @@ async function analyzeScoreImage(base64, mediaType, playerName) {
 - 表の一番上に「1 2 3 4 5 6 7 8 9 10」のようなフレーム番号のヘッダー行がある場合、それを基準にして各列がどのフレームかを機械的に特定すること。ヘッダーがずれて見えても、フレーム数は必ず10個であることを前提に列を数え直して位置合わせする。フレームの取り違えは起きないよう、この基準を最優先で使う
 - **複数のプレイヤーの行が縦に並んでいる場合、行の取り違えが最も起きやすい失敗パターンなので特に注意する。**対象プレイヤーの名前が書かれている行の左端(Y座標)を最初に特定し、フレーム1から10まで、**その同じY座標の高さを機械的に維持したまま**横方向にだけ視線を動かして読み取ること。読み取り中に別のプレイヤーの行の数字が視界に入っても、絶対にそちらの数字を使わない。名前の行とスコアの行が上下2段になっている場合は、名前の行のすぐ下にある数字の段だけを見る
 - 複数ゲームが表示されている場合、「1G」「2G」「3G」やゲーム番号の見出しで区切られていることが多い。見出しを基準に、どこからどこまでが1ゲーム分かを正しく区切ること
-- ストライクは文字の「X」ではなく、緑や黒の三角形・矢印のようなアイコン、または蝶ネクタイ(ネクタイ)のような形のアイコンで表示されることがある。これらの記号を見つけたらストライク(pins内部的には"X")として扱う。スペアも「/」ではなく記号やハイフンの組み合わせで表示される場合がある
-- 各フレームのセルが上下2段になっていることが多い。上段は投球結果の記号、下段はそのフレーム終了時点の累計スコア(数字)
+- 投球結果の記号の意味(電光掲示板・紙のスコアシート共通)。記号を1つ読むたびに、必ずこの対応表と照らし合わせること:
+  - ストライク:「X」のほか、蝶ネクタイ(リボン)型・三角形・矢印型のアイコンで表示されることがある → "X"
+  - スペア:「/」のほか、直角三角形(◢のような形)のアイコンで表示されることがある → "/"
+  - ガター(溝に落ちて0本):「G」 → "G"
+  - ファール(0本):「F」 → "F"
+  - ミス(1本も倒れなかった、0本):「-」(ハイフン) → "-"。ハイフンはスペアではなく0本の意味なので注意
+  - スプリット:数字が丸で囲まれている(⑧など) → その数字として読み、split_roll_index に位置を記録
+  - 上記以外の数字:倒したピンの本数 → "0"〜"9"
+  - 「G」「F」「-」はどれも0本だが、"0" に置き換えず記号のまま出力すること(ガター・ファールの集計に使うため)
+- 10フレーム目は、1つのセルに最大3投分の記号が小さく詰めて並ぶ(例:「X G 8」「9 / X」「X X X」)。3投目まで投げている場合は、必ず左から順に3つの記号をすべて読み取ること。小さな「G」「-」「F」を読み飛ばすと、後ろの投球が1つずつ前にずれて全体がずれるので特に注意する。10フレーム目でストライクかスペアを出していれば必ず3投、どちらも出していなければ2投である
+- 各フレームのセルが上下2段になっていることが多い。上段は投球結果の記号、下段はそのフレーム終了時点の累計スコア(数字)。同じ累計の数字の行が、さらに下にもう1段繰り返し表示されていることもある(補助表示)
 - 上段の記号アイコンが小さく判読しにくい場合は、下段の累計スコアの数字を最優先で正確に読み取ること。累計スコアの数字は判読しやすく、フレーム間の差分からストライク/スペア/オープンフレームをかなり正確に推定できる
 - プレイヤー名の直後に区分ラベルらしき1文字の英字(例:「A」)が付いていることがある。これは名前そのものではない可能性があるため、名前照合の際は末尾の1文字英字を無視して比較する
 - 「HDCP」はハンディキャップの略で、スコアそのものではない。「レーン合計」や複数ゲームの累計列も同様にゲームのスコアではない。読み取るべき合計スコアは、各ゲームの10フレーム分のスコア推移の直後にある「TOTAL」列の値のみで、HDCP・レーン合計・累計・順位などの列は無視する
@@ -524,11 +672,11 @@ async function analyzeScoreImage(base64, mediaType, playerName) {
 読み取りは、写っている**ゲームごとに**以下の手順で慎重に行ってください:
 1. まず画面の種類(電光掲示板のデジタル表示か、紙のスコアシートか)と、対象プレイヤーの列/行の位置、そのゲームが何ゲーム目かを確認する。他のプレイヤーの行が近くにある場合は、対象プレイヤーの行の高さ(Y座標)をここでしっかり固定する
 2. フレーム1から10まで、1フレームずつ順番に投球結果を読み取る。数字の間違えやすい組み合わせ(例: 6と8、1と7、Xと数字)は特に注意して見る。フレームが進むごとに、今読んでいる数字が手順1で固定した行の高さから外れていないか都度確認する。すぐ近くに紛らわしい別の行(繰り返し表示されている行、別プレイヤーの行、ポップアップの陰など)がある場合は、フレームごとに「これは本当に対象プレイヤーの行か」を都度確認し直す
-3. 各フレームを読み終えたら、そのフレームの累計スコアが「前のフレームの累計 + このフレームで倒したピン数」と矛盾していないか自分で検算する。矛盾があれば、数字の読み取りを見直して修正する
+3. 各フレームを読み終えたら、そのフレームの累計スコアが「前のフレームの累計 + このフレームで倒したピン数」と矛盾していないか自分で検算する。矛盾があれば、累計スコアの数字(大きく表示され読み間違いにくい)は画面表示が正しい前提として、投球記号の読み取り(特に小さな「G」「-」「F」の見落としや、10フレーム目の記号のずれ)を見直して修正する
 4. 全フレームを読み終えたら、10フレーム目の累計スコア(または画面に「TOTAL」列がある場合はその数字)と、以下の複数の視点で突き合わせて検算する。1つの視点だけに頼ると、その視点が苦手なパターンの間違いを見逃すため、必ず全視点を行うこと:
    - **前から読む(手順1〜3で既に実施済み)**:フレーム1→10の順に投球マークと累計を読む
    - **後ろから遡る**:最も読み間違えにくい「最終合計」(10フレーム目の累計、または画面下部に別途表示されている合計があればそれも参考にする)を基準に、フレーム10→1の順に遡り、どこから数字が矛盾し始めるかを特定する
-   - **増分だけで検算する**:投球マークを見ずに、「前フレームの累計との差」だけを各フレームについて計算する。差がマイナスになる、20点を超える(2投合計は最大20点、ボーナス込みでも常識的な範囲を超える)など、明らかにおかしい差があるフレームを機械的に洗い出す
+   - **増分だけで検算する**:投球マークを見ずに、「前フレームの累計との差」だけを各フレームについて計算する。差がマイナスになる、30点を超える(1フレームの得点はストライクのボーナス込みでも最大30点)など、明らかにおかしい差があるフレームを機械的に洗い出す
    - **マークと増分を突き合わせる**:読み取った投球マーク(ストライク/スペア/オープン等)から計算される得点と、増分検算で出した差が一致するか、フレームごとに照らし合わせる。一致しなければ、マークの読み間違いか数字の読み間違いのどちらかがあるということなので、そのフレームを再度見直す
    
    これらの視点で矛盾が見つかったフレームがあれば、frame_by_frame_readingを修正し、最終合計と一致するまで繰り返す。TOTAL表示や最終フレームの累計は画像上で最も読み取りやすい数字であることが多いため、最終的な正解の基準として扱う
@@ -544,12 +692,12 @@ async function analyzeScoreImage(base64, mediaType, playerName) {
     {
       "game_label": "1ゲーム目のように画面上のラベル、なければ null",
       "detected_date": "画面や紙に印字・記入されている日付があれば YYYY-MM-DD 形式に変換して。西暦2桁表記(例: 26/8/9)は20を補って西暦4桁にする。年が書かれておらず月日のみの場合は、その月日と今日の日付から最も自然な年を推測する。日付が一切見当たらない場合は null",
-      "frame_by_frame_reading": ["1F: 7,スペア → 累計17", "2F: ストライク → 累計37", "..."],
+      "frame_by_frame_reading": ["1F: 7,スペア → 累計17", "2F: ストライク → 累計37", "...", "10F: ストライク,G(ガター),8 → 累計210"],
       "frames": [
         {"rolls": ["7","/"], "score": 17, "split_roll_index": null},
         {"rolls": ["X"], "score": 37, "split_roll_index": null},
         {"rolls": ["8","1"], "score": 46, "split_roll_index": 0},
-        {"rolls": ["X","X","6"], "score": 300, "split_roll_index": 2}
+        {"rolls": ["X","G","8"], "score": 210, "split_roll_index": null}
       ],
       "total_score": 178,
       "confidence_notes": ""
@@ -559,10 +707,10 @@ async function analyzeScoreImage(base64, mediaType, playerName) {
 
 ルール:
 - games は配列。写っているゲームが1つだけでも、必ず配列(要素数1)として返す。複数ゲームが写っていれば、その数だけ要素を含める
-- rolls の値は "0"〜"10" の数字文字列、ストライクは "X"、スペアの2投目は "/"
+- rolls の値は "0"〜"9" の数字文字列、ストライクは "X"、スペアは "/"、ガターは "G"、ファールは "F"、ミス(0本)は "-"。画面の記号と上の対応表に従って、記号をそのまま出力する
 - frames は必ず10フレーム分(読み取れる範囲まで)
 - 10フレーム目は最大3投
-- score は各フレーム終了時点の累計スコア(手順3で検算した値)。10フレーム目まで画像に表示されている場合は、必ず10個分のscoreを埋めること。最終フレームの累計が画面上の「TOTAL」の値と一致するか必ず確認する
+- score は、画面に表示されている各フレームの累計スコアの数字を、そのまま書き写す(自分で計算し直した値ではなく、表示どおりの値。投球記号の読み取りと矛盾していても、表示どおりの数字を書くこと)。10フレーム目まで画像に表示されている場合は、必ず10個分のscoreを埋めること。最終フレームの累計が画面上の「TOTAL」の値と一致するか必ず確認する
 - split_roll_index は、そのフレームの中で数字が丸で囲まれている(スプリットを示す)投球が何投目か(0始まりのインデックス)を表す。スプリットは1投目とは限らず、10フレーム目のボーナス球(2投目・3投目)に付くこともあるので、実際に丸が付いている投球の位置を必ず確認すること。丸が付いた投球がなければ null
 - frame_by_frame_reading は手順2〜3の思考過程を1フレームずつ短い日本語で記載する(この項目を必ず frames より先に埋めること)
 - 指定された名前に一致する列が画面内に見つからない場合は player_matched を false にし、games は空配列、confidence_notes に「該当する名前が見つかりませんでした」等を記載(この場合 confidence_notes はJSONの一番外側に置いてよい)
@@ -2123,9 +2271,17 @@ export default function StrikeLog() {
             if (typeof f.split_roll_index === "number") splitRolls[f.split_roll_index] = true;
             return { ...f, splitRolls };
           });
-          const norm = normalizeGame(framesWithSplitRolls);
+          let norm = normalizeGame(framesWithSplitRolls);
           const ocrTotal = Number(game.total_score);
           const hasOcrTotal = Number.isFinite(ocrTotal);
+          let autoCorrectedFrames = null;
+          if (hasOcrTotal && norm.total !== ocrTotal) {
+            const fix = reconcileRollsWithReadScores(framesWithSplitRolls, ocrTotal);
+            if (fix) {
+              norm = normalizeGame(fix.frames);
+              autoCorrectedFrames = fix.changedFrames;
+            }
+          }
           const mismatch =
             norm.total !== null && hasOcrTotal && norm.total !== ocrTotal
               ? { computed: norm.total, ocrRead: ocrTotal }
@@ -2137,6 +2293,7 @@ export default function StrikeLog() {
             total_score: norm.total !== null ? norm.total : hasOcrTotal ? ocrTotal : null,
             ocrTotal: hasOcrTotal ? ocrTotal : null,
             totalMismatch: mismatch,
+            autoCorrectedFrames,
             confidence_notes: game.confidence_notes || "",
             frame_by_frame_reading: game.frame_by_frame_reading || [],
           };
@@ -2268,6 +2425,7 @@ export default function StrikeLog() {
           frames: norm.frames,
           total_score: norm.total !== null ? norm.total : game.total_score,
           totalMismatch: mismatch,
+          autoCorrectedFrames: null,
         };
       });
       return { ...prev, games };
@@ -2751,6 +2909,11 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                         style={{ color: COLORS.danger, fontWeight: 700 }}
                       >
                         ⚠ すみません。うまく読み取れなかったようで、解析スコアと見比べて修正をお願いします。
+                      </div>
+                    )}
+                    {!game.totalMismatch && game.autoCorrectedFrames?.length > 0 && !activeCell && (
+                      <div className="mt-2 text-xs" style={{ color: COLORS.strike }}>
+                        写真の累計スコアをもとに、{game.autoCorrectedFrames.map((i) => i + 1).join("・")}フレーム目を自動で補正しました。念のためご確認ください。
                       </div>
                     )}
                   </div>
