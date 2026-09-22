@@ -1,19 +1,25 @@
-// GET /api/account/device-check?uid=xxx&deviceId=yyy
-// Polled periodically by the app while a user is logged into an account.
-// Returns whether `deviceId` is still this account's registered active
-// device. If another device has since logged into the same account,
-// `active` comes back false and the caller should sign itself out.
-import { db } from "../_firebaseAdmin.js";
+// GET /api/account/device-check?deviceId=yyy
+// Headers: Authorization: Bearer <Firebase ID token>
+// Polled while a user is signed in. Returns whether `deviceId` is still this
+// account's registered active device; if another device has since logged
+// in, `active` is false and the caller signs itself out.
+import { db, adminAuth } from "../_firebaseAdmin.js";
+import { verifyCaller } from "../_accountAuth.js";
 
 export default async function handler(req, res) {
-  const { uid, deviceId } = req.query;
-  if (!uid || !deviceId) {
-    res.status(400).json({ error: "uid and deviceId are required" });
+  const caller = await verifyCaller(req, adminAuth);
+  if (!caller) {
+    res.status(401).json({ error: "unauthenticated" });
+    return;
+  }
+  const { deviceId } = req.query;
+  if (!deviceId) {
+    res.status(400).json({ error: "deviceId is required" });
     return;
   }
 
   try {
-    const doc = await db.collection("accessRequests").doc(String(uid)).get();
+    const doc = await db.collection("accessRequests").doc(caller.uid).get();
     if (!doc.exists) {
       res.status(200).json({ active: false, status: "not_found" });
       return;

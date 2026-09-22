@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Camera, History, BarChart3, Loader2, Check, X, Pencil, Trophy, TrendingUp, Calendar, CircleDot, Hash, User, Target, Trash2, ShieldCheck, CircleCheck, MessageCircle, Send, Settings, Crop } from "lucide-react";
+import { Camera, History, BarChart3, Loader2, Check, X, Pencil, Trophy, TrendingUp, Calendar, CircleDot, Hash, User, Target, Trash2, ShieldCheck, CircleCheck, MessageCircle, Send, Settings, Crop, ImageOff, UserX } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { auth } from "./firebaseClient.js";
+import { noteLocalWrite, startSync, stopSync, scheduleFlush } from "./sync.js";
 import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
@@ -32,9 +33,9 @@ const STORAGE_KEY = "games";
 // Drop-in replacement for the Claude-artifact-only `window.storage` API,
 // backed by the browser's localStorage instead. Keeps the same shape
 // ({ key, value } | null) so the rest of the app didn't need to change.
-// NOTE: localStorage is per-browser/per-device, not per-account — swap this
-// out for a real backend (Firebase, etc.) if you want data to follow the
-// person across devices.
+// localStorage stays the app's working copy (fast, works offline). For
+// account holders, every write is also reported to the sync module, which
+// mirrors it to the cloud so records follow the person to a new phone.
 const storage = {
   async get(key) {
     const raw = localStorage.getItem(key);
@@ -42,11 +43,15 @@ const storage = {
     return { key, value: raw };
   },
   async set(key, value) {
+    const prev = localStorage.getItem(key);
     localStorage.setItem(key, value);
+    noteLocalWrite(key, prev, value);
     return { key, value };
   },
   async delete(key) {
+    const prev = localStorage.getItem(key);
     localStorage.removeItem(key);
+    noteLocalWrite(key, prev, null);
     return { key, deleted: true };
   },
 };
@@ -503,6 +508,59 @@ function computeGameSetStats(gamesList) {
   };
 }
 
+// ---------- achievements (celebration triggers) ----------
+// Compares all-time stats before and after newly saved games, and returns
+// the milestones that were just crossed. Only called when saving NEW games
+// (not when editing old ones), so nothing re-fires on edits.
+const MILESTONE_STEP = 100;
+
+function detectAchievements(prevGames, nextGames, newGames, { goalAverage, goalScore }) {
+  const out = [];
+  if (!newGames.length) return out;
+  const newTotals = newGames.map((g) => Number(g.total) || 0);
+  const bestNew = Math.max(...newTotals);
+
+  if (newTotals.includes(300)) {
+    out.push({ kind: "perfect", title: "パーフェクトゲーム!", detail: "300点達成、おめでとうございます!" });
+  }
+
+  const prevBest = prevGames.length ? Math.max(...prevGames.map((g) => Number(g.total) || 0)) : null;
+  if (prevBest !== null && bestNew > prevBest) {
+    out.push({ kind: "best", title: "自己ベスト更新!", detail: `${bestNew}点(これまで${prevBest}点)` });
+  }
+
+  const goalS = Number(goalScore);
+  if (goalS > 0) {
+    const hits = newTotals.filter((t) => t >= goalS).length;
+    if (hits > 0) {
+      out.push({
+        kind: "goalScore",
+        title: "目標スコア達成!",
+        detail: hits > 1 ? `${hits}ゲームで目標${goalS}点を突破` : `${bestNew}点 / 目標${goalS}点`,
+      });
+    }
+  }
+
+  const before = computeGameSetStats(prevGames);
+  const after = computeGameSetStats(nextGames);
+
+  const goalA = Number(goalAverage);
+  if (goalA > 0 && prevGames.length > 0 && before.avg < goalA && after.avg >= goalA) {
+    out.push({ kind: "goalAverage", title: "目標アベレージ達成!", detail: `通算アベレージ${after.avg} / 目標${goalA}` });
+  }
+
+  const crossed = (a, b) => Math.floor(b / MILESTONE_STEP) > Math.floor(a / MILESTONE_STEP);
+  if (crossed(before.strikeCount, after.strikeCount)) {
+    const n = Math.floor(after.strikeCount / MILESTONE_STEP) * MILESTONE_STEP;
+    out.push({ kind: "strikes", title: `ストライク通算${n}本!`, detail: "積み重ねの成果です" });
+  }
+  if (crossed(before.spareCount, after.spareCount)) {
+    const n = Math.floor(after.spareCount / MILESTONE_STEP) * MILESTONE_STEP;
+    out.push({ kind: "spares", title: `スペア通算${n}本!`, detail: "確実に拾える力がついています" });
+  }
+  return out;
+}
+
 function normalizeGame(frames) {
   const arr = Array.from({ length: 10 }).map((_, i) => (frames && frames[i]) || { rolls: [] });
   const normalized = arr.map((f, i) => normalizeFrame(f.rolls, i === 9));
@@ -806,7 +864,7 @@ async function analyzeScoreImage(images, playerName, { cropped = false, zoomed =
 6. 最後に、読み取った内容を次のJSON形式のみで出力する。前置き・説明・マークダウンの記号は一切含めない
 
 {
-  "screen_type": "digital" または "paper",
+  "screen_type": "digital" または "paper"(ボウリングのスコアが写っていない画像なら "none"),
   "player_matched": true,
   "matched_name_on_screen": "画面上に表示されていた実際の表記",
   "other_players_detected": ["画面にいた他の人の名前など"],
@@ -835,6 +893,7 @@ async function analyzeScoreImage(images, playerName, { cropped = false, zoomed =
 - score は、画面に表示されている各フレームの累計スコアの数字を、そのまま書き写す(自分で計算し直した値ではなく、表示どおりの値。投球記号の読み取りと矛盾していても、表示どおりの数字を書くこと)。10フレーム目まで画像に表示されている場合は、必ず10個分のscoreを埋めること。最終フレームの累計が画面上の「TOTAL」の値と一致するか必ず確認する
 - split_roll_index は、そのフレームの中で数字が丸で囲まれている(スプリットを示す)投球が何投目か(0始まりのインデックス)を表す。スプリットは1投目とは限らず、10フレーム目のボーナス球(2投目・3投目)に付くこともあるので、実際に丸が付いている投球の位置を必ず確認すること。丸が付いた投球がなければ null
 - frame_by_frame_reading は手順2〜3の思考過程を1フレームずつ短い日本語で記載する(この項目を必ず frames より先に埋めること)
+- 画像にボウリングのスコア(電光掲示板・スコアシート)が写っていない場合(料理・風景・人物など無関係な写真)は、screen_type を "none"、player_matched を false、games を空配列にする。これが最優先で、名前の照合は行わない
 - 指定された名前に一致する列が画面内に見つからない場合は player_matched を false にし、games は空配列、confidence_notes に「該当する名前が見つかりませんでした」等を記載(この場合 confidence_notes はJSONの一番外側に置いてよい)
 - 名前の指定がない場合は player_matched を true とし、画面内の(唯一の、または最初の)プレイヤーのスコアを読み取る
 - 数字がかすれている・反射で見えにくいなど読み取りに自信がない箇所は、そのゲームの confidence_notes に短く日本語で記載(なければ空文字)
@@ -1125,6 +1184,172 @@ function RollPicker({ frameIdx, rollIdx, splitEligible, onSelect, onSplitToggle,
 // ---------- access gate ----------
 // Shown instead of the app until the person's device has been approved by
 // the admin. "checking" while we ask the server, then one of the statuses.
+// Full-screen fireworks + a card listing what was just achieved.
+// Rockets launch for a few seconds, then the sparks fade out; the card stays
+// until the user closes it. Skips the animation for people who've turned on
+// "reduce motion" in their phone settings.
+const FIREWORK_COLORS = ["#E0A800", "#FFD54F", "#FFFFFF", "#FF7A7A", "#6EC6FF", "#8FE388"];
+
+function Fireworks() {
+  const canvasRef = useRef(null);
+  useEffect(() => {
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const resize = () => {
+      canvas.width = window.innerWidth * dpr;
+      canvas.height = window.innerHeight * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    };
+    resize();
+    window.addEventListener("resize", resize);
+
+    const W = () => window.innerWidth;
+    const H = () => window.innerHeight;
+    const rockets = [];
+    const sparks = [];
+    const start = performance.now();
+    let lastLaunch = 0;
+    let raf;
+
+    const launch = () => {
+      rockets.push({
+        x: W() * (0.1 + Math.random() * 0.8),
+        y: H(),
+        vy: -(H() * 0.018 + Math.random() * H() * 0.006),
+        targetY: H() * (0.06 + Math.random() * 0.26),
+        color: FIREWORK_COLORS[Math.floor(Math.random() * FIREWORK_COLORS.length)],
+      });
+    };
+    const explode = (r) => {
+      const count = 80 + Math.floor(Math.random() * 40);
+      for (let i = 0; i < count; i++) {
+        const angle = (Math.PI * 2 * i) / count;
+        const speed = 2.5 + Math.random() * 4.5;
+        sparks.push({
+          x: r.x,
+          y: r.y,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          life: 1,
+          decay: 0.012 + Math.random() * 0.01,
+          color: Math.random() < 0.25 ? "#FFFFFF" : r.color,
+        });
+      }
+    };
+
+    const tick = (now) => {
+      const elapsed = now - start;
+      if (elapsed < 4000 && now - lastLaunch > 320) {
+        launch();
+        if (Math.random() < 0.4) launch();
+        lastLaunch = now;
+      }
+      ctx.clearRect(0, 0, W(), H());
+
+      for (let i = rockets.length - 1; i >= 0; i--) {
+        const r = rockets[i];
+        r.y += r.vy;
+        ctx.fillStyle = r.color;
+        ctx.beginPath();
+        ctx.arc(r.x, r.y, 2.2, 0, Math.PI * 2);
+        ctx.fill();
+        if (r.y <= r.targetY) {
+          explode(r);
+          rockets.splice(i, 1);
+        }
+      }
+      for (let i = sparks.length - 1; i >= 0; i--) {
+        const s = sparks[i];
+        s.vx *= 0.985;
+        s.vy = s.vy * 0.985 + 0.05; // gentle gravity
+        s.x += s.vx;
+        s.y += s.vy;
+        s.life -= s.decay;
+        if (s.life <= 0) {
+          sparks.splice(i, 1);
+          continue;
+        }
+        ctx.globalAlpha = s.life;
+        ctx.fillStyle = s.color;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, 2.6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      if (elapsed < 4000 || rockets.length || sparks.length) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", resize);
+    };
+  }, []);
+  return (
+    <canvas
+      ref={canvasRef}
+      style={{ position: "fixed", inset: 0, width: "100vw", height: "100vh", pointerEvents: "none", zIndex: 61 }}
+    />
+  );
+}
+
+function AchievementIcon({ kind }) {
+  const s = { color: COLORS.gold, flexShrink: 0 };
+  if (kind === "strikes") return <div style={{ width: 22, display: "flex", justifyContent: "center" }}><RollMark val="X" markColor={COLORS.gold} size={20} /></div>;
+  if (kind === "spares") return <div style={{ width: 22, display: "flex", justifyContent: "center" }}><RollMark val="/" markColor={COLORS.gold} size={20} /></div>;
+  if (kind === "goalScore") return <Target size={22} style={s} />;
+  if (kind === "goalAverage") return <TrendingUp size={22} style={s} />;
+  return <Trophy size={22} style={s} />;
+}
+
+function Celebration({ items, onClose }) {
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 60,
+        background: "rgba(8, 12, 26, 0.72)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 24,
+      }}
+    >
+      <Fireworks />
+      <div
+        className="glass-card rounded-2xl w-full"
+        style={{ maxWidth: 340, padding: "24px 20px", position: "relative", zIndex: 62, textAlign: "center" }}
+      >
+        <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 13, letterSpacing: "0.2em", color: COLORS.gold }}>
+          CONGRATULATIONS
+        </div>
+        <div style={{ color: COLORS.strike, fontWeight: 700, fontSize: 22, marginTop: 4 }}>おめでとうございます!</div>
+        <div className="space-y-3" style={{ marginTop: 18, textAlign: "left" }}>
+          {items.map((it, i) => (
+            <div key={i} className="flex items-center gap-3">
+              <AchievementIcon kind={it.kind} />
+              <div style={{ minWidth: 0 }}>
+                <div style={{ color: COLORS.strike, fontWeight: 700, fontSize: 16 }}>{it.title}</div>
+                {it.detail && <div style={{ color: COLORS.strike, opacity: 0.75, fontSize: 12, marginTop: 1 }}>{it.detail}</div>}
+              </div>
+            </div>
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="w-full rounded-lg"
+          style={{ marginTop: 22, padding: "12px 0", background: COLORS.gold, color: COLORS.ink, fontWeight: 700, fontSize: 15 }}
+        >
+          閉じる
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // Lets the user drag a finger over the photo to box in their own score row.
 // Reports the selection in 0..1 coordinates of the image. touch-action is
 // disabled only on the photo itself, so drawing doesn't scroll the page.
@@ -1267,6 +1492,7 @@ function GateScreen({
         )}
 
         {mode === "checking" && <div style={{ color: COLORS.strike }}>確認中...</div>}
+        {mode === "syncing" && <div style={{ color: COLORS.strike }}>記録を読み込み中...</div>}
 
         {(mode === "not_found" || mode === "error") && !showAccountForm && (
           <>
@@ -1920,6 +2146,10 @@ export default function StrikeLog() {
   const [authBusy, setAuthBusy] = useState(false);
   const [authErrorMsg, setAuthErrorMsg] = useState("");
   const [justSignedOut, setJustSignedOut] = useState(false);
+  const [authReady, setAuthReady] = useState(false); // Firebase has told us whether someone is signed in
+  const [syncState, setSyncState] = useState("idle"); // "idle" | "syncing" | "ready" | "failed"
+  const syncStateRef = useRef("idle");
+  const syncedUidRef = useRef(null);
   const [myRequestNumber, setMyRequestNumber] = useState(null);
   const [requestName, setRequestName] = useState("");
   const [feedbackMessage, setFeedbackMessage] = useState("");
@@ -1953,6 +2183,7 @@ export default function StrikeLog() {
   const [imagePreview, setImagePreview] = useState(null);
   const [imageMeta, setImageMeta] = useState(null); // {base64, mediaType}
   const [cropRect, setCropRect] = useState(null); // user's selection, 0..1 coords
+  const [celebration, setCelebration] = useState(null); // achievements to celebrate, or null
   const sourceImgRef = useRef(null); // original full-resolution photo
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzeError, setAnalyzeError] = useState("");
@@ -2034,26 +2265,29 @@ export default function StrikeLog() {
   const [editSelectedShoeId, setEditSelectedShoeId] = useState(null);
   const fileInputRef = useRef(null);
 
-  useEffect(() => {
-    (async () => {
+  // Loads everything from the phone's storage into the screens. Runs at
+  // startup, and again after an account's cloud records are downloaded.
+  const loadAllFromStorage = useCallback(async () => {
+    const tasks = [];
+    tasks.push((async () => {
       try {
         const res = await storage.get(STORAGE_KEY);
-        if (res && res.value) setGames(JSON.parse(res.value));
+        setGames(res && res.value ? JSON.parse(res.value) : []);
       } catch (e) {
         // key not existing yet is normal on first run
       } finally {
         setLoadingGames(false);
       }
-    })();
-    (async () => {
+    })());
+    tasks.push((async () => {
       try {
         const res = await storage.get(PLAYER_NAME_KEY);
         if (res && res.value) setPlayerName(res.value);
       } catch (e) {
         // no saved name yet, that's fine
       }
-    })();
-    (async () => {
+    })());
+    tasks.push((async () => {
       try {
         const res = await storage.get(BALL_CONFIG_KEY);
         if (res && res.value) {
@@ -2065,8 +2299,8 @@ export default function StrikeLog() {
       } catch (e) {
         // no saved ball config yet, that's fine
       }
-    })();
-    (async () => {
+    })());
+    tasks.push((async () => {
       try {
         const res = await storage.get(PROFILE_KEY);
         if (res && res.value) {
@@ -2080,16 +2314,16 @@ export default function StrikeLog() {
       } catch (e) {
         // no saved profile yet, that's fine
       }
-    })();
-    (async () => {
+    })());
+    tasks.push((async () => {
       try {
         const res = await storage.get(MY_BALLS_KEY);
-        if (res && res.value) setMyBalls(JSON.parse(res.value));
+        setMyBalls(res && res.value ? JSON.parse(res.value) : []);
       } catch (e) {
         // no registered balls yet, that's fine
       }
-    })();
-    (async () => {
+    })());
+    tasks.push((async () => {
       try {
         const res = await storage.get(SHOE_CONFIG_KEY);
         if (res && res.value) {
@@ -2099,16 +2333,21 @@ export default function StrikeLog() {
       } catch (e) {
         // no saved shoe config yet, that's fine
       }
-    })();
-    (async () => {
+    })());
+    tasks.push((async () => {
       try {
         const res = await storage.get(MY_SHOES_KEY);
-        if (res && res.value) setMyShoes(JSON.parse(res.value));
+        setMyShoes(res && res.value ? JSON.parse(res.value) : []);
       } catch (e) {
         // no registered shoes yet, that's fine
       }
-    })();
+    })());
+    await Promise.all(tasks);
   }, []);
+
+  useEffect(() => {
+    loadAllFromStorage();
+  }, [loadAllFromStorage]);
 
   // Suggests the next game number for the selected date (existing games for
   // that date + 1), unless the person has manually edited the field for this
@@ -2131,27 +2370,50 @@ export default function StrikeLog() {
     }
   }, [gameDate, games, shoeTouched]);
 
+  // Device-based access (users without an account). Waits until Firebase has
+  // said whether an account is signed in, and ignores a late answer if an
+  // account signs in meanwhile — otherwise a slow reply here could overwrite
+  // the account's status and wrongly show the "not approved" screen.
   useEffect(() => {
-    if (isAdminRoute || !deviceId || authUser) return;
+    if (isAdminRoute || !deviceId || !authReady || authUser) return;
+    let cancelled = false;
     (async () => {
       try {
         const res = await fetch(`/api/access/status?deviceId=${encodeURIComponent(deviceId)}`);
         const data = await res.json();
+        if (cancelled) return;
         setAccessStatus(data.status || "not_found");
         if (data.requestNumber) setMyRequestNumber(data.requestNumber);
       } catch (e) {
-        setAccessStatus("error");
+        if (!cancelled) setAccessStatus("error");
       }
     })();
-  }, [isAdminRoute, deviceId, authUser]);
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdminRoute, deviceId, authReady, authUser]);
 
   // Tracks Firebase Auth sign-in state. Logging in/signing up here is what
   // lets someone pick up their account on a new device without waiting on
   // admin approval again — see the claim-device effect below.
   useEffect(() => {
     if (isAdminRoute) return;
-    const unsub = onAuthStateChanged(auth, (user) => setAuthUser(user));
-    return () => unsub();
+    if (!auth) {
+      // Account features unavailable (misconfigured keys) — carry on without them.
+      setAuthReady(true);
+      return;
+    }
+    // Safety net: never leave the app stuck on "確認中..." if Firebase is slow.
+    const fallback = setTimeout(() => setAuthReady(true), 4000);
+    const unsub = onAuthStateChanged(auth, (user) => {
+      clearTimeout(fallback);
+      setAuthUser(user);
+      setAuthReady(true);
+    });
+    return () => {
+      clearTimeout(fallback);
+      unsub();
+    };
   }, [isAdminRoute]);
 
   // As soon as we have a signed-in account, tell the server this device is
@@ -2160,21 +2422,79 @@ export default function StrikeLog() {
   // takes over the same account.
   useEffect(() => {
     if (isAdminRoute || !authUser || !deviceId) return;
+    let cancelled = false;
     (async () => {
       try {
+        const token = await authUser.getIdToken();
         const res = await fetch("/api/account/claim-device", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ uid: authUser.uid, deviceId, email: authUser.email }),
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ deviceId }),
         });
         const data = await res.json();
+        if (cancelled) return;
         setAccessStatus(data.status || "pending");
         if (data.requestNumber) setMyRequestNumber(data.requestNumber);
       } catch (e) {
-        setAccessStatus("error");
+        if (!cancelled) setAccessStatus("error");
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [isAdminRoute, authUser, deviceId]);
+
+  useEffect(() => {
+    syncStateRef.current = syncState;
+  }, [syncState]);
+
+  // Another phone logged into this account: stop syncing and sign out here.
+  const handleKickedOut = useCallback(async () => {
+    stopSync();
+    syncedUidRef.current = null;
+    setSyncState("idle");
+    try {
+      await signOut(auth);
+    } catch (e) {
+      // already signed out
+    }
+    setJustSignedOut(true);
+    setAccessStatus("not_found");
+    setMyRequestNumber(null);
+  }, []);
+
+  // Downloads the account's cloud records, merges them into this phone,
+  // refreshes the screens, and turns on continuous upload of changes.
+  const runSync = useCallback(
+    async (user) => {
+      setSyncState("syncing");
+      try {
+        await startSync({
+          uid: user.uid,
+          deviceId,
+          getToken: () => user.getIdToken(),
+          onInactive: handleKickedOut,
+        });
+        await loadAllFromStorage();
+        syncedUidRef.current = user.uid;
+        setSyncState("ready");
+        setStorageError("");
+      } catch (e) {
+        if (e.inactive) return;
+        setSyncState("failed");
+        setStorageError("記録のクラウド同期に失敗しました。電波の良い場所でアプリを開き直すと、自動で同期されます。");
+      }
+    },
+    [deviceId, handleKickedOut, loadAllFromStorage]
+  );
+
+  // Starts syncing as soon as the account is approved — at login, or while
+  // the app is open if the admin approves them right then.
+  useEffect(() => {
+    if (isAdminRoute || !authUser || accessStatus !== "approved") return;
+    if (syncState !== "idle" || syncedUidRef.current === authUser.uid) return;
+    runSync(authUser);
+  }, [isAdminRoute, authUser, accessStatus, syncState, runSync]);
 
   // While logged into an account, periodically confirms this device is
   // still the one on file. If another device has since logged into the
@@ -2185,15 +2505,13 @@ export default function StrikeLog() {
     let cancelled = false;
     const check = async () => {
       try {
-        const res = await fetch(
-          `/api/account/device-check?uid=${encodeURIComponent(authUser.uid)}&deviceId=${encodeURIComponent(deviceId)}`
-        );
+        const token = await authUser.getIdToken();
+        const res = await fetch(`/api/account/device-check?deviceId=${encodeURIComponent(deviceId)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
         const data = await res.json();
         if (!cancelled && data.active === false) {
-          await signOut(auth);
-          setJustSignedOut(true);
-          setAccessStatus("not_found");
-          setMyRequestNumber(null);
+          await handleKickedOut();
         } else if (!cancelled) {
           setAccessStatus(data.status || "pending");
           if (data.requestNumber) setMyRequestNumber(data.requestNumber);
@@ -2205,7 +2523,12 @@ export default function StrikeLog() {
     check();
     const interval = setInterval(check, 20000);
     const onVisible = () => {
-      if (document.visibilityState === "visible") check();
+      if (document.visibilityState !== "visible") return;
+      check();
+      // Back in the app (maybe with signal again): finish any unsent uploads,
+      // or retry a login-time sync that failed.
+      if (syncStateRef.current === "failed") runSync(authUser);
+      else scheduleFlush();
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => {
@@ -2213,9 +2536,13 @@ export default function StrikeLog() {
       clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [isAdminRoute, authUser, deviceId]);
+  }, [isAdminRoute, authUser, deviceId, handleKickedOut, runSync]);
 
   const loginWithAccount = async (email, password) => {
+    if (!auth) {
+      setAuthErrorMsg("現在アカウント機能を利用できません。時間をおいてお試しください");
+      return;
+    }
     setAuthBusy(true);
     setAuthErrorMsg("");
     setJustSignedOut(false);
@@ -2229,6 +2556,10 @@ export default function StrikeLog() {
   };
 
   const signupWithAccount = async (email, password) => {
+    if (!auth) {
+      setAuthErrorMsg("現在アカウント機能を利用できません。時間をおいてお試しください");
+      return;
+    }
     setAuthBusy(true);
     setAuthErrorMsg("");
     setJustSignedOut(false);
@@ -2244,6 +2575,9 @@ export default function StrikeLog() {
   };
 
   const logoutAccount = async () => {
+    stopSync();
+    syncedUidRef.current = null;
+    setSyncState("idle");
     await signOut(auth);
     setAccessStatus("checking");
     setMyRequestNumber(null);
@@ -2472,8 +2806,14 @@ export default function StrikeLog() {
         ? buildAnalysisImages(sourceImgRef.current, cropRect)
         : { images: [imageMeta], cropped: false, zoomed: false };
       const result = await analyzeScoreImage(built.images, playerName.trim(), built);
-      if (result.player_matched === false) {
-        setPendingResult(result);
+      const noScoreFound =
+        result.screen_type === "none" || !Array.isArray(result.games) || result.games.length === 0;
+      if (result.player_matched === false || noScoreFound) {
+        setPendingResult({
+          ...result,
+          player_matched: false,
+          notScore: result.screen_type === "none" || (noScoreFound && !(result.other_players_detected || []).length),
+        });
       } else {
         const rawGames = Array.isArray(result.games) ? result.games : [];
         const normalizedGames = rawGames.map((game) => {
@@ -2593,6 +2933,7 @@ export default function StrikeLog() {
     const next = [...games, ...newGames].sort(
       (a, b) => a.date.localeCompare(b.date) || (a.gameNumber || 1) - (b.gameNumber || 1)
     );
+    const achievements = detectAchievements(games, next, newGames, { goalAverage, goalScore });
     await persistGames(next);
     await saveBallConfig({ ballType, ballWeight, ballThumbless });
     await saveShoeConfig({ shoeType });
@@ -2611,6 +2952,7 @@ export default function StrikeLog() {
     setSplitPending(false);
     setGameNumberTouched(false);
     setTab("history");
+    if (achievements.length) setCelebration(achievements);
   };
 
   // Editing a roll re-runs official scoring across that game, since a
@@ -2904,10 +3246,10 @@ function getNextRollCell(frameIdx, rollIdx, value) {
   if (isAdminRoute) return <AdminPanel />;
   if (legalRoute) return <LegalPage page={legalRoute} />;
 
-  if (accessStatus !== "approved") {
+  if (accessStatus !== "approved" || (authUser && syncState === "syncing")) {
     return (
       <GateScreen
-        mode={accessStatus}
+        mode={accessStatus !== "approved" ? accessStatus : "syncing"}
         name={requestName}
         setName={setRequestName}
         onSubmit={requestAccess}
@@ -2929,6 +3271,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
         fontFamily: "'Noto Sans JP', 'Hiragino Sans', sans-serif",
       }}
     >
+      {celebration && <Celebration items={celebration} onClose={() => setCelebration(null)} />}
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Noto+Sans+JP:wght@400;500;700&display=swap');
         .glass-card {
@@ -3077,27 +3420,47 @@ function getNextRollCell(frameIdx, rollIdx, value) {
             )}
 
             {pendingResult && pendingResult.player_matched === false && (
-              <div className="rounded-xl p-4 border space-y-2" style={{ borderColor: COLORS.danger, background: "#FBEAE5" }}>
-                <div className="text-sm font-bold" style={{ color: COLORS.danger }}>
-                  「{playerName || "(名前未入力)"}」に一致する列が見つかりませんでした
+              <div className="glass-card rounded-xl p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  {pendingResult.notScore ? (
+                    <ImageOff size={20} style={{ color: COLORS.gold, flexShrink: 0 }} />
+                  ) : (
+                    <UserX size={20} style={{ color: COLORS.gold, flexShrink: 0 }} />
+                  )}
+                  <div style={{ color: COLORS.strike, fontWeight: 700, fontSize: 16 }}>
+                    {pendingResult.notScore
+                      ? "スコアが見つかりませんでした"
+                      : playerName
+                      ? `「${playerName}」が見つかりませんでした`
+                      : "自分の行が見つかりませんでした"}
+                  </div>
                 </div>
-                {pendingResult.other_players_detected?.length > 0 && (
-                  <div className="text-xs" style={{ color: COLORS.cream }}>
-                    画面内で検出された名前: {pendingResult.other_players_detected.join(" / ")}
+                <div style={{ color: COLORS.strike, opacity: 0.8, fontSize: 13, lineHeight: 1.6 }}>
+                  {pendingResult.notScore
+                    ? "ボウリングのスコア画面か、スコアシートの写真を選んでください"
+                    : "名前の表記を確認するか、自分の行を指で囲んで解析してください"}
+                </div>
+                {!pendingResult.notScore && pendingResult.other_players_detected?.length > 0 && (
+                  <div style={{ color: COLORS.strike, opacity: 0.8, fontSize: 13 }}>
+                    写真内の名前:{pendingResult.other_players_detected.join(" / ")}
                   </div>
                 )}
-                {pendingResult.confidence_notes && (
-                  <div className="text-xs" style={{ color: COLORS.cream }}>{pendingResult.confidence_notes}</div>
-                )}
-                <div className="text-xs" style={{ color: COLORS.cream }}>
-                  名前の表記を上の欄で修正するか、写真を撮り直して再度解析してください。
-                </div>
                 <button
-                  onClick={() => setPendingResult(null)}
-                  className="text-sm rounded-lg px-3 py-2 border mt-1"
-                  style={{ borderColor: COLORS.danger, color: COLORS.danger }}
+                  type="button"
+                  onClick={() => {
+                    if (pendingResult.notScore) {
+                      setImagePreview(null);
+                      setImageMeta(null);
+                      setCropRect(null);
+                      sourceImgRef.current = null;
+                    }
+                    setAnalyzeError("");
+                    setPendingResult(null);
+                  }}
+                  className="w-full rounded-lg py-3"
+                  style={{ background: COLORS.strike, color: COLORS.ink, fontWeight: 700 }}
                 >
-                  やり直す
+                  {pendingResult.notScore ? "写真を選び直す" : "やり直す"}
                 </button>
               </div>
             )}
