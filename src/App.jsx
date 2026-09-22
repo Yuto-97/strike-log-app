@@ -171,9 +171,13 @@ function readFileAsDataUrl(file) {
   });
 }
 
-function preprocessImage(file) {
+const HEIC_TYPES = ["image/heic", "image/heif", "image/heic-sequence", "image/heif-sequence"];
+
+// Loads the original, full-resolution photo once. We keep this around so a
+// user-selected crop can be cut from the camera's full pixels rather than
+// from an already-shrunk copy — that's where the extra legibility comes from.
+function loadImageFromFile(file) {
   return new Promise(async (resolve, reject) => {
-    const HEIC_TYPES = ["image/heic", "image/heif", "image/heic-sequence", "image/heif-sequence"];
     const looksHeic = HEIC_TYPES.includes((file.type || "").toLowerCase()) || /\.heic$|\.heif$/i.test(file.name || "");
     if (looksHeic) {
       reject(
@@ -183,7 +187,6 @@ function preprocessImage(file) {
       );
       return;
     }
-
     let dataUrl;
     try {
       dataUrl = await readFileAsDataUrl(file);
@@ -191,62 +194,81 @@ function preprocessImage(file) {
       reject(e);
       return;
     }
-
     const img = new Image();
-    img.onload = () => {
-      try {
-        // Target ~1568px on the long side: Claude's vision encoder works best
-        // around this size, so we scale up small/blurry phone photos and scale
-        // down oversized ones rather than sending whatever the camera produced.
-        const targetLong = 1568;
-        const longSide = Math.max(img.width, img.height);
-        const scale = targetLong / longSide;
-        const w = Math.round(img.width * scale);
-        const h = Math.round(img.height * scale);
-
-        const canvas = document.createElement("canvas");
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext("2d");
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = "high";
-        // Mild contrast/brightness boost helps distinguish LED-style digits
-        // and faint pencil marks on paper scoresheets from the background.
-        ctx.filter = "contrast(130%) brightness(110%)";
-        ctx.drawImage(img, 0, 0, w, h);
-        ctx.filter = "none";
-        // Only worth sharpening when we've upscaled a small/rough photo;
-        // skip it on already-large, high-quality images to save time.
-        if (scale > 1.1 && w * h < 4_000_000) {
-          try {
-            sharpen(ctx, w, h);
-          } catch (sharpenErr) {
-            // Sharpening is a bonus step; if it fails for any reason, fall
-            // back to the plain upscaled+contrast image rather than erroring out.
-          }
-        }
-
-        let outUrl;
-        try {
-          // JPEG at high quality keeps text legible while producing a much
-          // smaller payload than PNG — large PNG uploads have been failing
-          // partway through the request. Quality raised to 0.95 (was 0.85)
-          // so small digits/marks on scoresheets stay crisp for the AI reader.
-          outUrl = canvas.toDataURL("image/jpeg", 1.0);
-        } catch (e) {
-          reject(new Error("画像の処理中にエラーが発生しました。別の写真でお試しください。"));
-          return;
-        }
-        resolve({ base64: outUrl.split(",")[1], mediaType: "image/jpeg" });
-      } catch (e) {
-        reject(new Error("画像の処理に失敗しました。別の写真でお試しください。"));
-      }
-    };
+    img.onload = () => resolve(img);
     img.onerror = () => {
       reject(new Error("画像を読み込めませんでした。対応形式(JPEG/PNG)の写真かご確認のうえ、もう一度お試しください。"));
     };
     img.src = dataUrl;
   });
+}
+
+// Renders a region of the original photo (or the whole thing when `region`
+// is null) into the JPEG we send to the AI.
+// region: { x, y, w, h } in source-image pixels.
+function renderImageForAI(img, region) {
+  const sx = region ? region.x : 0;
+  const sy = region ? region.y : 0;
+  const sw = region ? region.w : img.width;
+  const sh = region ? region.h : img.height;
+  // Target ~1568px on the long side: Claude's vision encoder works best
+  // around this size (larger images get shrunk to it anyway), so we scale
+  // up small crops and scale down oversized photos.
+  const targetLong = 1568;
+  const scale = targetLong / Math.max(sw, sh);
+  const w = Math.max(1, Math.round(sw * scale));
+  const h = Math.max(1, Math.round(sh * scale));
+
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  // Mild contrast/brightness boost helps distinguish LED-style digits
+  // and faint pencil marks on paper scoresheets from the background.
+  ctx.filter = "contrast(130%) brightness(110%)";
+  ctx.drawImage(img, sx, sy, sw, sh, 0, 0, w, h);
+  ctx.filter = "none";
+  // Only worth sharpening when we've upscaled a small region.
+  if (scale > 1.1 && w * h < 4_000_000) {
+    try {
+      sharpen(ctx, w, h);
+    } catch (sharpenErr) {
+      // Sharpening is a bonus step; fall back to the plain image if it fails.
+    }
+  }
+  let outUrl;
+  try {
+    outUrl = canvas.toDataURL("image/jpeg", 1.0);
+  } catch (e) {
+    throw new Error("画像の処理中にエラーが発生しました。別の写真でお試しください。");
+  }
+  return { base64: outUrl.split(",")[1], mediaType: "image/jpeg" };
+}
+
+// Builds the image(s) sent to the AI for one analysis.
+// cropRect: user's selection in 0..1 coordinates of the photo, or null.
+// With a crop we send (1) the selected area and, for a wide row-shaped
+// selection, (2) a zoomed copy of its right side — frames 6-10 and the
+// total, where the tiny 10th-frame marks live. Both are small images, so
+// together they cost less to analyze than one full photo.
+function buildAnalysisImages(img, cropRect) {
+  if (!cropRect) return { images: [renderImageForAI(img, null)], cropped: false, zoomed: false };
+  const padX = img.width * 0.015;
+  const padY = img.height * 0.015;
+  const x0 = Math.max(0, cropRect.x * img.width - padX);
+  const y0 = Math.max(0, cropRect.y * img.height - padY);
+  const x1 = Math.min(img.width, (cropRect.x + cropRect.w) * img.width + padX);
+  const y1 = Math.min(img.height, (cropRect.y + cropRect.h) * img.height + padY);
+  const region = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+  const images = [renderImageForAI(img, region)];
+  const zoomed = region.w / region.h >= 2.5;
+  if (zoomed) {
+    const zw = region.w * 0.45;
+    images.push(renderImageForAI(img, { x: region.x + region.w - zw, y: region.y, w: zw, h: region.h }));
+  }
+  return { images, cropped: true, zoomed };
 }
 
 function extractJson(text) {
@@ -589,7 +611,9 @@ function pinsToRolls(pins, aiPins, aiRolls) {
   });
 }
 
-// Returns { frames, changedFrames } when a confident fix is found, else null.
+// Returns { frames, changedFrames } when exactly one fix fits the numbers,
+// { frames: null, suspectFrames } when the numbers allow several answers,
+// or null when the read numbers themselves can't be trusted.
 function reconcileRollsWithReadScores(frames, target) {
   if (!Array.isArray(frames) || frames.length < 10 || !Number.isFinite(target)) return null;
   const read = frames.slice(0, 10).map((f) => Number(f?.score));
@@ -630,21 +654,63 @@ function reconcileRollsWithReadScores(frames, target) {
   if (!best || bestCost === 0) return null;
 
   const changedFrames = [];
+  for (let i = 0; i < 10; i++) if (countRollChanges(best[i], aiPins[i]) > 0) changedFrames.push(i);
+
+  // Uniqueness check: the cumulative numbers only pin down how many points a
+  // frame scored, not always how they split across rolls (e.g. a 10th frame
+  // of X,9,/ and X,-,/ both add 20). Holding every frame the AI read
+  // correctly fixed, if the changed frames could be filled in more than one
+  // way, the numbers can't tell us which is right — so we don't guess; we
+  // just point the user at those frames instead.
+  const restricted = best.map((pins, i) => (changedFrames.includes(i) ? options[i] : [{ pins, cost: 0 }]));
+  let solutions = 0;
+  let nodes2 = 0;
+  let exhausted = false;
+  const trial = [];
+  const countSolutions = (i) => {
+    if (solutions > 1) return;
+    if (++nodes2 > RECONCILE_NODE_LIMIT) {
+      exhausted = true;
+      return;
+    }
+    if (i === 10) {
+      solutions++;
+      return;
+    }
+    for (const opt of restricted[i]) {
+      trial[i] = opt.pins;
+      if (prefixMatchesReadScores(trial, i, read)) countSolutions(i + 1);
+      if (solutions > 1 || exhausted) break;
+    }
+    trial.length = i;
+  };
+  countSolutions(0);
+  if (solutions !== 1 || exhausted) return { frames: null, suspectFrames: changedFrames };
+
   const fixedFrames = frames.slice(0, 10).map((f, i) => {
-    if (countRollChanges(best[i], aiPins[i]) === 0) return f;
-    changedFrames.push(i);
+    if (!changedFrames.includes(i)) return f;
     const splitRolls = (f.splitRolls || []).map((isSplit, idx) => (isSplit && best[i][idx] !== 10 ? isSplit : false));
     return { ...f, rolls: pinsToRolls(best[i], aiPins[i], f.rolls), splitRolls };
   });
   return { frames: fixedFrames, changedFrames };
 }
 
-async function analyzeScoreImage(base64, mediaType, playerName) {
-  const nameInstruction = playerName
+async function analyzeScoreImage(images, playerName, { cropped = false, zoomed = false } = {}) {
+  const nameInstruction = cropped
+    ? `この画像は、ユーザー本人が写真の中から自分のスコアの部分を指で囲んで切り抜いたものです。${
+        playerName ? `複数の行が写っている場合は、名前「${playerName}」に最も一致する行を読み取ってください。` : ""
+      }切り抜きの都合で名前やフレーム番号の見出しが写っていないことがありますが、その場合も player_matched は true とし、写っているスコアの行(複数行あれば最も上の行)を対象プレイヤーとして読み取ってください。`
+    : playerName
     ? `この画像には複数人のスコアが表示されている可能性があります。名前「${playerName}」の行/列のスコアだけを読み取ってください。表記ゆれ(ひらがな・カタカナ・ローマ字・ニックネームなど)も考慮して、最も一致する列を選んでください。`
     : `この画像には1人分のスコアのみが表示されていると仮定して読み取ってください。`;
 
-  const prompt = `これはボウリングのスコア画面またはスコアシートの写真です。${nameInstruction}
+  const zoomInstruction = zoomed
+    ? `
+
+画像は2枚あります。1枚目は切り抜いたスコア全体、2枚目は1枚目の右側(後半のフレームと合計)を拡大したものです。後半のフレーム、特に10フレーム目の小さな記号(X・G・-・F・スペアの三角形)は、必ず2枚目の拡大画像で確認してください。1枚目と2枚目で読み取りが食い違う場合は、2枚目を優先してください。2枚目は同じスコアの拡大なので、別のゲームとして数えないこと。`
+    : "";
+
+  const prompt = `これはボウリングのスコア画面またはスコアシートの写真です。${nameInstruction}${zoomInstruction}
 
 この写真には、対象プレイヤーの**1ゲーム分だけ**が写っている場合と、**複数ゲーム分(例: 1ゲーム目・2ゲーム目・3ゲーム目)がまとめて**写っている場合があります。まず、対象プレイヤーについて写っているゲームがいくつあるかを確認し、写っている**すべてのゲーム**を、それぞれ独立した10フレームのデータとして読み取ってください。
 
@@ -723,7 +789,7 @@ async function analyzeScoreImage(base64, mediaType, playerName) {
     response = await fetch("/api/analyze", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ base64, mediaType, prompt }),
+      body: JSON.stringify({ images, prompt }),
     });
   } catch (networkErr) {
     throw new Error(`通信自体に失敗しました: ${networkErr.message || networkErr}`);
@@ -1003,6 +1069,87 @@ function RollPicker({ frameIdx, rollIdx, splitEligible, onSelect, onSplitToggle,
 // ---------- access gate ----------
 // Shown instead of the app until the person's device has been approved by
 // the admin. "checking" while we ask the server, then one of the statuses.
+// Lets the user drag a finger over the photo to box in their own score row.
+// Reports the selection in 0..1 coordinates of the image. touch-action is
+// disabled only on the photo itself, so drawing doesn't scroll the page.
+function CropSelector({ src, rect, onChange }) {
+  const imgRef = useRef(null);
+  const startRef = useRef(null);
+  const [draft, setDraft] = useState(null);
+
+  const toNorm = (e) => {
+    const box = imgRef.current.getBoundingClientRect();
+    return {
+      x: Math.min(1, Math.max(0, (e.clientX - box.left) / box.width)),
+      y: Math.min(1, Math.max(0, (e.clientY - box.top) / box.height)),
+    };
+  };
+  const rectFrom = (a, b) => ({
+    x: Math.min(a.x, b.x),
+    y: Math.min(a.y, b.y),
+    w: Math.abs(a.x - b.x),
+    h: Math.abs(a.y - b.y),
+  });
+
+  const onPointerDown = (e) => {
+    if (!imgRef.current) return;
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    startRef.current = toNorm(e);
+    setDraft({ ...startRef.current, w: 0, h: 0 });
+  };
+  const onPointerMove = (e) => {
+    if (!startRef.current) return;
+    setDraft(rectFrom(startRef.current, toNorm(e)));
+  };
+  const onPointerUp = (e) => {
+    if (!startRef.current) return;
+    const r = rectFrom(startRef.current, toNorm(e));
+    startRef.current = null;
+    setDraft(null);
+    // Ignore accidental taps; keep whatever was selected before.
+    if (r.w > 0.04 && r.h > 0.015) onChange(r);
+  };
+
+  const shown = draft || rect;
+  return (
+    <div className="flex justify-center">
+      <div
+        className="relative overflow-hidden rounded-xl border"
+        style={{ borderColor: COLORS.oak, touchAction: "none", userSelect: "none", WebkitUserSelect: "none" }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={() => {
+          startRef.current = null;
+          setDraft(null);
+        }}
+      >
+        <img
+          ref={imgRef}
+          src={src}
+          alt="スコア写真"
+          draggable={false}
+          style={{ display: "block", maxWidth: "100%", maxHeight: "60vh", width: "auto", height: "auto", pointerEvents: "none" }}
+        />
+        {shown && shown.w > 0 && (
+          <div
+            style={{
+              position: "absolute",
+              left: `${shown.x * 100}%`,
+              top: `${shown.y * 100}%`,
+              width: `${shown.w * 100}%`,
+              height: `${shown.h * 100}%`,
+              border: `2px solid ${COLORS.gold}`,
+              boxShadow: "0 0 0 9999px rgba(0,0,0,0.5)",
+              pointerEvents: "none",
+            }}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
 function GateScreen({
   mode,
   name,
@@ -1749,6 +1896,8 @@ export default function StrikeLog() {
 
   const [imagePreview, setImagePreview] = useState(null);
   const [imageMeta, setImageMeta] = useState(null); // {base64, mediaType}
+  const [cropRect, setCropRect] = useState(null); // user's selection, 0..1 coords
+  const sourceImgRef = useRef(null); // original full-resolution photo
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzeError, setAnalyzeError] = useState("");
   const [pendingResult, setPendingResult] = useState(null);
@@ -2238,6 +2387,7 @@ export default function StrikeLog() {
     setPendingResult(null);
     setImagePreview(null);
     setImageMeta(null);
+    setCropRect(null);
     setActiveCell(null);
     setSplitPending(false);
     try {
@@ -2247,7 +2397,9 @@ export default function StrikeLog() {
       // non-fatal: preview is best-effort, processing below still runs
     }
     try {
-      const { base64, mediaType } = await preprocessImage(file);
+      const img = await loadImageFromFile(file);
+      sourceImgRef.current = img;
+      const { base64, mediaType } = renderImageForAI(img, null);
       setImageMeta({ base64, mediaType });
       setImagePreview(`data:${mediaType};base64,${base64}`);
     } catch (e) {
@@ -2260,7 +2412,10 @@ export default function StrikeLog() {
     setAnalyzing(true);
     setAnalyzeError("");
     try {
-      const result = await analyzeScoreImage(imageMeta.base64, imageMeta.mediaType, playerName.trim());
+      const built = sourceImgRef.current
+        ? buildAnalysisImages(sourceImgRef.current, cropRect)
+        : { images: [imageMeta], cropped: false, zoomed: false };
+      const result = await analyzeScoreImage(built.images, playerName.trim(), built);
       if (result.player_matched === false) {
         setPendingResult(result);
       } else {
@@ -2275,11 +2430,14 @@ export default function StrikeLog() {
           const ocrTotal = Number(game.total_score);
           const hasOcrTotal = Number.isFinite(ocrTotal);
           let autoCorrectedFrames = null;
+          let suspectFrames = null;
           if (hasOcrTotal && norm.total !== ocrTotal) {
             const fix = reconcileRollsWithReadScores(framesWithSplitRolls, ocrTotal);
-            if (fix) {
+            if (fix?.frames) {
               norm = normalizeGame(fix.frames);
               autoCorrectedFrames = fix.changedFrames;
+            } else if (fix?.suspectFrames?.length) {
+              suspectFrames = fix.suspectFrames;
             }
           }
           const mismatch =
@@ -2294,6 +2452,7 @@ export default function StrikeLog() {
             ocrTotal: hasOcrTotal ? ocrTotal : null,
             totalMismatch: mismatch,
             autoCorrectedFrames,
+            suspectFrames,
             confidence_notes: game.confidence_notes || "",
             frame_by_frame_reading: game.frame_by_frame_reading || [],
           };
@@ -2390,6 +2549,7 @@ export default function StrikeLog() {
     setPendingResult(null);
     setImagePreview(null);
     setImageMeta(null);
+    setCropRect(null);
     setActiveCell(null);
     setSplitPending(false);
     setGameNumberTouched(false);
@@ -2799,9 +2959,31 @@ function getNextRollCell(frameIdx, rollIdx, value) {
               onChange={(e) => handleFile(e.target.files?.[0])}
             />
 
-            {imagePreview && (
+            {imagePreview && pendingResult && (
               <div className="rounded-xl overflow-hidden border" style={{ borderColor: COLORS.oak }}>
                 <img src={imagePreview} alt="スコア写真プレビュー" className="w-full object-cover max-h-72" />
+              </div>
+            )}
+
+            {imagePreview && !pendingResult && (
+              <div className="space-y-2">
+                <div className="text-sm" style={{ color: COLORS.strike, fontWeight: 700 }}>
+                  自分のスコアの行を、名前から合計まで指でなぞって囲んでください
+                </div>
+                <div className="text-xs" style={{ color: COLORS.strike, opacity: 0.8 }}>
+                  囲むと読み取りの精度が上がります(囲まずに解析もできます)
+                </div>
+                <CropSelector src={imagePreview} rect={cropRect} onChange={setCropRect} />
+                {cropRect && (
+                  <button
+                    type="button"
+                    onClick={() => setCropRect(null)}
+                    className="text-xs underline"
+                    style={{ color: COLORS.strike }}
+                  >
+                    囲みを解除する
+                  </button>
+                )}
               </div>
             )}
 
@@ -2814,12 +2996,13 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                   style={{ background: COLORS.strike, color: COLORS.ink, fontWeight: 700 }}
                 >
                   {analyzing ? <Loader2 className="animate-spin" size={18} /> : null}
-                  {analyzing ? "解析中..." : "解析する"}
+                  {analyzing ? "解析中..." : cropRect ? "囲んだ範囲を解析する" : "解析する"}
                 </button>
                 <button
                   onClick={() => {
                     setImagePreview(null);
                     setImageMeta(null);
+    setCropRect(null);
                     setAnalyzeError("");
                   }}
                   className="rounded-lg px-4 py-3 border"
@@ -2908,7 +3091,9 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                         className="mt-2 rounded p-2 text-xs"
                         style={{ color: COLORS.danger, fontWeight: 700 }}
                       >
-                        ⚠ すみません。うまく読み取れなかったようで、解析スコアと見比べて修正をお願いします。
+                        {game.suspectFrames?.length > 0
+                          ? `⚠ すみません。${game.suspectFrames.map((i) => i + 1).join("・")}フレーム目がうまく読み取れなかったようで、解析スコアと見比べて修正をお願いします。`
+                          : "⚠ すみません。うまく読み取れなかったようで、解析スコアと見比べて修正をお願いします。"}
                       </div>
                     )}
                     {!game.totalMismatch && game.autoCorrectedFrames?.length > 0 && !activeCell && (
@@ -3257,6 +3442,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                           setPendingResult(null);
                           setImagePreview(null);
                           setImageMeta(null);
+    setCropRect(null);
                           setAnalyzeError("");
                           setActiveCell(null);
                           setSplitPending(false);
