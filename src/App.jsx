@@ -2156,6 +2156,7 @@ export default function StrikeLog() {
   const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
   const [feedbackSent, setFeedbackSent] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const [chatViewportHeight, setChatViewportHeight] = useState(null); // shrinks when the keyboard opens
   const [chatMessages, setChatMessages] = useState([]); // [{ role: "user"|"assistant", content }]
   const [chatInput, setChatInput] = useState("");
   const [chatSending, setChatSending] = useState(false);
@@ -2612,6 +2613,25 @@ export default function StrikeLog() {
       setFeedbackSubmitting(false);
     }
   };
+
+  // While the support chat is open, follow the visible area of the screen.
+  // On iPhone the on-screen keyboard covers the bottom of the page without
+  // resizing it, which would otherwise hide the text box being typed in.
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!chatOpen || !vv) {
+      setChatViewportHeight(null);
+      return;
+    }
+    const update = () => setChatViewportHeight(vv.height);
+    update();
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+    };
+  }, [chatOpen]);
 
   const sendChatMessage = async () => {
     const text = chatInput.trim();
@@ -3293,7 +3313,10 @@ function getNextRollCell(frameIdx, rollIdx, value) {
       `}</style>
 
       {/* header */}
-      <header className="px-5 pt-6 pb-4" style={{ background: COLORS.ink }}>
+      <header
+        className="px-5 pb-4"
+        style={{ background: COLORS.ink, paddingTop: "calc(24px + max(env(safe-area-inset-top), 20px))" }}
+      >
         <div className="flex items-center justify-between max-w-md mx-auto">
           <div className="flex items-center gap-3">
             <img
@@ -3321,7 +3344,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
         </div>
       </header>
 
-      <main className="max-w-md mx-auto px-4 pb-24 pt-5">
+      <main className="max-w-md mx-auto px-4 pt-5" style={{ paddingBottom: "calc(96px + env(safe-area-inset-bottom))" }}>
         {tab === "scan" && (
           <div className="space-y-4">
             <div className="rounded-xl p-3 border glass-card" style={{ borderColor: COLORS.oak }}>
@@ -5093,7 +5116,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
       {/* bottom nav */}
       <nav
         className="fixed bottom-0 left-0 right-0 border-t"
-        style={{ background: COLORS.ink, borderColor: COLORS.oak }}
+        style={{ background: COLORS.ink, borderColor: COLORS.oak, paddingBottom: "env(safe-area-inset-bottom)" }}
       >
         <div className="max-w-md mx-auto flex">
           {[
@@ -5121,12 +5144,24 @@ function getNextRollCell(frameIdx, rollIdx, value) {
       {/* help-chat button now lives in the header */}
       {chatOpen && (
         <div
-          className="fixed inset-0 flex flex-col"
-          style={{ background: `linear-gradient(160deg, ${COLORS.navyLight} 0%, ${COLORS.navyBg} 55%, #161D38 100%)`, zIndex: 50 }}
+          className="fixed left-0 right-0 top-0 flex flex-col"
+          style={{
+            // Track the visible area so the input stays above the keyboard.
+            height: chatViewportHeight ? `${chatViewportHeight}px` : "100%",
+            background: `linear-gradient(160deg, ${COLORS.navyLight} 0%, ${COLORS.navyBg} 55%, #161D38 100%)`,
+            zIndex: 50,
+          }}
         >
           <div
-            className="flex items-center justify-between px-4 py-4"
-            style={{ background: COLORS.ink }}
+            className="flex items-center justify-between px-4"
+            style={{
+              background: COLORS.ink,
+              // Keep the title clear of the notch / status bar.
+              // env() is 0 on iPhones without a notch, where the status bar
+              // still covers the top ~20px in app mode — so keep a minimum.
+              paddingTop: "calc(16px + max(env(safe-area-inset-top), 20px))",
+              paddingBottom: 16,
+            }}
           >
             <div className="flex items-center gap-2">
               <MessageCircle size={20} style={{ color: COLORS.strike }} />
@@ -5152,6 +5187,8 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                   style={{
                     maxWidth: "80%",
                     whiteSpace: "pre-wrap",
+                    overflowWrap: "anywhere", // long URLs wrap instead of spilling out
+                    wordBreak: "break-word",
                     background: m.role === "user" ? COLORS.ink : "rgba(40, 55, 95, 0.55)",
                     color: COLORS.cream,
                     border: m.role === "user" ? "none" : `1px solid rgba(201, 162, 39, 0.28)`,
@@ -5180,7 +5217,14 @@ function getNextRollCell(frameIdx, rollIdx, value) {
             )}
           </div>
 
-          <div className="p-3 flex items-center gap-2" style={{ borderTop: `1px solid ${COLORS.oak}`, background: COLORS.navyBg }}>
+          <div
+            className="p-3 flex items-center gap-2"
+            style={{
+              borderTop: `1px solid ${COLORS.oak}`,
+              background: COLORS.navyBg,
+              paddingBottom: "calc(12px + env(safe-area-inset-bottom))",
+            }}
+          >
             <input
               type="text"
               value={chatInput}
@@ -5192,15 +5236,15 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                 }
               }}
               placeholder="質問を入力"
-              className="flex-1 px-3 py-2 rounded-lg border text-sm"
-              style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+              className="flex-1 px-3 py-2 rounded-lg border"
+              style={{ borderColor: COLORS.oak, color: COLORS.ink, fontSize: 16, minWidth: 0 }}
             />
             <button
               type="button"
               onClick={sendChatMessage}
               disabled={chatSending || !chatInput.trim()}
               className="rounded-lg px-3 py-2 flex items-center justify-center"
-              style={{ background: COLORS.strike, color: COLORS.ink, opacity: chatInput.trim() ? 1 : 0.5 }}
+              style={{ background: COLORS.strike, color: COLORS.ink, opacity: chatInput.trim() ? 1 : 0.5, flexShrink: 0 }}
               aria-label="送信"
             >
               <Send size={18} />
