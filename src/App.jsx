@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Camera, History, BarChart3, Loader2, Check, X, Pencil, Trophy, TrendingUp, Calendar, CircleDot, Hash, User, Target, Trash2, ShieldCheck, CircleCheck, MessageCircle, Send, Settings, Crop, ImageOff, UserX } from "lucide-react";
+import { Camera, History, BarChart3, Loader2, Check, X, Pencil, Trophy, TrendingUp, Calendar, CircleDot, Hash, User, Target, Trash2, ShieldCheck, CircleCheck, MessageCircle, Send, Settings, Crop, ImageOff, UserX, Bell, ImagePlus } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { auth } from "./firebaseClient.js";
 import { noteLocalWrite, startSync, stopSync, scheduleFlush } from "./sync.js";
@@ -1181,9 +1181,190 @@ function RollPicker({ frameIdx, rollIdx, splitEligible, onSelect, onSplitToggle,
   );
 }
 
-// ---------- access gate ----------
-// Shown instead of the app until the person's device has been approved by
-// the admin. "checking" while we ask the server, then one of the statuses.
+// ---------- お知らせ (announcements) helpers ----------
+// Which announcements this phone has already seen in the bell, and which
+// event pop-ups the user chose "don't show again" for. Kept per phone.
+const ANN_READ_KEY = "announcements-read";
+const ANN_HIDDEN_KEY = "announcements-hidden";
+const ANN_SHOWN_KEY = "announcements-shown"; // { [id]: times the launch pop-up was shown }
+const EVENT_POPUP_MAX_SHOWS = 2; // each event pops up at most twice per phone, checked or not
+
+function readShownCounts() {
+  try {
+    const o = JSON.parse(localStorage.getItem(ANN_SHOWN_KEY) || "{}");
+    return o && typeof o === "object" && !Array.isArray(o) ? o : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function readIdList(key) {
+  try {
+    const a = JSON.parse(localStorage.getItem(key) || "[]");
+    return Array.isArray(a) ? a : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function writeIdList(key, list) {
+  // Keep only the most recent entries so this never grows without bound.
+  localStorage.setItem(key, JSON.stringify(Array.from(new Set(list)).slice(-300)));
+}
+
+const announcementImageUrl = (a) =>
+  `/api/announcements?image=${encodeURIComponent(a.id)}&v=${encodeURIComponent(a.imageVersion || "")}`;
+
+function formatMonthDay(ymd) {
+  if (!ymd) return "";
+  const [, m, d] = ymd.split("-").map(Number);
+  return `${m}/${d}`;
+}
+
+const ANNOUNCEMENT_TYPE_LABEL = { update: "アップデート", event: "イベント" };
+
+// Shrinks a photo for an announcement: at most 1080px on the long side and
+// under ~450KB, stepping quality (then size) down until it fits. Phone
+// photos are often 5MB+, which would fail to upload and load slowly on a
+// bowling alley's weak signal.
+async function compressAnnouncementImage(file) {
+  const img = await loadImageFromFile(file);
+  const LIMIT = 600000; // base64 chars ≈ 450KB of JPEG
+  let long = 1080;
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const scale = Math.min(1, long / Math.max(img.width, img.height));
+    const w = Math.max(1, Math.round(img.width * scale));
+    const h = Math.max(1, Math.round(img.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(img, 0, 0, w, h);
+    for (const q of [0.85, 0.75, 0.65, 0.55]) {
+      const url = canvas.toDataURL("image/jpeg", q);
+      const base64 = url.split(",")[1];
+      if (base64.length <= LIMIT) return { base64, mediaType: "image/jpeg", previewUrl: url, width: w, height: h };
+    }
+    long = Math.round(long * 0.8);
+  }
+  throw new Error("画像を十分に小さくできませんでした。別の画像でお試しください");
+}
+
+// One announcement as shown in the bell list (and in the admin preview).
+function AnnouncementCard({ a, imageSrc }) {
+  const src = imageSrc || (a.hasImage ? announcementImageUrl(a) : null);
+  return (
+    <div className="glass-card rounded-xl p-4 space-y-2">
+      <div className="flex items-center gap-2">
+        <span
+          style={{
+            fontSize: 11,
+            fontWeight: 700,
+            padding: "2px 8px",
+            borderRadius: 999,
+            background: a.type === "event" ? COLORS.gold : "rgba(255,255,255,0.14)",
+            color: a.type === "event" ? COLORS.ink : COLORS.strike,
+          }}
+        >
+          {ANNOUNCEMENT_TYPE_LABEL[a.type] || "お知らせ"}
+        </span>
+        <span style={{ color: COLORS.strike, opacity: 0.7, fontSize: 12 }}>
+          {a.type === "event" && a.endDate
+            ? `${a.startDate ? formatMonthDay(a.startDate) : ""}〜${formatMonthDay(a.endDate)}`
+            : formatMonthDay(a.startDate || (a.createdAt || "").slice(0, 10))}
+        </span>
+      </div>
+      <div style={{ color: COLORS.strike, fontWeight: 700, fontSize: 16, overflowWrap: "anywhere" }}>{a.title}</div>
+      {src && (
+        <img src={src} alt={a.title} style={{ width: "100%", borderRadius: 10, display: "block" }} loading="lazy" />
+      )}
+      {a.body && (
+        <div
+          style={{ color: COLORS.strike, opacity: 0.85, fontSize: 14, lineHeight: 1.7, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
+        >
+          {a.body}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BellPanel({ items, onClose }) {
+  return (
+    <div
+      className="fixed left-0 right-0 top-0 bottom-0 flex flex-col"
+      style={{ background: `linear-gradient(160deg, ${COLORS.navyLight} 0%, ${COLORS.navyBg} 55%, #161D38 100%)`, zIndex: 50 }}
+    >
+      <div
+        className="flex items-center justify-between px-4"
+        style={{ background: COLORS.ink, paddingTop: "calc(16px + max(env(safe-area-inset-top), 20px))", paddingBottom: 16 }}
+      >
+        <div className="flex items-center gap-2">
+          <Bell size={20} style={{ color: COLORS.strike }} />
+          <div style={{ color: COLORS.cream, fontWeight: 700 }}>お知らせ</div>
+        </div>
+        <button type="button" onClick={onClose} aria-label="閉じる">
+          <X size={22} style={{ color: COLORS.cream }} />
+        </button>
+      </div>
+      <div
+        className="flex-1 overflow-y-auto px-4 py-4 space-y-3"
+        style={{ paddingBottom: "calc(16px + env(safe-area-inset-bottom))" }}
+      >
+        {items.length === 0 && (
+          <div className="text-center py-10" style={{ color: COLORS.strike, opacity: 0.8, fontSize: 14 }}>
+            お知らせはまだありません
+          </div>
+        )}
+        {items.map((a) => (
+          <AnnouncementCard key={a.id} a={a} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// The one-image event ad shown after the app opens. "Don't show again"
+// applies to this announcement only; it stays in the bell either way.
+function EventPopup({ a, imageSrc, hideChecked, onToggleHide, onClose }) {
+  return (
+    <div
+      className="fixed inset-0 flex items-center justify-center"
+      style={{ background: "rgba(8, 12, 26, 0.78)", zIndex: 55, padding: "max(env(safe-area-inset-top), 24px) 20px max(env(safe-area-inset-bottom), 24px)" }}
+    >
+      <div className="glass-card rounded-2xl w-full" style={{ maxWidth: 360, padding: 14, maxHeight: "100%", overflowY: "auto" }}>
+        <img
+          src={imageSrc || announcementImageUrl(a)}
+          alt={a.title}
+          style={{ width: "100%", maxHeight: "58vh", objectFit: "contain", borderRadius: 10, display: "block", background: "rgba(0,0,0,0.25)" }}
+        />
+        <div style={{ color: COLORS.strike, fontWeight: 700, fontSize: 16, marginTop: 12, overflowWrap: "anywhere" }}>{a.title}</div>
+        {a.endDate && (
+          <div style={{ color: COLORS.gold, fontSize: 13, fontWeight: 700, marginTop: 4 }}>{formatMonthDay(a.endDate)}まで</div>
+        )}
+        <label className="flex items-center gap-2" style={{ marginTop: 14, color: COLORS.strike, fontSize: 14, cursor: "pointer" }}>
+          <input
+            type="checkbox"
+            checked={hideChecked}
+            onChange={onToggleHide}
+            style={{ width: 18, height: 18, accentColor: COLORS.gold }}
+          />
+          今後この通知を表示しない
+        </label>
+        <button
+          type="button"
+          onClick={onClose}
+          className="w-full rounded-lg"
+          style={{ marginTop: 12, padding: "12px 0", background: COLORS.strike, color: COLORS.ink, fontWeight: 700, fontSize: 15 }}
+        >
+          閉じる
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // Full-screen fireworks + a card listing what was just achieved.
 // Rockets launch for a few seconds, then the sparks fade out; the card stays
 // until the user closes it. Skips the animation for people who've turned on
@@ -1431,6 +1612,9 @@ function CropSelector({ src, rect, onChange }) {
   );
 }
 
+// ---------- access gate ----------
+// Shown instead of the app until the person's device has been approved by
+// the admin. "checking" while we ask the server, then one of the statuses.
 function GateScreen({
   mode,
   name,
@@ -1632,6 +1816,363 @@ function GateScreen({
 }
 
 // ---------- admin panel (approve access requests, review feedback) ----------
+// Admin: post, preview, edit, and delete お知らせ.
+const EMPTY_ANN_FORM = { id: null, type: "update", title: "", body: "", startDate: "", endDate: "" };
+
+function AdminAnnouncements({ password }) {
+  const [items, setItems] = useState([]);
+  const [form, setForm] = useState(EMPTY_ANN_FORM);
+  // image: undefined = keep existing, null = remove, {base64, previewUrl...} = new
+  const [image, setImage] = useState(undefined);
+  const [existingImageUrl, setExistingImageUrl] = useState(null);
+  const [imageBusy, setImageBusy] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+
+  const call = async (payload) => {
+    const res = await fetch("/api/announcements", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password, ...payload }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "エラーが発生しました");
+    return data;
+  };
+
+  const load = async () => {
+    try {
+      const data = await call({ action: "list" });
+      setItems(data.items || []);
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const resetForm = () => {
+    setForm(EMPTY_ANN_FORM);
+    setImage(undefined);
+    setExistingImageUrl(null);
+    setShowPreview(false);
+    setError("");
+  };
+
+  const startEdit = (a) => {
+    setForm({
+      id: a.id,
+      type: a.type,
+      title: a.title || "",
+      body: a.body || "",
+      startDate: a.startDate || "",
+      endDate: a.endDate || "",
+    });
+    setImage(undefined);
+    setExistingImageUrl(a.hasImage ? announcementImageUrl(a) : null);
+    setShowPreview(false);
+    setError("");
+    setNotice("");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const onPickImage = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    setImageBusy(true);
+    setError("");
+    try {
+      setImage(await compressAnnouncementImage(file));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setImageBusy(false);
+    }
+  };
+
+  const previewImageSrc = image ? image.previewUrl : image === null ? null : existingImageUrl;
+  const previewItem = { ...form, id: "preview", hasImage: !!previewImageSrc, startDate: form.startDate || null, endDate: form.endDate || null };
+
+  const save = async () => {
+    setSaving(true);
+    setError("");
+    setNotice("");
+    try {
+      await call({
+        action: "save",
+        id: form.id || undefined,
+        type: form.type,
+        title: form.title,
+        body: form.body,
+        startDate: form.startDate || null,
+        endDate: form.endDate || null,
+        image: image ? { base64: image.base64, mediaType: image.mediaType } : image,
+      });
+      setNotice(form.id ? "お知らせを更新しました" : "お知らせを投稿しました");
+      resetForm();
+      await load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const remove = async (id) => {
+    try {
+      await call({ action: "delete", id });
+      setConfirmDeleteId(null);
+      if (form.id === id) resetForm();
+      await load();
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  const today = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+  const statusOf = (a) =>
+    a.startDate && a.startDate > today ? "予約" : a.endDate && a.endDate < today ? "終了" : "掲載中";
+
+  const inputStyle = { borderColor: COLORS.oak, color: COLORS.ink, background: COLORS.cream, fontSize: 16 };
+  const label = (t) => <div className="text-xs mb-1" style={{ color: COLORS.strike }}>{t}</div>;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <Bell size={18} style={{ color: COLORS.gold }} />
+        <div className="text-sm" style={{ color: COLORS.strike, fontWeight: 700 }}>
+          お知らせ{form.id ? "の編集" : "の投稿"}
+        </div>
+      </div>
+
+      <div className="rounded-xl p-4 glass-card space-y-3">
+        <div className="flex gap-2">
+          {[
+            { key: "update", label: "アップデート(ベルのみ)" },
+            { key: "event", label: "イベント(起動時に表示)" },
+          ].map((opt) => (
+            <button
+              key={opt.key}
+              type="button"
+              onClick={() => setForm((f) => ({ ...f, type: opt.key }))}
+              className="flex-1 rounded-lg py-2 text-xs"
+              style={{
+                background: form.type === opt.key ? COLORS.ink : "rgba(40, 55, 95, 0.55)",
+                color: COLORS.cream,
+                border: `1px solid ${form.type === opt.key ? COLORS.gold : COLORS.oak}`,
+                fontWeight: 700,
+              }}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+
+        <div>
+          {label("タイトル(60文字まで)")}
+          <input
+            type="text"
+            value={form.title}
+            maxLength={60}
+            onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+            className="w-full px-3 py-2 rounded border"
+            style={inputStyle}
+          />
+        </div>
+
+        <div>
+          {label("本文(任意)")}
+          <textarea
+            value={form.body}
+            maxLength={1000}
+            rows={4}
+            onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))}
+            className="w-full px-3 py-2 rounded border"
+            style={inputStyle}
+          />
+        </div>
+
+        <div className="flex gap-2">
+          <div className="flex-1" style={{ minWidth: 0 }}>
+            {label("開始日(空欄=すぐ)")}
+            <input
+              type="date"
+              value={form.startDate}
+              onChange={(e) => setForm((f) => ({ ...f, startDate: e.target.value }))}
+              className="w-full px-2 py-2 rounded border"
+              style={{ ...inputStyle, minWidth: 0 }}
+            />
+          </div>
+          <div className="flex-1" style={{ minWidth: 0 }}>
+            {label(form.type === "event" ? "終了日(応募締切など)※必須" : "終了日(空欄=ずっと)")}
+            <input
+              type="date"
+              value={form.endDate}
+              onChange={(e) => setForm((f) => ({ ...f, endDate: e.target.value }))}
+              className="w-full px-2 py-2 rounded border"
+              style={{ ...inputStyle, minWidth: 0 }}
+            />
+          </div>
+        </div>
+
+        <div>
+          {label(form.type === "event" ? "画像(起動時の表示に使います)" : "画像(任意)")}
+          <div className="flex items-center gap-2 flex-wrap">
+            <label
+              className="rounded-lg px-3 py-2 text-xs flex items-center gap-1"
+              style={{ border: `1px dashed ${COLORS.oak}`, color: COLORS.strike, cursor: "pointer" }}
+            >
+              <ImagePlus size={14} /> {previewImageSrc ? "画像を変更" : "画像を選ぶ"}
+              <input type="file" accept="image/*" onChange={onPickImage} style={{ display: "none" }} />
+            </label>
+            {previewImageSrc && (
+              <button
+                type="button"
+                onClick={() => setImage(null)}
+                className="rounded-lg px-3 py-2 text-xs"
+                style={{ border: `1px solid ${COLORS.oak}`, color: COLORS.strike }}
+              >
+                画像を外す
+              </button>
+            )}
+            {imageBusy && <span className="text-xs" style={{ color: COLORS.strike }}>圧縮中...</span>}
+            {image && (
+              <span className="text-xs" style={{ color: COLORS.strike, opacity: 0.75 }}>
+                {image.width}×{image.height} / 約{Math.round((image.base64.length * 0.75) / 1024)}KB
+              </span>
+            )}
+          </div>
+          {previewImageSrc && (
+            <img src={previewImageSrc} alt="" style={{ marginTop: 8, maxHeight: 140, borderRadius: 8, display: "block" }} />
+          )}
+          {form.type === "event" && !previewImageSrc && (
+            <div className="text-xs mt-1" style={{ color: COLORS.gold }}>
+              画像がないイベントは、起動時には表示されずベルのみに表示されます
+            </div>
+          )}
+        </div>
+
+        {error && <div className="text-xs" style={{ color: "#E8836A", fontWeight: 700 }}>{error}</div>}
+
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setShowPreview((v) => !v)}
+            disabled={!form.title.trim()}
+            className="flex-1 rounded-lg py-2 text-sm"
+            style={{ border: `1px solid ${COLORS.oak}`, color: COLORS.cream, fontWeight: 700, opacity: form.title.trim() ? 1 : 0.5 }}
+          >
+            {showPreview ? "プレビューを閉じる" : "プレビュー"}
+          </button>
+          <button
+            type="button"
+            onClick={save}
+            disabled={saving || imageBusy || !form.title.trim()}
+            className="flex-1 rounded-lg py-2 text-sm"
+            style={{ background: COLORS.gold, color: COLORS.ink, fontWeight: 700, opacity: saving || !form.title.trim() ? 0.6 : 1 }}
+          >
+            {saving ? "保存中..." : form.id ? "更新する" : "投稿する"}
+          </button>
+        </div>
+        {form.id && (
+          <button type="button" onClick={resetForm} className="w-full text-xs underline" style={{ color: COLORS.strike }}>
+            編集をやめて新規作成に戻る
+          </button>
+        )}
+      </div>
+
+      {showPreview && (
+        <div className="space-y-3">
+          <div className="text-xs" style={{ color: COLORS.strike }}>プレビュー:ベルのお知らせ一覧</div>
+          <AnnouncementCard a={previewItem} imageSrc={previewImageSrc} />
+          {form.type === "event" && previewImageSrc && (
+            <>
+              <div className="text-xs" style={{ color: COLORS.strike }}>プレビュー:起動時の表示</div>
+              <div className="rounded-2xl p-4" style={{ background: "rgba(8, 12, 26, 0.78)", display: "flex", justifyContent: "center" }}>
+                <div className="glass-card rounded-2xl w-full" style={{ maxWidth: 360, padding: 14 }}>
+                  <img src={previewImageSrc} alt="" style={{ width: "100%", maxHeight: 380, objectFit: "contain", borderRadius: 10, display: "block" }} />
+                  <div style={{ color: COLORS.strike, fontWeight: 700, fontSize: 16, marginTop: 12 }}>{form.title}</div>
+                  {form.endDate && (
+                    <div style={{ color: COLORS.gold, fontSize: 13, fontWeight: 700, marginTop: 4 }}>{formatMonthDay(form.endDate)}まで</div>
+                  )}
+                  <div style={{ color: COLORS.strike, fontSize: 14, marginTop: 14 }}>☐ 今後この通知を表示しない</div>
+                  <div className="rounded-lg text-center" style={{ marginTop: 12, padding: "12px 0", background: COLORS.strike, color: COLORS.ink, fontWeight: 700 }}>
+                    閉じる
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {notice && <div className="text-sm" style={{ color: COLORS.gold, fontWeight: 700 }}>{notice}</div>}
+
+      <div className="text-sm" style={{ color: COLORS.strike, fontWeight: 700 }}>投稿済みのお知らせ ({items.length})</div>
+      <div className="space-y-2">
+        {items.length === 0 && <div className="text-xs" style={{ color: COLORS.strike }}>まだありません</div>}
+        {items.map((a) => (
+          <div key={a.id} className="rounded-xl p-3 glass-card space-y-2">
+            <div className="flex items-start justify-between gap-2">
+              <div style={{ minWidth: 0 }}>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 700,
+                      padding: "1px 7px",
+                      borderRadius: 999,
+                      background: statusOf(a) === "掲載中" ? COLORS.gold : "rgba(255,255,255,0.14)",
+                      color: statusOf(a) === "掲載中" ? COLORS.ink : COLORS.strike,
+                    }}
+                  >
+                    {statusOf(a)}
+                  </span>
+                  <span className="text-xs" style={{ color: COLORS.strike, opacity: 0.75 }}>
+                    {ANNOUNCEMENT_TYPE_LABEL[a.type]}
+                    {a.startDate || a.endDate
+                      ? `・${a.startDate ? formatMonthDay(a.startDate) : ""}〜${a.endDate ? formatMonthDay(a.endDate) : ""}`
+                      : ""}
+                    {a.hasImage ? "・画像あり" : ""}
+                  </span>
+                </div>
+                <div style={{ color: COLORS.cream, fontWeight: 700, marginTop: 4, overflowWrap: "anywhere" }}>{a.title}</div>
+              </div>
+              <div className="flex items-center gap-3" style={{ flexShrink: 0 }}>
+                <button type="button" onClick={() => startEdit(a)} aria-label="編集">
+                  <Pencil size={16} style={{ color: COLORS.strike }} />
+                </button>
+                <button type="button" onClick={() => setConfirmDeleteId(a.id)} aria-label="削除">
+                  <Trash2 size={16} style={{ color: COLORS.strike }} />
+                </button>
+              </div>
+            </div>
+            {confirmDeleteId === a.id && (
+              <div className="flex items-center justify-between rounded-lg p-2" style={{ background: "rgba(192,57,43,0.18)" }}>
+                <span className="text-xs" style={{ color: COLORS.strike }}>このお知らせを削除しますか?</span>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => setConfirmDeleteId(null)} className="text-xs rounded px-2 py-1" style={{ border: `1px solid ${COLORS.oak}`, color: COLORS.strike }}>
+                    やめる
+                  </button>
+                  <button type="button" onClick={() => remove(a.id)} className="text-xs rounded px-2 py-1" style={{ background: COLORS.danger, color: "white", fontWeight: 700 }}>
+                    削除する
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function AdminPanel() {
   const [password, setPassword] = useState("");
   const [authed, setAuthed] = useState(false);
@@ -1999,6 +2540,8 @@ function AdminPanel() {
             ))}
           </div>
         </div>
+
+        <AdminAnnouncements password={password} />
       </div>
     </div>
   );
@@ -2185,6 +2728,13 @@ export default function StrikeLog() {
   const [imageMeta, setImageMeta] = useState(null); // {base64, mediaType}
   const [cropRect, setCropRect] = useState(null); // user's selection, 0..1 coords
   const [celebration, setCelebration] = useState(null); // achievements to celebrate, or null
+  const [announcements, setAnnouncements] = useState([]); // active お知らせ, newest first
+  const [bellOpen, setBellOpen] = useState(false);
+  const [annReadIds, setAnnReadIds] = useState(() => readIdList(ANN_READ_KEY));
+  const [eventPopup, setEventPopup] = useState(null);
+  const [hideEventChecked, setHideEventChecked] = useState(false);
+  const announcementsLoadedRef = useRef(false);
+  const eventPopupShownRef = useRef(false); // at most one pop-up per app launch
   const sourceImgRef = useRef(null); // original full-resolution photo
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzeError, setAnalyzeError] = useState("");
@@ -2613,6 +3163,58 @@ export default function StrikeLog() {
       setFeedbackSubmitting(false);
     }
   };
+
+  // Fetch お知らせ once the user is actually in the app.
+  useEffect(() => {
+    if (isAdminRoute || accessStatus !== "approved" || announcementsLoadedRef.current) return;
+    announcementsLoadedRef.current = true;
+    fetch("/api/announcements")
+      .then((r) => (r.ok ? r.json() : { items: [] }))
+      .then((d) => setAnnouncements(Array.isArray(d.items) ? d.items : []))
+      .catch(() => {
+        // No signal — the app works fine without announcements.
+      });
+  }, [isAdminRoute, accessStatus]);
+
+  // Show the newest event ad once per launch — only after the records have
+  // finished loading and the user is on the score screen, and never on top
+  // of the celebration, chat, or bell screens.
+  useEffect(() => {
+    if (eventPopupShownRef.current || eventPopup) return;
+    if (accessStatus !== "approved" || (authUser && syncState === "syncing")) return;
+    if (tab !== "scan" || celebration || chatOpen || bellOpen) return;
+    const hidden = readIdList(ANN_HIDDEN_KEY);
+    const shown = readShownCounts();
+    const next = announcements.find(
+      (a) => a.type === "event" && a.hasImage && !hidden.includes(a.id) && (shown[a.id] || 0) < EVENT_POPUP_MAX_SHOWS
+    );
+    if (!next) return;
+    eventPopupShownRef.current = true;
+    // Count it the moment it appears, so closing the app without tapping
+    // 閉じる still uses up one of the two showings. Keep only ids still
+    // running, so this never grows without bound.
+    const running = new Set(announcements.map((a) => a.id));
+    const counts = Object.fromEntries(Object.entries(shown).filter(([id]) => running.has(id)));
+    counts[next.id] = (counts[next.id] || 0) + 1;
+    localStorage.setItem(ANN_SHOWN_KEY, JSON.stringify(counts));
+    setHideEventChecked(false);
+    setEventPopup(next);
+  }, [announcements, accessStatus, authUser, syncState, tab, celebration, chatOpen, bellOpen, eventPopup]);
+
+  const markAnnouncementsRead = (ids) => {
+    const next = Array.from(new Set([...readIdList(ANN_READ_KEY), ...ids]));
+    writeIdList(ANN_READ_KEY, next);
+    setAnnReadIds(next);
+  };
+
+  const closeEventPopup = () => {
+    if (!eventPopup) return;
+    if (hideEventChecked) writeIdList(ANN_HIDDEN_KEY, [...readIdList(ANN_HIDDEN_KEY), eventPopup.id]);
+    markAnnouncementsRead([eventPopup.id]);
+    setEventPopup(null);
+  };
+
+  const unreadAnnouncements = announcements.filter((a) => !annReadIds.includes(a.id)).length;
 
   // While the support chat is open, follow the visible area of the screen.
   // On iPhone the on-screen keyboard covers the bottom of the page without
@@ -3292,6 +3894,15 @@ function getNextRollCell(frameIdx, rollIdx, value) {
       }}
     >
       {celebration && <Celebration items={celebration} onClose={() => setCelebration(null)} />}
+      {bellOpen && <BellPanel items={announcements} onClose={() => setBellOpen(false)} />}
+      {eventPopup && (
+        <EventPopup
+          a={eventPopup}
+          hideChecked={hideEventChecked}
+          onToggleHide={() => setHideEventChecked((v) => !v)}
+          onClose={closeEventPopup}
+        />
+      )}
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Noto+Sans+JP:wght@400;500;700&display=swap');
         .glass-card {
@@ -3332,15 +3943,52 @@ function getNextRollCell(frameIdx, rollIdx, value) {
               <div className="text-xs mt-0.5" style={{ color: COLORS.strike }}>スコア分析 &amp; 記録</div>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => setChatOpen(true)}
-            className="rounded-full flex items-center justify-center"
-            style={{ width: 36, height: 36, background: COLORS.strike, color: COLORS.ink }}
-            aria-label="使い方について質問する"
-          >
-            <MessageCircle size={18} />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setBellOpen(true);
+                markAnnouncementsRead(announcements.map((a) => a.id));
+              }}
+              className="rounded-full flex items-center justify-center relative"
+              style={{ width: 36, height: 36, background: COLORS.strike, color: COLORS.ink }}
+              aria-label={unreadAnnouncements > 0 ? `お知らせ(未読${unreadAnnouncements}件)` : "お知らせ"}
+            >
+              <Bell size={18} />
+              {unreadAnnouncements > 0 && (
+                <span
+                  style={{
+                    position: "absolute",
+                    top: -2,
+                    right: -2,
+                    minWidth: 16,
+                    height: 16,
+                    padding: "0 4px",
+                    borderRadius: 999,
+                    background: COLORS.danger,
+                    color: "white",
+                    fontSize: 10,
+                    fontWeight: 700,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    border: `2px solid ${COLORS.ink}`,
+                  }}
+                >
+                  {unreadAnnouncements > 9 ? "9+" : unreadAnnouncements}
+                </span>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => setChatOpen(true)}
+              className="rounded-full flex items-center justify-center"
+              style={{ width: 36, height: 36, background: COLORS.strike, color: COLORS.ink }}
+              aria-label="使い方について質問する"
+            >
+              <MessageCircle size={18} />
+            </button>
+          </div>
         </div>
       </header>
 
