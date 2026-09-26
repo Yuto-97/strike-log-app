@@ -809,6 +809,40 @@ function findReadIssue(normFrames, readScores, ocrTotal, normTotal) {
   return bad.length ? { frames: bad } : null;
 }
 
+// Tells the server who is making an AI call (so usage and cost can be
+// recorded per person): the account's login token if signed in, plus this
+// phone's device id.
+async function usageHeaders() {
+  const h = {};
+  try {
+    const id = localStorage.getItem("device-id");
+    if (id) h["X-Device-Id"] = id;
+  } catch (e) {
+    // storage unavailable — record anonymously
+  }
+  try {
+    if (auth?.currentUser) h.Authorization = `Bearer ${await auth.currentUser.getIdToken()}`;
+  } catch (e) {
+    // token unavailable — fall back to the device id
+  }
+  return h;
+}
+
+// Reports how an analysis turned out (unrelated photo, needed checking,
+// auto-corrected, corrected by hand). Never blocks or breaks the app.
+function reportAnalysisOutcome(outcome) {
+  if (!Object.values(outcome).some((n) => n > 0)) return;
+  usageHeaders()
+    .then((h) =>
+      fetch("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...h },
+        body: JSON.stringify({ report: outcome }),
+      })
+    )
+    .catch(() => {});
+}
+
 async function analyzeScoreImage(images, playerName, { cropped = false, zoomed = false } = {}) {
   const nameInstruction = cropped
     ? `この画像は、ユーザー本人が写真の中から自分のスコアの部分を指で囲んで切り抜いたものです。${
@@ -903,7 +937,7 @@ async function analyzeScoreImage(images, playerName, { cropped = false, zoomed =
   try {
     response = await fetch("/api/analyze", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...(await usageHeaders()) },
       body: JSON.stringify({ images, prompt }),
     });
   } catch (networkErr) {
@@ -1819,6 +1853,276 @@ function GateScreen({
 // Admin: post, preview, edit, and delete お知らせ.
 const EMPTY_ANN_FORM = { id: null, type: "update", title: "", body: "", startDate: "", endDate: "" };
 
+// ---------- 使用量・コスト (admin) ----------
+// Per-user AI usage and actual cost for a month, plus the month's whole-
+// business cost picture: AI (recorded automatically) + fixed costs and
+// revenue (entered by hand), with a 6-month trend.
+const yen = (n) => {
+  const v = Number(n) || 0;
+  const sign = v < 0 ? "-" : "";
+  const a = Math.abs(v);
+  return a < 100 && a !== Math.round(a) ? `${sign}¥${a.toFixed(1)}` : `${sign}¥${Math.round(a).toLocaleString()}`;
+};
+const shortDateJST = (iso) => {
+  if (!iso) return "なし";
+  const d = new Date(new Date(iso).getTime() + 9 * 3600 * 1000);
+  return `${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
+};
+const daysSince = (iso) => (iso ? Math.floor((Date.now() - new Date(iso).getTime()) / 86400000) : Infinity);
+
+function AdminUsage({ password }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [fixed, setFixed] = useState([]);
+  const [revenue, setRevenue] = useState("");
+  const [rate, setRate] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [savedMsg, setSavedMsg] = useState("");
+
+  const load = async (month) => {
+    setLoading(true);
+    setError("");
+    setSavedMsg("");
+    try {
+      const res = await fetch(
+        `/api/admin/requests?password=${encodeURIComponent(password)}&view=usage${month ? `&month=${month}` : ""}`
+      );
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "読み込みに失敗しました");
+      setData(d);
+      setFixed(d.fixedCosts || []);
+      setRevenue(d.revenueJpy ? String(d.revenueJpy) : "");
+      setRate(String(d.usdJpy));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    load(null);
+  }, []);
+
+  const save = async () => {
+    setSaving(true);
+    setSavedMsg("");
+    try {
+      const res = await fetch("/api/admin/requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password, action: "finance", month: data.month, fixedCosts: fixed, revenueJpy: Number(revenue) || 0, usdJpy: Number(rate) }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "保存に失敗しました");
+      await load(data.month);
+      setSavedMsg("保存しました");
+    } catch (e) {
+      setSavedMsg(e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const shiftMonth = (delta) => {
+    const [y, m] = data.month.split("-").map(Number);
+    load(new Date(Date.UTC(y, m - 1 + delta, 1)).toISOString().slice(0, 7));
+  };
+
+  const label = { color: COLORS.strike, opacity: 0.75, fontSize: 12 };
+  const input = { borderColor: COLORS.oak, background: COLORS.cream, color: COLORS.ink, fontSize: 16, minWidth: 0 };
+
+  if (!data) {
+    return (
+      <div className="space-y-2">
+        <div className="text-sm flex items-center gap-2" style={{ color: COLORS.strike, fontWeight: 700 }}>
+          <BarChart3 size={16} style={{ color: COLORS.gold }} /> 使用量・コスト
+        </div>
+        <div style={label}>{error || "読み込み中..."}</div>
+      </div>
+    );
+  }
+
+  const usd = Number(rate) || data.usdJpy;
+  const t = data.totals || {};
+  const aiJpy = (t.costUsd || 0) * usd;
+  const fixedJpy = fixed.reduce((s, x) => s + (Number(x.amountJpy) || 0), 0);
+  const totalJpy = aiJpy + fixedJpy;
+  const revenueJpy = Number(revenue) || 0;
+  const users = [...data.users].sort((a, b) => (b.costUsd || 0) - (a.costUsd || 0));
+  const isCurrent = data.month >= data.currentMonth;
+
+  const Stat = ({ title, value, sub, strong }) => (
+    <div className="rounded-lg p-3" style={{ background: "rgba(12,16,32,0.45)", border: `1px solid rgba(224,168,0,0.25)` }}>
+      <div style={label}>{title}</div>
+      <div style={{ color: strong ? COLORS.gold : COLORS.strike, fontWeight: 700, fontSize: 18, fontFamily: "'Oswald', sans-serif" }}>{value}</div>
+      {sub && <div style={{ ...label, fontSize: 11 }}>{sub}</div>}
+    </div>
+  );
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="text-sm flex items-center gap-2" style={{ color: COLORS.strike, fontWeight: 700 }}>
+          <BarChart3 size={16} style={{ color: COLORS.gold }} /> 使用量・コスト
+        </div>
+        <div className="flex items-center gap-2" style={{ color: COLORS.strike }}>
+          <button type="button" onClick={() => shiftMonth(-1)} disabled={loading} className="px-2 text-lg" aria-label="前の月">‹</button>
+          <span style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700 }}>{data.month.replace("-", "年")}月</span>
+          <button type="button" onClick={() => shiftMonth(1)} disabled={loading || isCurrent} className="px-2 text-lg" style={{ opacity: isCurrent ? 0.3 : 1 }} aria-label="次の月">›</button>
+        </div>
+      </div>
+
+      <div className="glass-card rounded-xl p-3 space-y-3">
+        <div className="grid grid-cols-2 gap-2">
+          <Stat title="AI費用(自動記録)" value={yen(aiJpy)} sub={`$${(t.costUsd || 0).toFixed(2)}`} />
+          <Stat title="固定費(手入力)" value={yen(fixedJpy)} />
+          <Stat title="総コスト" value={yen(totalJpy)} strong />
+          <Stat title="利益(売上−総コスト)" value={yen(revenueJpy - totalJpy)} sub={`売上 ${yen(revenueJpy)}`} strong />
+        </div>
+        <div style={{ ...label, lineHeight: 1.8 }}>
+          解析 {t.analyzeCount || 0}回 ・ チャット {t.chatCount || 0}回 ・ 失敗 {t.failCount || 0}回
+          <br />
+          関係ない写真 {t.notScoreCount || 0} ・ 要確認 {t.needsFixCount || 0} ・ 自動補正 {t.autoCorrectedCount || 0} ・ 手で修正 {t.manualEditCount || 0}
+        </div>
+        <div style={{ ...label, fontSize: 11 }}>
+          AI費用は月に1回、Anthropicの管理画面の請求額と見比べてください。
+        </div>
+      </div>
+
+      <div className="text-sm" style={{ color: COLORS.strike, fontWeight: 700 }}>ユーザー別({users.length}人・費用の多い順)</div>
+      <div className="glass-card rounded-xl overflow-hidden">
+        {users.length === 0 && <div className="p-3" style={label}>この月の利用はありません</div>}
+        {users.map((u, i) => {
+          const cost = (u.costUsd || 0) * usd;
+          const idle = daysSince(u.lastUsedAt);
+          return (
+            <div key={u.key} className="px-3 py-2" style={{ borderTop: i ? "1px solid rgba(224,168,0,0.2)" : "none" }}>
+              <div className="flex items-center justify-between gap-2">
+                <div style={{ color: COLORS.strike, fontWeight: 700, fontSize: 14, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {u.requestNumber ? `${formatRequestNumber(u.requestNumber)} ` : ""}
+                  {u.name || "(名前なし)"}
+                  {u.isAccount && <span style={{ ...label, fontSize: 11 }}> ・アカウント</span>}
+                </div>
+                <div style={{ color: COLORS.strike, fontWeight: 700, fontFamily: "'Oswald', sans-serif", flexShrink: 0 }}>{yen(cost)}</div>
+              </div>
+              <div className="flex items-center justify-between gap-2" style={label}>
+                <span>
+                  解析{u.analyzeCount || 0} ・ チャット{u.chatCount || 0}
+                  {u.failCount ? ` ・ 失敗${u.failCount}` : ""}
+                </span>
+                <span style={{ flexShrink: 0 }}>1,000円の{((cost / 1000) * 100).toFixed(1)}%</span>
+              </div>
+              <div style={{ ...label, color: idle >= 30 ? "#E8836A" : label.color, opacity: idle >= 30 ? 1 : label.opacity }}>
+                最終利用 {shortDateJST(u.lastUsedAt)}
+                {idle >= 30 && idle !== Infinity ? `(${idle}日前)` : ""}
+              </div>
+            </div>
+          );
+        })}
+        {t.unidentifiedCount > 0 && (
+          <div className="px-3 py-2" style={{ ...label, borderTop: "1px solid rgba(224,168,0,0.2)" }}>
+            利用者を特定できなかった呼び出し:{t.unidentifiedCount}回(合計には含まれています)
+          </div>
+        )}
+      </div>
+
+      <div className="text-sm" style={{ color: COLORS.strike, fontWeight: 700 }}>固定費・売上(手入力)</div>
+      <div className="glass-card rounded-xl p-3 space-y-2">
+        {fixed.length === 0 && data.suggestedFixedCosts && (
+          <button
+            type="button"
+            onClick={() => setFixed(data.suggestedFixedCosts)}
+            className="w-full rounded-lg py-2 text-sm"
+            style={{ border: `1px dashed ${COLORS.oak}`, color: COLORS.strike }}
+          >
+            前月の固定費をコピーする
+          </button>
+        )}
+        {fixed.map((row, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <input
+              value={row.label}
+              onChange={(e) => setFixed((f) => f.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))}
+              placeholder="項目(例: Vercel)"
+              className="flex-1 px-2 py-1.5 rounded border"
+              style={input}
+            />
+            <input
+              value={row.amountJpy}
+              onChange={(e) => setFixed((f) => f.map((x, j) => (j === i ? { ...x, amountJpy: e.target.value.replace(/[^\d]/g, "") } : x)))}
+              placeholder="円"
+              inputMode="numeric"
+              className="px-2 py-1.5 rounded border"
+              style={{ ...input, width: 90 }}
+            />
+            <button type="button" onClick={() => setFixed((f) => f.filter((_, j) => j !== i))} aria-label="削除" style={{ flexShrink: 0 }}>
+              <X size={16} style={{ color: COLORS.strike }} />
+            </button>
+          </div>
+        ))}
+        <button
+          type="button"
+          onClick={() => setFixed((f) => [...f, { label: "", amountJpy: "" }])}
+          className="w-full rounded-lg py-2 text-sm"
+          style={{ border: `1px dashed ${COLORS.oak}`, color: COLORS.strike }}
+        >
+          + 固定費を追加
+        </button>
+        <div className="flex items-center gap-2">
+          <span style={{ ...label, flexShrink: 0 }}>この月の売上</span>
+          <input value={revenue} onChange={(e) => setRevenue(e.target.value.replace(/[^\d]/g, ""))} inputMode="numeric" placeholder="0" className="flex-1 px-2 py-1.5 rounded border" style={input} />
+          <span style={label}>円</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span style={{ ...label, flexShrink: 0 }}>為替 1ドル =</span>
+          <input value={rate} onChange={(e) => setRate(e.target.value.replace(/[^\d.]/g, ""))} inputMode="decimal" className="px-2 py-1.5 rounded border" style={{ ...input, width: 80 }} />
+          <span style={label}>円(全月共通)</span>
+        </div>
+        <button
+          type="button"
+          onClick={save}
+          disabled={saving}
+          className="w-full rounded-lg py-2.5"
+          style={{ background: COLORS.gold, color: COLORS.ink, fontWeight: 700 }}
+        >
+          {saving ? "保存中..." : "保存する"}
+        </button>
+        {savedMsg && <div style={{ ...label, textAlign: "center" }}>{savedMsg}</div>}
+      </div>
+
+      <div className="text-sm" style={{ color: COLORS.strike, fontWeight: 700 }}>月ごとの推移(直近6か月)</div>
+      <div className="glass-card rounded-xl p-2 overflow-x-auto">
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, color: COLORS.strike }}>
+          <thead>
+            <tr style={{ opacity: 0.7 }}>
+              {["月", "AI", "固定費", "総コスト", "売上", "利益"].map((h) => (
+                <th key={h} style={{ textAlign: h === "月" ? "left" : "right", padding: "4px 6px", fontWeight: 500 }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {data.history.map((h) => {
+              const ai = h.aiCostUsd * usd;
+              const total = ai + h.fixedCostJpy;
+              return (
+                <tr key={h.month} style={{ borderTop: "1px solid rgba(224,168,0,0.2)", fontWeight: h.month === data.month ? 700 : 400 }}>
+                  <td style={{ padding: "4px 6px", whiteSpace: "nowrap" }}>{Number(h.month.slice(5))}月</td>
+                  <td style={{ padding: "4px 6px", textAlign: "right" }}>{yen(ai)}</td>
+                  <td style={{ padding: "4px 6px", textAlign: "right" }}>{yen(h.fixedCostJpy)}</td>
+                  <td style={{ padding: "4px 6px", textAlign: "right" }}>{yen(total)}</td>
+                  <td style={{ padding: "4px 6px", textAlign: "right" }}>{yen(h.revenueJpy)}</td>
+                  <td style={{ padding: "4px 6px", textAlign: "right", color: h.revenueJpy - total < 0 ? "#E8836A" : COLORS.strike }}>{yen(h.revenueJpy - total)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function AdminAnnouncements({ password }) {
   const [items, setItems] = useState([]);
   const [form, setForm] = useState(EMPTY_ANN_FORM);
@@ -2541,6 +2845,8 @@ function AdminPanel() {
           </div>
         </div>
 
+        <AdminUsage password={password} />
+
         <AdminAnnouncements password={password} />
       </div>
     </div>
@@ -2592,17 +2898,23 @@ function LegalPage({ page }) {
 
 1. 取得する情報
 ・お名前(利用申請時にご入力いただく表示名)
+・メールアドレス(アカウントを作成された場合)
+・端末を識別するための番号(本サービスが端末ごとに発行するもの)
 ・スコアシートの写真
-・記録されたスコア・統計データ
+・記録されたスコア・統計データ、登録されたボール・シューズ等の情報
+・サポートチャットでの質問内容
 ・改善要望として送信された内容
+・本サービスの利用状況(スコア解析・サポートチャットの利用回数と日時、読み取り結果の修正の有無など)
 
 2. 利用目的
 ・本サービスの提供(スコアの自動読み取りなど)のため
 ・利用申請の承認・本人確認のため
+・機種変更時などに、記録を新しい端末へ引き継ぐため
 ・お問い合わせ・改善要望への対応のため
+・利用状況の把握、サービスの品質改善、および公平な利用のための利用量の管理のため
 
 3. AIサービスの利用について
-スコア画像の解析には、Anthropic社のClaude APIを利用しています。解析のためにアップロードされた画像は、解析処理の目的でAnthropic社のサーバーに送信されます。
+スコア画像の解析とサポートチャットの回答には、Anthropic社のClaude APIを利用しています。解析のためにアップロードされた画像、およびサポートチャットでの質問内容は、処理の目的でAnthropic社のサーバーに送信されます。
 
 4. 外部サービスの利用
 本サービスは、データの保存にGoogle Firebaseを、決済処理にStripeを利用しています。それぞれの外部サービスにおける情報の取り扱いは、各社のプライバシーポリシーに準じます。
@@ -2619,7 +2931,8 @@ function LegalPage({ page }) {
 8. お問い合わせ先
 sy.bsk.1209@docomo.ne.jp
 
-制定日:2026年8月17日`,
+制定日:2026年8月17日
+改定日:2026年9月26日`,
     },
     tokushoho: {
       title: "特定商取引法に基づく表記",
@@ -3246,7 +3559,7 @@ export default function StrikeLog() {
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(await usageHeaders()) },
         body: JSON.stringify({ messages: nextMessages }),
       });
       const data = await response.json();
@@ -3431,11 +3744,9 @@ export default function StrikeLog() {
       const noScoreFound =
         result.screen_type === "none" || !Array.isArray(result.games) || result.games.length === 0;
       if (result.player_matched === false || noScoreFound) {
-        setPendingResult({
-          ...result,
-          player_matched: false,
-          notScore: result.screen_type === "none" || (noScoreFound && !(result.other_players_detected || []).length),
-        });
+        const notScore = result.screen_type === "none" || (noScoreFound && !(result.other_players_detected || []).length);
+        setPendingResult({ ...result, player_matched: false, notScore });
+        if (notScore) reportAnalysisOutcome({ notScore: 1 });
       } else {
         const rawGames = Array.isArray(result.games) ? result.games : [];
         const normalizedGames = rawGames.map((game) => {
@@ -3472,6 +3783,7 @@ export default function StrikeLog() {
             ocrScores,
             totalMismatch: mismatch,
             autoCorrectedFrames,
+            analyzedRolls: JSON.stringify(norm.frames.map((f) => f.rolls)),
             confidence_notes: game.confidence_notes || "",
             frame_by_frame_reading: game.frame_by_frame_reading || [],
           };
@@ -3485,6 +3797,10 @@ export default function StrikeLog() {
           matched_name_on_screen: result.matched_name_on_screen,
           other_players_detected: result.other_players_detected,
           games: normalizedGames,
+        });
+        reportAnalysisOutcome({
+          needsFix: normalizedGames.filter((g) => g.totalMismatch).length,
+          autoCorrected: normalizedGames.filter((g) => g.autoCorrectedFrames?.length).length,
         });
       }
     } catch (e) {
@@ -3552,6 +3868,11 @@ export default function StrikeLog() {
       shoe,
       createdAt: Date.now() + idx,
     }));
+    reportAnalysisOutcome({
+      manualEdit: pendingResult.games.filter(
+        (g) => g.analyzedRolls && g.analyzedRolls !== JSON.stringify((g.frames || []).map((f) => f.rolls))
+      ).length,
+    });
     const next = [...games, ...newGames].sort(
       (a, b) => a.date.localeCompare(b.date) || (a.gameNumber || 1) - (b.gameNumber || 1)
     );
