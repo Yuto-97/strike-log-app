@@ -5,6 +5,11 @@
 //                                        -> AI usage & costs for a month (per user + totals)
 // POST   /api/admin/requests { password, action: "finance", month, fixedCosts, revenueJpy, usdJpy }
 //                                        -> save that month's fixed costs / revenue, and the USD→JPY rate
+// Fixed costs carry forward automatically: a month with nothing saved uses
+// the most recent earlier month that has them. Items may be in yen or in
+// dollars ({ label, amount, currency: "JPY" | "USD" }); dollar items are
+// converted with the saved exchange rate. Older yen-only items
+// ({ label, amountJpy }) are still read correctly.
 // (Usage/cost lives here rather than in a new function to stay within
 // Vercel's function-count limit on the free plan.)
 import { db } from "../_firebaseAdmin.js";
@@ -18,6 +23,34 @@ function prevMonth(m, back = 1) {
   const [y, mo] = m.split("-").map(Number);
   const d = new Date(Date.UTC(y, mo - 1 - back, 1));
   return d.toISOString().slice(0, 7);
+}
+
+const CARRY_BACK_MONTHS = 24;
+
+// Accepts both the current shape and the older { label, amountJpy } shape.
+export function normalizeFixedItem(x) {
+  const currency = x && x.currency === "USD" ? "USD" : "JPY";
+  const raw = Number(x && x.amount !== undefined ? x.amount : x && x.amountJpy);
+  const amount = Number.isFinite(raw) && raw >= 0 ? (currency === "USD" ? Math.round(raw * 100) / 100 : Math.round(raw)) : 0;
+  return { label: String((x && x.label) || "").trim().slice(0, 40), amount, currency };
+}
+
+export function fixedItemJpy(item, usdJpy) {
+  return item.currency === "USD" ? Math.round(item.amount * usdJpy * 10) / 10 : item.amount;
+}
+
+// The fixed costs in effect for a month: its own saved list, or else the
+// latest earlier month's. `from` is the month the list actually came from.
+async function effectiveFixedCosts(month, cache) {
+  for (let i = 0; i <= CARRY_BACK_MONTHS; i++) {
+    const m = prevMonth(month, i);
+    if (!cache.has(m)) cache.set(m, db.collection("financeMonths").doc(m).get());
+    const d = await cache.get(m);
+    if (d.exists && Array.isArray(d.data().fixedCosts)) {
+      return { items: d.data().fixedCosts.map(normalizeFixedItem), from: m };
+    }
+  }
+  return { items: [], from: null };
 }
 
 async function usageView(month) {
@@ -52,14 +85,10 @@ async function usageView(month) {
     }
   }
 
-  let fin = finDoc.exists ? finDoc.data() : null;
-  let suggestedFixedCosts = null;
-  if (!fin || !Array.isArray(fin.fixedCosts)) {
-    for (let i = 1; i <= 12 && !suggestedFixedCosts; i++) {
-      const d = await db.collection("financeMonths").doc(prevMonth(month, i)).get();
-      if (d.exists && Array.isArray(d.data().fixedCosts) && d.data().fixedCosts.length) suggestedFixedCosts = d.data().fixedCosts;
-    }
-  }
+  const fin = finDoc.exists ? finDoc.data() : null;
+  const usdJpy = settingsDoc.exists ? Number(settingsDoc.data().usdJpy) || DEFAULT_USD_JPY : DEFAULT_USD_JPY;
+  const cache = new Map();
+  const current = await effectiveFixedCosts(month, cache);
 
   const months = [0, 1, 2, 3, 4, 5].map((i) => prevMonth(month, i));
   const hist = await Promise.all(
@@ -71,7 +100,7 @@ async function usageView(month) {
         aiCostUsd: u.exists ? u.data().costUsd || 0 : 0,
         analyzeCount: u.exists ? u.data().analyzeCount || 0 : 0,
         chatCount: u.exists ? u.data().chatCount || 0 : 0,
-        fixedCostJpy: (fd.fixedCosts || []).reduce((s, x) => s + (Number(x.amountJpy) || 0), 0),
+        fixedCostJpy: (await effectiveFixedCosts(m, cache)).items.reduce((s, x) => s + fixedItemJpy(x, usdJpy), 0),
         revenueJpy: Number(fd.revenueJpy) || 0,
       };
     })
@@ -82,10 +111,10 @@ async function usageView(month) {
     currentMonth: monthJST(),
     totals: totalsDoc.exists ? totalsDoc.data() : {},
     users,
-    fixedCosts: fin && Array.isArray(fin.fixedCosts) ? fin.fixedCosts : [],
+    fixedCosts: current.items,
+    fixedCostsFrom: current.from, // same as `month` if saved for this month; earlier month if carried forward
     revenueJpy: fin ? Number(fin.revenueJpy) || 0 : 0,
-    suggestedFixedCosts,
-    usdJpy: settingsDoc.exists ? Number(settingsDoc.data().usdJpy) || DEFAULT_USD_JPY : DEFAULT_USD_JPY,
+    usdJpy,
     history: hist,
   };
 }
@@ -115,8 +144,8 @@ export default async function handler(req, res) {
         return;
       }
       const items = (Array.isArray(fixedCosts) ? fixedCosts : [])
-        .map((x) => ({ label: String(x?.label || "").trim().slice(0, 40), amountJpy: Math.round(Number(x?.amountJpy) || 0) }))
-        .filter((x) => x.label && x.amountJpy >= 0)
+        .map(normalizeFixedItem)
+        .filter((x) => x.label)
         .slice(0, 30);
       const now = new Date().toISOString();
       const batch = db.batch();

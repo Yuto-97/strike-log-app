@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Camera, History, BarChart3, Loader2, Check, X, Pencil, Trophy, TrendingUp, Calendar, CircleDot, Hash, User, Target, Trash2, ShieldCheck, CircleCheck, MessageCircle, Send, Settings, Crop, ImageOff, UserX, Bell, ImagePlus } from "lucide-react";
+import { Camera, History, BarChart3, Loader2, Check, X, Pencil, Trophy, TrendingUp, Calendar, CircleDot, Hash, User, Target, Trash2, ShieldCheck, CircleCheck, MessageCircle, Send, Settings, Crop, ImageOff, UserX, Bell, ImagePlus, ChevronDown, Download } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { auth } from "./firebaseClient.js";
 import { noteLocalWrite, startSync, stopSync, scheduleFlush } from "./sync.js";
@@ -1858,10 +1858,12 @@ const EMPTY_ANN_FORM = { id: null, type: "update", title: "", body: "", startDat
 // business cost picture: AI (recorded automatically) + fixed costs and
 // revenue (entered by hand), with a 6-month trend.
 const yen = (n) => {
-  const v = Number(n) || 0;
+  // Exact to 0.1 yen (dollar costs converted at the rate rarely land on a whole
+  // yen); whole amounts show no decimal.
+  const v = Math.round((Number(n) || 0) * 10) / 10;
   const sign = v < 0 ? "-" : "";
   const a = Math.abs(v);
-  return a < 100 && a !== Math.round(a) ? `${sign}¥${a.toFixed(1)}` : `${sign}¥${Math.round(a).toLocaleString()}`;
+  return `${sign}¥${a.toLocaleString("ja-JP", { minimumFractionDigits: Number.isInteger(a) ? 0 : 1, maximumFractionDigits: 1 })}`;
 };
 const shortDateJST = (iso) => {
   if (!iso) return "なし";
@@ -1946,22 +1948,113 @@ function AdminUsage({ password }) {
   const usd = Number(rate) || data.usdJpy;
   const t = data.totals || {};
   const aiJpy = (t.costUsd || 0) * usd;
-  const fixedJpy = fixed.reduce((s, x) => s + (Number(x.amountJpy) || 0), 0);
+  const rowJpy = (x) => {
+    const a = Number(x.amount ?? x.amountJpy) || 0;
+    return x.currency === "USD" ? Math.round(a * (Number(rate) || 0) * 10) / 10 : a;
+  };
+  const fixedJpy = fixed.reduce((s, x) => s + rowJpy(x), 0);
   const totalJpy = aiJpy + fixedJpy;
   const revenueJpy = Number(revenue) || 0;
   const users = [...data.users].sort((a, b) => (b.costUsd || 0) - (a.costUsd || 0));
   const isCurrent = data.month >= data.currentMonth;
 
-  const Stat = ({ title, value, sub, strong }) => (
-    <div className="rounded-lg p-3" style={{ background: "rgba(12,16,32,0.45)", border: `1px solid rgba(224,168,0,0.25)` }}>
-      <div style={label}>{title}</div>
-      <div style={{ color: strong ? COLORS.gold : COLORS.strike, fontWeight: 700, fontSize: 18, fontFamily: "'Oswald', sans-serif" }}>{value}</div>
-      {sub && <div style={{ ...label, fontSize: 11 }}>{sub}</div>}
+  // ---------- sheet (table) building blocks ----------
+  const cell = { padding: "6px 8px", borderTop: "1px solid rgba(224,168,0,0.2)", whiteSpace: "nowrap" };
+  const num = { ...cell, textAlign: "right", fontFamily: "'Oswald', sans-serif" };
+  // Lighter text via color, not opacity: an opaque background is needed so
+  // columns scrolling under the pinned "利用者" cell don't show through.
+  const th = { padding: "6px 8px", fontWeight: 500, color: "rgba(255,255,255,0.7)", whiteSpace: "nowrap", textAlign: "right" };
+  const stickyBg = "#1B2440"; // solid, so scrolled columns don't show through the pinned one
+  const Sheet = ({ title, note, children }) => (
+    <div className="space-y-1">
+      <div className="text-sm" style={{ color: COLORS.strike, fontWeight: 700 }}>{title}</div>
+      <div className="glass-card rounded-xl overflow-x-auto">
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, color: COLORS.strike }}>{children}</table>
+      </div>
+      {note && <div style={{ ...label, fontSize: 11, lineHeight: 1.6 }}>{note}</div>}
     </div>
   );
 
+  const fixedRows = fixed.filter((x) => String(x.label || "").trim());
+  const userRows = users.map((u) => {
+    const cost = (u.costUsd || 0) * usd;
+    return { ...u, cost, pct: (cost / 1000) * 100, idle: daysSince(u.lastUsedAt) };
+  });
+  const sumOf = (k) => userRows.reduce((s, u) => s + (Number(u[k]) || 0), 0);
+  const counts = [
+    ["スコア解析", t.analyzeCount],
+    ["チャット相談", t.chatCount],
+    ["失敗(通信エラーなど)", t.failCount],
+    ["関係ない写真", t.notScoreCount],
+    ["読み取り要確認", t.needsFixCount],
+    ["自動補正", t.autoCorrectedCount],
+    ["手で修正", t.manualEditCount],
+  ];
+  const r1 = (n) => Math.round((Number(n) || 0) * 10) / 10;
+
+  // Everything on this screen as a CSV that opens in Excel / Google Sheets.
+  // Amounts are plain numbers (no ¥) so the spreadsheet can calculate with them.
+  const downloadCsv = () => {
+    const esc = (v) => {
+      const s = v === null || v === undefined ? "" : String(v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const rows = [
+      ["STRIKE LOG 使用量・コスト", data.month],
+      ["為替(1ドル)", usd, "円"],
+      [],
+      ["■まとめ"],
+      ["項目", "金額(円)", "金額(ドル)"],
+      ["AI費用", r1(aiJpy), (t.costUsd || 0).toFixed(4)],
+      ...fixedRows.map((x) => [`固定費:${x.label}`, r1(rowJpy(x)), x.currency === "USD" ? Number(x.amount ?? 0) : ""]),
+      ["固定費 合計", r1(fixedJpy)],
+      ["総コスト", r1(totalJpy)],
+      ["売上", r1(revenueJpy)],
+      ["利益", r1(revenueJpy - totalJpy)],
+      [],
+      ["■回数"],
+      ["項目", "回数"],
+      ...counts.map(([k, v]) => [k, v || 0]),
+      [],
+      ["■ユーザー別"],
+      ["登録番号", "名前", "種類", "解析", "チャット", "失敗", "AI費用(円)", "AI費用(ドル)", "1,000円に対する割合(%)", "最終利用"],
+      ...userRows.map((u) => [
+        u.requestNumber ? formatRequestNumber(u.requestNumber) : "",
+        u.name || "",
+        u.isAccount ? "アカウント" : "端末",
+        u.analyzeCount || 0,
+        u.chatCount || 0,
+        u.failCount || 0,
+        r1(u.cost),
+        (u.costUsd || 0).toFixed(4),
+        r1(u.pct),
+        u.lastUsedAt ? shortDateJST(u.lastUsedAt) : "",
+      ]),
+      ["合計", "", "", sumOf("analyzeCount"), sumOf("chatCount"), sumOf("failCount"), r1(sumOf("cost")), sumOf("costUsd").toFixed(4)],
+      [],
+      ["■月ごとの推移"],
+      ["月", "AI費用(円)", "固定費(円)", "総コスト(円)", "売上(円)", "利益(円)", "解析", "チャット"],
+      ...data.history.map((h) => {
+        const ai = h.aiCostUsd * usd;
+        const total = ai + h.fixedCostJpy;
+        return [h.month, r1(ai), r1(h.fixedCostJpy), r1(total), r1(h.revenueJpy), r1(h.revenueJpy - total), h.analyzeCount || 0, h.chatCount || 0];
+      }),
+    ];
+    const text = rows.map((r) => r.map(esc).join(",")).join("\r\n");
+    // Leading BOM so Excel reads the Japanese correctly.
+    const blob = new Blob(["\uFEFF" + text], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `strike-log-usage-${data.month}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="text-sm flex items-center gap-2" style={{ color: COLORS.strike, fontWeight: 700 }}>
           <BarChart3 size={16} style={{ color: COLORS.gold }} /> 使用量・コスト
@@ -1972,98 +2065,207 @@ function AdminUsage({ password }) {
           <button type="button" onClick={() => shiftMonth(1)} disabled={loading || isCurrent} className="px-2 text-lg" style={{ opacity: isCurrent ? 0.3 : 1 }} aria-label="次の月">›</button>
         </div>
       </div>
+      <button
+        type="button"
+        onClick={downloadCsv}
+        className="w-full rounded-lg py-2 text-sm flex items-center justify-center gap-2"
+        style={{ border: `1px solid ${COLORS.oak}`, color: COLORS.strike, fontWeight: 700 }}
+      >
+        <Download size={15} /> CSVで保存(Excel・スプレッドシート)
+      </button>
 
-      <div className="glass-card rounded-xl p-3 space-y-3">
-        <div className="grid grid-cols-2 gap-2">
-          <Stat title="AI費用(自動記録)" value={yen(aiJpy)} sub={`$${(t.costUsd || 0).toFixed(2)}`} />
-          <Stat title="固定費(手入力)" value={yen(fixedJpy)} />
-          <Stat title="総コスト" value={yen(totalJpy)} strong />
-          <Stat title="利益(売上−総コスト)" value={yen(revenueJpy - totalJpy)} sub={`売上 ${yen(revenueJpy)}`} strong />
-        </div>
-        <div style={{ ...label, lineHeight: 1.8 }}>
-          解析 {t.analyzeCount || 0}回 ・ チャット {t.chatCount || 0}回 ・ 失敗 {t.failCount || 0}回
-          <br />
-          関係ない写真 {t.notScoreCount || 0} ・ 要確認 {t.needsFixCount || 0} ・ 自動補正 {t.autoCorrectedCount || 0} ・ 手で修正 {t.manualEditCount || 0}
-        </div>
-        <div style={{ ...label, fontSize: 11 }}>
-          AI費用は月に1回、Anthropicの管理画面の請求額と見比べてください。
-        </div>
-      </div>
+      <Sheet title="今月のまとめ" note={`為替 1ドル=${usd}円で換算。AI費用は月に1回、Anthropicの管理画面の請求額と見比べてください。`}>
+        <thead>
+          <tr>
+            <th style={{ ...th, textAlign: "left" }}>項目</th>
+            <th style={th}>金額</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style={cell}>AI費用(自動記録)</td>
+            <td style={num}>
+              {yen(aiJpy)} <span style={{ opacity: 0.6, fontSize: 11 }}>(${(t.costUsd || 0).toFixed(2)})</span>
+            </td>
+          </tr>
+          {fixedRows.map((x, i) => (
+            <tr key={i}>
+              <td style={{ ...cell, paddingLeft: 18, opacity: 0.85 }}>
+                {x.label}
+                {x.currency === "USD" ? ` ($${Number(x.amount || 0)})` : ""}
+              </td>
+              <td style={{ ...num, opacity: 0.85 }}>{yen(rowJpy(x))}</td>
+            </tr>
+          ))}
+          <tr>
+            <td style={cell}>固定費 合計</td>
+            <td style={num}>{yen(fixedJpy)}</td>
+          </tr>
+          <tr style={{ fontWeight: 700 }}>
+            <td style={cell}>総コスト</td>
+            <td style={{ ...num, color: COLORS.gold }}>{yen(totalJpy)}</td>
+          </tr>
+          <tr>
+            <td style={cell}>売上</td>
+            <td style={num}>{yen(revenueJpy)}</td>
+          </tr>
+          <tr style={{ fontWeight: 700 }}>
+            <td style={cell}>利益(売上 − 総コスト)</td>
+            <td style={{ ...num, color: revenueJpy - totalJpy < 0 ? "#E8836A" : COLORS.gold }}>{yen(revenueJpy - totalJpy)}</td>
+          </tr>
+        </tbody>
+      </Sheet>
 
-      <div className="text-sm" style={{ color: COLORS.strike, fontWeight: 700 }}>ユーザー別({users.length}人・費用の多い順)</div>
-      <div className="glass-card rounded-xl overflow-hidden">
-        {users.length === 0 && <div className="p-3" style={label}>この月の利用はありません</div>}
-        {users.map((u, i) => {
-          const cost = (u.costUsd || 0) * usd;
-          const idle = daysSince(u.lastUsedAt);
-          return (
-            <div key={u.key} className="px-3 py-2" style={{ borderTop: i ? "1px solid rgba(224,168,0,0.2)" : "none" }}>
-              <div className="flex items-center justify-between gap-2">
-                <div style={{ color: COLORS.strike, fontWeight: 700, fontSize: 14, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {u.requestNumber ? `${formatRequestNumber(u.requestNumber)} ` : ""}
-                  {u.name || "(名前なし)"}
-                  {u.isAccount && <span style={{ ...label, fontSize: 11 }}> ・アカウント</span>}
+      <Sheet title="回数">
+        <tbody>
+          {counts.map(([k, v], i) => (
+            <tr key={k}>
+              <td style={{ ...cell, borderTop: i ? cell.borderTop : "none" }}>{k}</td>
+              <td style={{ ...num, borderTop: i ? cell.borderTop : "none" }}>{v || 0}回</td>
+            </tr>
+          ))}
+        </tbody>
+      </Sheet>
+
+      <Sheet
+        title={`ユーザー別(${userRows.length}人・AI費用の多い順)`}
+        note={
+          (userRows.length ? "表は横にスクロールできます。「割合」は月額1,000円に対するAI費用の割合です。" : "") +
+          (t.unidentifiedCount > 0 ? ` 利用者を特定できなかった呼び出し:${t.unidentifiedCount}回(まとめの合計には含まれています)` : "")
+        }
+      >
+        <thead>
+          <tr>
+            <th style={{ ...th, textAlign: "left", position: "sticky", left: 0, background: stickyBg, zIndex: 1 }}>利用者</th>
+            <th style={th}>解析</th>
+            <th style={th}>チャット</th>
+            <th style={th}>失敗</th>
+            <th style={th}>AI費用</th>
+            <th style={th}>割合</th>
+            <th style={th}>最終利用</th>
+          </tr>
+        </thead>
+        <tbody>
+          {userRows.length === 0 && (
+            <tr>
+              <td style={{ ...cell, opacity: 0.7 }} colSpan={7}>この月の利用はありません</td>
+            </tr>
+          )}
+          {userRows.map((u) => (
+            <tr key={u.key}>
+              <td style={{ ...cell, position: "sticky", left: 0, background: stickyBg, maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis" }}>
+                <div style={{ fontFamily: "'Oswald', sans-serif", opacity: 0.8, fontSize: 11 }}>
+                  {u.requestNumber ? formatRequestNumber(u.requestNumber) : "—"}
+                  {u.isAccount ? " ・アカウント" : ""}
                 </div>
-                <div style={{ color: COLORS.strike, fontWeight: 700, fontFamily: "'Oswald', sans-serif", flexShrink: 0 }}>{yen(cost)}</div>
+                <div style={{ fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis" }}>{u.name || "(名前なし)"}</div>
+              </td>
+              <td style={num}>{u.analyzeCount || 0}</td>
+              <td style={num}>{u.chatCount || 0}</td>
+              <td style={num}>{u.failCount || 0}</td>
+              <td style={num}>{yen(u.cost)}</td>
+              <td style={num}>{r1(u.pct).toFixed(1)}%</td>
+              <td style={{ ...num, color: u.idle >= 30 ? "#E8836A" : COLORS.strike }}>
+                {shortDateJST(u.lastUsedAt)}
+                {u.idle >= 30 && u.idle !== Infinity ? `(${u.idle}日前)` : ""}
+              </td>
+            </tr>
+          ))}
+          {userRows.length > 0 && (
+            <tr style={{ fontWeight: 700 }}>
+              <td style={{ ...cell, position: "sticky", left: 0, background: stickyBg }}>合計</td>
+              <td style={num}>{sumOf("analyzeCount")}</td>
+              <td style={num}>{sumOf("chatCount")}</td>
+              <td style={num}>{sumOf("failCount")}</td>
+              <td style={num}>{yen(sumOf("cost"))}</td>
+              <td style={num}></td>
+              <td style={num}></td>
+            </tr>
+          )}
+        </tbody>
+      </Sheet>
+
+      <Sheet title="月ごとの推移(直近6か月)">
+        <thead>
+          <tr>
+            {["月", "AI", "固定費", "総コスト", "売上", "利益"].map((h) => (
+              <th key={h} style={{ ...th, textAlign: h === "月" ? "left" : "right" }}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {data.history.map((h) => {
+            const ai = h.aiCostUsd * usd;
+            const total = ai + h.fixedCostJpy;
+            return (
+              <tr key={h.month} style={{ fontWeight: h.month === data.month ? 700 : 400 }}>
+                <td style={cell}>{Number(h.month.slice(5))}月</td>
+                <td style={num}>{yen(ai)}</td>
+                <td style={num}>{yen(h.fixedCostJpy)}</td>
+                <td style={num}>{yen(total)}</td>
+                <td style={num}>{yen(h.revenueJpy)}</td>
+                <td style={{ ...num, color: h.revenueJpy - total < 0 ? "#E8836A" : COLORS.strike }}>{yen(h.revenueJpy - total)}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </Sheet>
+
+      <div className="text-sm" style={{ color: COLORS.strike, fontWeight: 700 }}>固定費・売上の入力</div>
+      <div className="glass-card rounded-xl p-3 space-y-2">
+        {data.fixedCostsFrom && data.fixedCostsFrom !== data.month && (
+          <div style={{ ...label, lineHeight: 1.6 }}>
+            {Number(data.fixedCostsFrom.slice(5))}月の固定費を自動で引き継いでいます。変更する場合は編集して保存してください。
+          </div>
+        )}
+        {fixed.map((row, i) => {
+          const isUsd = row.currency === "USD";
+          return (
+            <div key={i} className="space-y-1">
+              <div className="flex items-center gap-2">
+                <input
+                  value={row.label}
+                  onChange={(e) => setFixed((f) => f.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))}
+                  placeholder="項目(例: Vercel)"
+                  className="flex-1 px-2 py-1.5 rounded border"
+                  style={{ ...input, minWidth: 0 }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setFixed((f) => f.map((x, j) => (j === i ? { ...x, currency: isUsd ? "JPY" : "USD" } : x)))}
+                  aria-label="円とドルを切り替え"
+                  className="rounded border px-2 py-1.5"
+                  style={{ borderColor: COLORS.oak, color: COLORS.strike, fontWeight: 700, minWidth: 34, flexShrink: 0 }}
+                >
+                  {isUsd ? "$" : "¥"}
+                </button>
+                <input
+                  value={row.amount ?? row.amountJpy ?? ""}
+                  onChange={(e) =>
+                    setFixed((f) =>
+                      f.map((x, j) =>
+                        j === i ? { ...x, amount: e.target.value.replace(isUsd ? /[^\d.]/g : /[^\d]/g, ""), amountJpy: undefined } : x
+                      )
+                    )
+                  }
+                  placeholder={isUsd ? "ドル" : "円"}
+                  inputMode={isUsd ? "decimal" : "numeric"}
+                  className="px-2 py-1.5 rounded border"
+                  style={{ ...input, width: 80, flexShrink: 0 }}
+                />
+                <button type="button" onClick={() => setFixed((f) => f.filter((_, j) => j !== i))} aria-label="削除" style={{ flexShrink: 0 }}>
+                  <X size={16} style={{ color: COLORS.strike }} />
+                </button>
               </div>
-              <div className="flex items-center justify-between gap-2" style={label}>
-                <span>
-                  解析{u.analyzeCount || 0} ・ チャット{u.chatCount || 0}
-                  {u.failCount ? ` ・ 失敗${u.failCount}` : ""}
-                </span>
-                <span style={{ flexShrink: 0 }}>1,000円の{((cost / 1000) * 100).toFixed(1)}%</span>
-              </div>
-              <div style={{ ...label, color: idle >= 30 ? "#E8836A" : label.color, opacity: idle >= 30 ? 1 : label.opacity }}>
-                最終利用 {shortDateJST(u.lastUsedAt)}
-                {idle >= 30 && idle !== Infinity ? `(${idle}日前)` : ""}
-              </div>
+              {isUsd && (
+                <div style={{ ...label, textAlign: "right", paddingRight: 24 }}>= {yen(rowJpy(row))}(1ドル {rate}円)</div>
+              )}
             </div>
           );
         })}
-        {t.unidentifiedCount > 0 && (
-          <div className="px-3 py-2" style={{ ...label, borderTop: "1px solid rgba(224,168,0,0.2)" }}>
-            利用者を特定できなかった呼び出し:{t.unidentifiedCount}回(合計には含まれています)
-          </div>
-        )}
-      </div>
-
-      <div className="text-sm" style={{ color: COLORS.strike, fontWeight: 700 }}>固定費・売上(手入力)</div>
-      <div className="glass-card rounded-xl p-3 space-y-2">
-        {fixed.length === 0 && data.suggestedFixedCosts && (
-          <button
-            type="button"
-            onClick={() => setFixed(data.suggestedFixedCosts)}
-            className="w-full rounded-lg py-2 text-sm"
-            style={{ border: `1px dashed ${COLORS.oak}`, color: COLORS.strike }}
-          >
-            前月の固定費をコピーする
-          </button>
-        )}
-        {fixed.map((row, i) => (
-          <div key={i} className="flex items-center gap-2">
-            <input
-              value={row.label}
-              onChange={(e) => setFixed((f) => f.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))}
-              placeholder="項目(例: Vercel)"
-              className="flex-1 px-2 py-1.5 rounded border"
-              style={input}
-            />
-            <input
-              value={row.amountJpy}
-              onChange={(e) => setFixed((f) => f.map((x, j) => (j === i ? { ...x, amountJpy: e.target.value.replace(/[^\d]/g, "") } : x)))}
-              placeholder="円"
-              inputMode="numeric"
-              className="px-2 py-1.5 rounded border"
-              style={{ ...input, width: 90 }}
-            />
-            <button type="button" onClick={() => setFixed((f) => f.filter((_, j) => j !== i))} aria-label="削除" style={{ flexShrink: 0 }}>
-              <X size={16} style={{ color: COLORS.strike }} />
-            </button>
-          </div>
-        ))}
         <button
           type="button"
-          onClick={() => setFixed((f) => [...f, { label: "", amountJpy: "" }])}
+          onClick={() => setFixed((f) => [...f, { label: "", amount: "", currency: "JPY" }])}
           className="w-full rounded-lg py-2 text-sm"
           style={{ border: `1px dashed ${COLORS.oak}`, color: COLORS.strike }}
         >
@@ -2091,34 +2293,6 @@ function AdminUsage({ password }) {
         {savedMsg && <div style={{ ...label, textAlign: "center" }}>{savedMsg}</div>}
       </div>
 
-      <div className="text-sm" style={{ color: COLORS.strike, fontWeight: 700 }}>月ごとの推移(直近6か月)</div>
-      <div className="glass-card rounded-xl p-2 overflow-x-auto">
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, color: COLORS.strike }}>
-          <thead>
-            <tr style={{ opacity: 0.7 }}>
-              {["月", "AI", "固定費", "総コスト", "売上", "利益"].map((h) => (
-                <th key={h} style={{ textAlign: h === "月" ? "left" : "right", padding: "4px 6px", fontWeight: 500 }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {data.history.map((h) => {
-              const ai = h.aiCostUsd * usd;
-              const total = ai + h.fixedCostJpy;
-              return (
-                <tr key={h.month} style={{ borderTop: "1px solid rgba(224,168,0,0.2)", fontWeight: h.month === data.month ? 700 : 400 }}>
-                  <td style={{ padding: "4px 6px", whiteSpace: "nowrap" }}>{Number(h.month.slice(5))}月</td>
-                  <td style={{ padding: "4px 6px", textAlign: "right" }}>{yen(ai)}</td>
-                  <td style={{ padding: "4px 6px", textAlign: "right" }}>{yen(h.fixedCostJpy)}</td>
-                  <td style={{ padding: "4px 6px", textAlign: "right" }}>{yen(total)}</td>
-                  <td style={{ padding: "4px 6px", textAlign: "right" }}>{yen(h.revenueJpy)}</td>
-                  <td style={{ padding: "4px 6px", textAlign: "right", color: h.revenueJpy - total < 0 ? "#E8836A" : COLORS.strike }}>{yen(h.revenueJpy - total)}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
     </div>
   );
 }
@@ -2485,6 +2659,8 @@ function AdminPanel() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [confirmDeleteFeedbackId, setConfirmDeleteFeedbackId] = useState(null);
+  const [feedbackOpen, setFeedbackOpen] = useState(false); // 改善要望 group, closed by default
+  const [handledOpen, setHandledOpen] = useState(false); // 対応済み sub-list, closed by default
   const [confirmDeleteRequestId, setConfirmDeleteRequestId] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -2731,9 +2907,29 @@ function AdminPanel() {
           </div>
         </div>
 
+        <div className="glass-card rounded-xl">
+          <button
+            type="button"
+            onClick={() => setFeedbackOpen((o) => !o)}
+            className="w-full flex items-center justify-between px-3 py-3"
+            aria-expanded={feedbackOpen}
+          >
+            <span className="text-sm" style={{ color: COLORS.strike, fontWeight: 700 }}>
+              改善要望
+              <span style={{ fontWeight: 400, opacity: 0.8 }}>
+                {" "}(未対応 {unhandledFeedback.length} ・ 対応済み {handledFeedback.length})
+              </span>
+            </span>
+            <ChevronDown
+              size={18}
+              style={{ color: COLORS.strike, transform: feedbackOpen ? "rotate(180deg)" : "none", transition: "transform .2s", flexShrink: 0 }}
+            />
+          </button>
+          {feedbackOpen && (
+        <div className="px-3 pb-3 space-y-4">
         <div>
           <div className="text-sm mb-2" style={{ color: COLORS.strike, fontWeight: 700 }}>
-            改善要望 ・ 未対応 ({unhandledFeedback.length})
+            未対応 ({unhandledFeedback.length})
           </div>
           <div className="space-y-2">
             {unhandledFeedback.length === 0 && <div className="text-xs" style={{ color: COLORS.strike }}>未対応の要望はありません</div>}
@@ -2789,9 +2985,19 @@ function AdminPanel() {
         </div>
 
         <div>
-          <div className="text-sm mb-2" style={{ color: COLORS.strike, fontWeight: 700 }}>
-            改善要望 ・ 対応済み ({handledFeedback.length})
-          </div>
+          <button
+            type="button"
+            onClick={() => setHandledOpen((o) => !o)}
+            className="w-full flex items-center justify-between mb-2"
+            aria-expanded={handledOpen}
+          >
+            <span className="text-sm" style={{ color: COLORS.strike, fontWeight: 700 }}>対応済み ({handledFeedback.length})</span>
+            <ChevronDown
+              size={16}
+              style={{ color: COLORS.strike, transform: handledOpen ? "rotate(180deg)" : "none", transition: "transform .2s" }}
+            />
+          </button>
+          {handledOpen && (
           <div className="space-y-2">
             {handledFeedback.length === 0 && <div className="text-xs" style={{ color: COLORS.strike }}>対応済みの要望はありません</div>}
             {handledFeedback.map((f) => (
@@ -2843,6 +3049,10 @@ function AdminPanel() {
               </div>
             ))}
           </div>
+          )}
+        </div>
+        </div>
+          )}
         </div>
 
         <AdminUsage password={password} />
