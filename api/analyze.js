@@ -9,7 +9,7 @@
 // browser, unlike the key-in-the-frontend approach which would let anyone
 // steal and reuse it.
 
-import { identifyCaller, recordAiCall, recordOutcome } from "./_usage.js";
+import { identifyCaller, recordAiCall, recordOutcome, classifyAiError, publicAiError, noteServiceAlert } from "./_usage.js";
 
 const MODEL = "claude-sonnet-4-6";
 
@@ -43,7 +43,8 @@ export default async function handler(req, res) {
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    res.status(500).json({ error: "ANTHROPIC_API_KEY is not configured on the server" });
+    console.error("ANTHROPIC_API_KEY is not configured on the server");
+    res.status(503).json({ error: "service_paused" });
     return;
   }
 
@@ -83,14 +84,22 @@ export default async function handler(req, res) {
     const data = await response.json();
     await record(req, { ok: response.ok, usage: data?.usage });
     if (!response.ok) {
-      res.status(response.status).json({ error: data?.error?.message || "Anthropic API error", raw: data });
+      // Details stay in the server log; the app only gets a category it can
+      // turn into a friendly Japanese message.
+      const kind = classifyAiError(response.status, data);
+      console.error(`Anthropic API error (${response.status}, ${kind}):`, JSON.stringify(data).slice(0, 500));
+      const deps = await usageDeps();
+      if (deps) await noteServiceAlert({ db: deps.db, FieldValue: deps.FieldValue, kind, message: data?.error?.message });
+      const pub = publicAiError(kind);
+      res.status(pub.status).json(pub.body);
       return;
     }
 
     res.status(200).json(data);
   } catch (err) {
     await record(req, { ok: false, usage: null });
-    res.status(502).json({ error: `Upstream request failed: ${err.message || err}` });
+    console.error("Upstream request failed:", err.message || err);
+    res.status(502).json({ error: "network" });
   }
 }
 

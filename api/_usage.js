@@ -116,3 +116,41 @@ export async function recordOutcome({ db, FieldValue, caller, outcome, now = new
     console.warn("outcome record failed", e);
   }
 }
+
+// ---------- AI service problems (for friendly errors + admin alerts) ----------
+// Sorts an error from the Anthropic API into something the app can act on,
+// so users never see raw English error text or internal details.
+//   "credit" — prepaid API credits ran out (buy more in Claude Console)
+//   "auth"   — the API key is missing/invalid/revoked
+//   "busy"   — rate-limited or Anthropic overloaded; retrying later works
+//   "other"  — anything else
+export function classifyAiError(status, data) {
+  const msg = String(data?.error?.message || "");
+  if (/credit balance/i.test(msg)) return "credit";
+  if (status === 401 || status === 403) return "auth";
+  if (status === 429 || status === 529 || status >= 500) return "busy";
+  return "other";
+}
+
+// What the app receives instead of the raw upstream error.
+export function publicAiError(kind) {
+  if (kind === "credit" || kind === "auth") return { status: 503, body: { error: "service_paused" } };
+  if (kind === "busy") return { status: 503, body: { error: "busy" } };
+  return { status: 502, body: { error: "ai_error" } };
+}
+
+// Problems only the owner can fix (credits, API key) are flagged for the
+// admin panel. Best-effort, like usage recording: never blocks the response.
+export async function noteServiceAlert({ db, FieldValue, kind, message }) {
+  if (kind !== "credit" && kind !== "auth") return;
+  try {
+    await withTimeout(
+      db
+        .collection("alerts")
+        .doc(kind)
+        .set({ kind, lastAt: new Date().toISOString(), count: FieldValue.increment(1), message: String(message || "").slice(0, 300) }, { merge: true })
+    );
+  } catch (e) {
+    console.warn("alert record failed:", e.message || e);
+  }
+}

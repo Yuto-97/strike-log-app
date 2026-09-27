@@ -28,6 +28,41 @@ const COLORS = {
   danger: "#C0392B",
 };
 
+// Main action buttons (記録を保存, 保存, 追加する): solid gold so they stand
+// out on the dark background. When the button can't be pressed yet, it turns
+// into a dim outlined button so that's obvious too.
+function primaryButtonStyle(enabled = true) {
+  return enabled
+    ? { background: COLORS.gold, color: COLORS.ink, fontWeight: 700, border: `1px solid ${COLORS.gold}` }
+    : {
+        background: "rgba(40, 55, 95, 0.55)",
+        color: "rgba(245, 241, 228, 0.45)",
+        fontWeight: 700,
+        border: "1px solid rgba(184, 153, 104, 0.5)",
+      };
+}
+
+// Style for "pick one" buttons (ハウス/マイボール, レンタル/マイシューズ, 期間, etc.).
+// The chosen one is gold — the same signal as the active tab in the bottom
+// bar — so it's obvious at a glance which is selected. The ring is drawn with
+// box-shadow rather than a thicker border, so nothing shifts when switching.
+function toggleStyle(active) {
+  return active
+    ? {
+        background: "rgba(224, 168, 0, 0.16)",
+        color: COLORS.gold,
+        border: `1px solid ${COLORS.gold}`,
+        boxShadow: `inset 0 0 0 1px ${COLORS.gold}`,
+        fontWeight: 700,
+      }
+    : {
+        background: "rgba(40, 55, 95, 0.55)",
+        color: "rgba(245, 241, 228, 0.7)",
+        border: `1px solid rgba(184, 153, 104, 0.6)`,
+        fontWeight: 700,
+      };
+}
+
 const STORAGE_KEY = "games";
 
 // Drop-in replacement for the Claude-artifact-only `window.storage` API,
@@ -280,7 +315,7 @@ function extractJson(text) {
   const cleaned = text.replace(/```json|```/g, "").trim();
   const start = cleaned.indexOf("{");
   const end = cleaned.lastIndexOf("}");
-  if (start === -1 || end === -1) throw new Error("解析結果の形式が不正です");
+  if (start === -1 || end === -1) throw new Error("うまく読み取れませんでした。もう一度お試しください。");
   try {
     return JSON.parse(cleaned.slice(start, end + 1));
   } catch (e) {
@@ -843,6 +878,25 @@ function reportAnalysisOutcome(outcome) {
     .catch(() => {});
 }
 
+// ---------- friendly error messages ----------
+// The server only ever sends a category (never raw API errors); these turn
+// it into plain Japanese for the user. Photos taken from inside the app are
+// not saved to the phone, so while analysis is paused we suggest shooting
+// with the phone's own camera app, so the photo can be analyzed later.
+const SAVE_PHOTO_TIP = "記録漏れを防ぐため、スコアはスマホのカメラアプリで撮って保存しておいてください。あとからその写真を選んで解析できます。";
+// Every analysis-related error ends with the tip above, whatever the cause —
+// otherwise a failure means that game's score is simply lost.
+function withPhotoTip(msg) {
+  const m = String(msg || "解析中にエラーが発生しました。").trim();
+  return m.includes(SAVE_PHOTO_TIP) ? m : `${m}\n${SAVE_PHOTO_TIP}`;
+}
+function friendlyAiError(code, what) {
+  if (code === "service_paused") return `ただいま${what}を一時停止しています。時間をおいて、もう一度お試しください。`;
+  if (code === "busy") return `AIが混み合っています。少し時間をおいて、もう一度お試しください。`;
+  if (code === "network") return `通信に失敗しました。電波の良い場所で、もう一度お試しください。`;
+  return `${what}に失敗しました。時間をおいて、もう一度お試しください。`;
+}
+
 async function analyzeScoreImage(images, playerName, { cropped = false, zoomed = false } = {}) {
   const nameInstruction = cropped
     ? `この画像は、ユーザー本人が写真の中から自分のスコアの部分を指で囲んで切り抜いたものです。${
@@ -941,17 +995,17 @@ async function analyzeScoreImage(images, playerName, { cropped = false, zoomed =
       body: JSON.stringify({ images, prompt }),
     });
   } catch (networkErr) {
-    throw new Error(`通信自体に失敗しました: ${networkErr.message || networkErr}`);
+    throw new Error(friendlyAiError("network", "スコア解析"));
   }
 
   if (!response.ok) {
-    let bodyText = "";
+    let code = "";
     try {
-      bodyText = await response.text();
+      code = (await response.json())?.error || "";
     } catch (_) {
-      // ignore — body wasn't readable as text
+      // body wasn't JSON — fall through to the generic message
     }
-    throw new Error(`解析リクエストに失敗しました (status ${response.status}): ${bodyText.slice(0, 300)}`);
+    throw new Error(friendlyAiError(code, "スコア解析"));
   }
 
   let data;
@@ -964,11 +1018,15 @@ async function analyzeScoreImage(images, playerName, { cropped = false, zoomed =
     } catch (_) {
       // ignore
     }
-    throw new Error(`応答がJSON形式ではありませんでした: ${(bodyText || parseErr.message || "").slice(0, 300)}`);
+    console.error("analyze: response was not JSON:", (bodyText || parseErr.message || "").slice(0, 300));
+    throw new Error(friendlyAiError("", "スコア解析"));
   }
 
   const textBlock = (data.content || []).find((b) => b.type === "text");
-  if (!textBlock) throw new Error(`解析結果が空でした: ${JSON.stringify(data).slice(0, 300)}`);
+  if (!textBlock) {
+    console.error("analyze: empty result:", JSON.stringify(data).slice(0, 300));
+    throw new Error("うまく読み取れませんでした。もう一度お試しください。");
+  }
   return extractJson(textBlock.text);
 }
 
@@ -1565,76 +1623,250 @@ function Celebration({ items, onClose }) {
   );
 }
 
-// Lets the user drag a finger over the photo to box in their own score row.
-// Reports the selection in 0..1 coordinates of the image. touch-action is
-// disabled only on the photo itself, so drawing doesn't scroll the page.
-function CropSelector({ src, rect, onChange }) {
+// Full-screen editor for boxing your own score row. Uses the whole screen so
+// the photo is as large as possible:
+//   one finger  → draw the box
+//   two fingers → pinch to zoom in / drag to move around the photo
+// The box is stored in 0..1 coordinates of the photo, so zoom never affects it.
+function CropEditor({ src, initialRect, onDone, onSkip }) {
+  const stageRef = useRef(null);
+  const wrapRef = useRef(null);
   const imgRef = useRef(null);
-  const startRef = useRef(null);
+  const [fit, setFit] = useState(null); // displayed photo size at zoom 1
+  const [view, setView] = useState({ s: 1, tx: 0, ty: 0 });
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const [rect, setRect] = useState(initialRect || null);
   const [draft, setDraft] = useState(null);
+  const pointers = useRef(new Map());
+  const drawStart = useRef(null);
+  const pinch = useRef(null);
+  const waitAllUp = useRef(false); // after a pinch, ignore the leftover finger until all lift
 
-  const toNorm = (e) => {
-    const box = imgRef.current.getBoundingClientRect();
+  // Fit the photo inside the available area (like a photo viewer).
+  const measure = useCallback(() => {
+    const stage = stageRef.current;
+    const img = imgRef.current;
+    if (!stage || !img || !img.naturalWidth) return;
+    const sw = stage.clientWidth;
+    const sh = stage.clientHeight;
+    const k = Math.min(sw / img.naturalWidth, sh / img.naturalHeight);
+    setFit({ w: Math.round(img.naturalWidth * k), h: Math.round(img.naturalHeight * k) });
+  }, []);
+  useEffect(() => {
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [measure]);
+
+  const toNorm = (x, y) => {
+    const b = imgRef.current.getBoundingClientRect(); // already includes zoom/move
     return {
-      x: Math.min(1, Math.max(0, (e.clientX - box.left) / box.width)),
-      y: Math.min(1, Math.max(0, (e.clientY - box.top) / box.height)),
+      x: Math.min(1, Math.max(0, (x - b.left) / b.width)),
+      y: Math.min(1, Math.max(0, (y - b.top) / b.height)),
     };
   };
-  const rectFrom = (a, b) => ({
-    x: Math.min(a.x, b.x),
-    y: Math.min(a.y, b.y),
-    w: Math.abs(a.x - b.x),
-    h: Math.abs(a.y - b.y),
-  });
+  const rectFrom = (a, b) => ({ x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y) });
+
+  // Where the photo sits on screen before any zoom/move is applied.
+  const baseOrigin = () => {
+    const st = stageRef.current.getBoundingClientRect();
+    const w = wrapRef.current;
+    return { L: st.left + w.offsetLeft, T: st.top + w.offsetTop };
+  };
+
+  const startPinch = () => {
+    const [a, b] = [...pointers.current.values()];
+    const { L, T } = baseOrigin();
+    const v = viewRef.current;
+    const mx = (a.x + b.x) / 2;
+    const my = (a.y + b.y) / 2;
+    pinch.current = {
+      d0: Math.hypot(a.x - b.x, a.y - b.y) || 1,
+      s0: v.s,
+      // the photo point under the fingers' midpoint stays under it while zooming
+      qx: (mx - L - v.tx) / v.s,
+      qy: (my - T - v.ty) / v.s,
+      L,
+      T,
+    };
+  };
 
   const onPointerDown = (e) => {
-    if (!imgRef.current) return;
-    e.currentTarget.setPointerCapture?.(e.pointerId);
-    startRef.current = toNorm(e);
-    setDraft({ ...startRef.current, w: 0, h: 0 });
+    try {
+      e.currentTarget.setPointerCapture?.(e.pointerId);
+    } catch (err) {
+      // Some browsers refuse capture; drawing and zoom still work without it.
+    }
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.current.size === 1 && !waitAllUp.current) {
+      drawStart.current = toNorm(e.clientX, e.clientY);
+      setDraft({ ...drawStart.current, w: 0, h: 0 });
+    } else if (pointers.current.size === 2) {
+      drawStart.current = null; // a second finger means zoom, not draw
+      setDraft(null);
+      waitAllUp.current = true;
+      startPinch();
+    }
   };
+
   const onPointerMove = (e) => {
-    if (!startRef.current) return;
-    setDraft(rectFrom(startRef.current, toNorm(e)));
+    if (!pointers.current.has(e.pointerId)) return;
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.current.size >= 2 && pinch.current) {
+      const [a, b] = [...pointers.current.values()];
+      const p = pinch.current;
+      const s = Math.min(5, Math.max(1, p.s0 * (Math.hypot(a.x - b.x, a.y - b.y) / p.d0)));
+      const mx = (a.x + b.x) / 2;
+      const my = (a.y + b.y) / 2;
+      if (s <= 1.01) setView({ s: 1, tx: 0, ty: 0 });
+      else setView({ s, tx: mx - p.L - p.qx * s, ty: my - p.T - p.qy * s });
+    } else if (drawStart.current) {
+      setDraft(rectFrom(drawStart.current, toNorm(e.clientX, e.clientY)));
+    }
   };
-  const onPointerUp = (e) => {
-    if (!startRef.current) return;
-    const r = rectFrom(startRef.current, toNorm(e));
-    startRef.current = null;
-    setDraft(null);
-    // Ignore accidental taps; keep whatever was selected before.
-    if (r.w > 0.04 && r.h > 0.015) onChange(r);
+
+  const onPointerEnd = (e) => {
+    const wasDrawing = drawStart.current && pointers.current.size === 1;
+    pointers.current.delete(e.pointerId);
+    if (pointers.current.size < 2) pinch.current = null;
+    if (pointers.current.size === 0) waitAllUp.current = false;
+    if (wasDrawing) {
+      const r = rectFrom(drawStart.current, toNorm(e.clientX, e.clientY));
+      drawStart.current = null;
+      setDraft(null);
+      if (r.w > 0.04 && r.h > 0.015) setRect(r); // ignore accidental taps
+    }
   };
 
   const shown = draft || rect;
+  const zoomed = view.s > 1.01;
   return (
-    <div className="flex justify-center">
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 55,
+        background: "#0B1020",
+        display: "flex",
+        flexDirection: "column",
+        paddingTop: "max(env(safe-area-inset-top), 20px)",
+        paddingBottom: "env(safe-area-inset-bottom)",
+      }}
+    >
+      <div style={{ padding: "10px 16px" }}>
+        <div className="flex items-center gap-2">
+          <Crop size={18} style={{ color: COLORS.gold, flexShrink: 0 }} />
+          <div style={{ color: COLORS.strike, fontWeight: 700, fontSize: 15 }}>自分の行を、名前から合計まで囲む</div>
+        </div>
+        <div style={{ color: COLORS.strike, opacity: 0.7, fontSize: 12, marginTop: 2 }}>
+          1本指でなぞって囲む ・ 2本指で拡大・移動
+        </div>
+      </div>
+
       <div
-        className="relative overflow-hidden rounded-xl border"
-        style={{ borderColor: COLORS.oak, touchAction: "none", userSelect: "none", WebkitUserSelect: "none" }}
+        ref={stageRef}
+        style={{
+          flex: 1,
+          minHeight: 0,
+          position: "relative",
+          overflow: "hidden",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          touchAction: "none",
+          userSelect: "none",
+          WebkitUserSelect: "none",
+        }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={() => {
-          startRef.current = null;
-          setDraft(null);
-        }}
+        onPointerUp={onPointerEnd}
+        onPointerCancel={onPointerEnd}
       >
-        <img
-          ref={imgRef}
-          src={src}
-          alt="スコア写真"
-          draggable={false}
-          style={{ display: "block", maxWidth: "100%", maxHeight: "60vh", width: "auto", height: "auto", pointerEvents: "none" }}
-        />
-        {shown && shown.w > 0 && (
+        <div
+          ref={wrapRef}
+          style={{
+            position: "relative",
+            width: fit ? fit.w : "auto",
+            height: fit ? fit.h : "auto",
+            transform: `translate(${view.tx}px, ${view.ty}px) scale(${view.s})`,
+            transformOrigin: "0 0",
+            flexShrink: 0,
+          }}
+        >
+          <img
+            ref={imgRef}
+            src={src}
+            alt="スコア写真"
+            draggable={false}
+            onLoad={measure}
+            style={{ display: "block", width: "100%", height: "100%", pointerEvents: "none", visibility: fit ? "visible" : "hidden" }}
+          />
+          {shown && shown.w > 0 && (
+            <div
+              style={{
+                position: "absolute",
+                left: `${shown.x * 100}%`,
+                top: `${shown.y * 100}%`,
+                width: `${shown.w * 100}%`,
+                height: `${shown.h * 100}%`,
+                border: `${2 / view.s}px solid ${COLORS.gold}`,
+                boxShadow: "0 0 0 9999px rgba(0,0,0,0.55)",
+                pointerEvents: "none",
+              }}
+            />
+          )}
+        </div>
+      </div>
+
+      <div style={{ padding: "10px 16px 12px" }} className="space-y-2">
+        {zoomed && (
+          <button
+            type="button"
+            onClick={() => setView({ s: 1, tx: 0, ty: 0 })}
+            className="w-full rounded-lg py-2 text-sm"
+            style={{ border: `1px solid rgba(184, 153, 104, 0.6)`, color: COLORS.strike }}
+          >
+            拡大を戻す
+          </button>
+        )}
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={onSkip}
+            className="flex-1 rounded-lg py-3 text-sm"
+            style={{ border: `1px solid rgba(184, 153, 104, 0.6)`, color: COLORS.strike, fontWeight: 700 }}
+          >
+            囲まずに進む
+          </button>
+          <button
+            type="button"
+            onClick={() => rect && onDone(rect)}
+            disabled={!rect}
+            className="flex-1 rounded-lg py-3 text-sm"
+            style={primaryButtonStyle(!!rect)}
+          >
+            この範囲で決定
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// The chosen photo on the scan screen, with the box drawn on it (read-only).
+function CropPreview({ src, rect }) {
+  return (
+    <div className="flex justify-center">
+      <div className="relative overflow-hidden rounded-xl border" style={{ borderColor: COLORS.oak }}>
+        <img src={src} alt="囲んだ範囲のプレビュー" style={{ display: "block", maxWidth: "100%", maxHeight: "45vh" }} />
+        {rect && (
           <div
             style={{
               position: "absolute",
-              left: `${shown.x * 100}%`,
-              top: `${shown.y * 100}%`,
-              width: `${shown.w * 100}%`,
-              height: `${shown.h * 100}%`,
+              left: `${rect.x * 100}%`,
+              top: `${rect.y * 100}%`,
+              width: `${rect.w * 100}%`,
+              height: `${rect.h * 100}%`,
               border: `2px solid ${COLORS.gold}`,
               boxShadow: "0 0 0 9999px rgba(0,0,0,0.5)",
               pointerEvents: "none",
@@ -1645,6 +1877,7 @@ function CropSelector({ src, rect, onChange }) {
     </div>
   );
 }
+
 
 // ---------- access gate ----------
 // Shown instead of the app until the person's device has been approved by
@@ -1750,24 +1983,14 @@ function GateScreen({
               <button
                 onClick={() => setAccountMode("login")}
                 className="flex-1 rounded-lg py-2 text-xs"
-                style={{
-                  background: accountMode === "login" ? COLORS.ink : "rgba(40, 55, 95, 0.55)",
-                  color: COLORS.cream,
-                  border: `1px solid ${COLORS.oak}`,
-                  fontWeight: 700,
-                }}
+                style={toggleStyle(accountMode === "login")}
               >
                 ログイン
               </button>
               <button
                 onClick={() => setAccountMode("signup")}
                 className="flex-1 rounded-lg py-2 text-xs"
-                style={{
-                  background: accountMode === "signup" ? COLORS.ink : "rgba(40, 55, 95, 0.55)",
-                  color: COLORS.cream,
-                  border: `1px solid ${COLORS.oak}`,
-                  fontWeight: 700,
-                }}
+                style={toggleStyle(accountMode === "signup")}
               >
                 アカウント作成
               </button>
@@ -1892,10 +2115,22 @@ function AdminUsage({ password }) {
       );
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || "読み込みに失敗しました");
-      setData(d);
-      setFixed(d.fixedCosts || []);
-      setRevenue(d.revenueJpy ? String(d.revenueJpy) : "");
-      setRate(String(d.usdJpy));
+      if (!d || !d.month) throw new Error("使用量データの形式が正しくありません");
+      // Fill in anything missing, so one odd response can never blank the
+      // whole admin panel (approvals included).
+      const safe = {
+        ...d,
+        currentMonth: d.currentMonth || d.month,
+        totals: d.totals || {},
+        users: Array.isArray(d.users) ? d.users : [],
+        history: Array.isArray(d.history) ? d.history : [],
+        fixedCosts: Array.isArray(d.fixedCosts) ? d.fixedCosts : [],
+        usdJpy: Number(d.usdJpy) || 150,
+      };
+      setData(safe);
+      setFixed(safe.fixedCosts);
+      setRevenue(safe.revenueJpy ? String(safe.revenueJpy) : "");
+      setRate(String(safe.usdJpy));
     } catch (e) {
       setError(e.message);
     } finally {
@@ -2440,12 +2675,7 @@ function AdminAnnouncements({ password }) {
               type="button"
               onClick={() => setForm((f) => ({ ...f, type: opt.key }))}
               className="flex-1 rounded-lg py-2 text-xs"
-              style={{
-                background: form.type === opt.key ? COLORS.ink : "rgba(40, 55, 95, 0.55)",
-                color: COLORS.cream,
-                border: `1px solid ${form.type === opt.key ? COLORS.gold : COLORS.oak}`,
-                fontWeight: 700,
-              }}
+              style={toggleStyle(form.type === opt.key)}
             >
               {opt.label}
             </button>
@@ -2659,6 +2889,7 @@ function AdminPanel() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [confirmDeleteFeedbackId, setConfirmDeleteFeedbackId] = useState(null);
+  const [serviceAlerts, setServiceAlerts] = useState([]); // AI credits ran out / API key broken
   const [feedbackOpen, setFeedbackOpen] = useState(false); // 改善要望 group, closed by default
   const [handledOpen, setHandledOpen] = useState(false); // 対応済み sub-list, closed by default
   const [confirmDeleteRequestId, setConfirmDeleteRequestId] = useState(null);
@@ -2676,6 +2907,7 @@ function AdminPanel() {
       const reqData = await rReq.json();
       const fbData = await rFb.json();
       setRequests(reqData.items || []);
+      setServiceAlerts(reqData.alerts || []);
       setFeedbackList(fbData.items || []);
       setAuthed(true);
     } catch (e) {
@@ -2777,6 +3009,37 @@ function AdminPanel() {
           <ShieldCheck size={24} style={{ color: COLORS.gold }} />
           <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 22, color: COLORS.cream }}>管理画面</div>
         </div>
+
+        {serviceAlerts.map((a) => (
+          <div key={a.kind} className="rounded-xl p-4 space-y-2" style={{ background: "#FBEAE5", border: `2px solid ${COLORS.danger}` }}>
+            <div style={{ color: COLORS.danger, fontWeight: 700, fontSize: 15 }}>
+              {a.kind === "credit" ? "⚠ AIのクレジット残高が不足しています" : "⚠ AIのAPIキーに問題があります"}
+            </div>
+            <div style={{ color: COLORS.ink, fontSize: 13, lineHeight: 1.7 }}>
+              {a.kind === "credit"
+                ? "スコア解析とチャット相談が止まっています。Claude Console の「Plans & Billing」でクレジットを購入してください。"
+                : "スコア解析とチャット相談が止まっています。Vercelの環境変数 ANTHROPIC_API_KEY が正しいか確認してください。"}
+              <br />
+              最終発生:{new Date(a.lastAt).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+              (これまでに{a.count}回)
+            </div>
+            <button
+              type="button"
+              onClick={async () => {
+                await fetch("/api/admin/requests", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ password, action: "ackAlerts" }),
+                });
+                load(password);
+              }}
+              className="rounded-lg px-4 py-2 text-sm"
+              style={{ background: COLORS.danger, color: "white", fontWeight: 700 }}
+            >
+              対応した(この警告を消す)
+            </button>
+          </div>
+        ))}
 
         <input
           type="text"
@@ -3250,6 +3513,7 @@ export default function StrikeLog() {
   const [imagePreview, setImagePreview] = useState(null);
   const [imageMeta, setImageMeta] = useState(null); // {base64, mediaType}
   const [cropRect, setCropRect] = useState(null); // user's selection, 0..1 coords
+  const [cropEditorOpen, setCropEditorOpen] = useState(false); // full-screen boxing editor
   const [celebration, setCelebration] = useState(null); // achievements to celebrate, or null
   const [announcements, setAnnouncements] = useState([]); // active お知らせ, newest first
   const [bellOpen, setBellOpen] = useState(false);
@@ -3298,6 +3562,7 @@ export default function StrikeLog() {
   const [profileSaved, setProfileSaved] = useState(false);
   const [shoeType, setShoeType] = useState("rental"); // "rental" | "own"
   const [shoeTouched, setShoeTouched] = useState(false);
+  const [ballTouched, setBallTouched] = useState(false); // manual ball change this session — don't auto-fill over it
   const [selectedShoeId, setSelectedShoeId] = useState(null);
   const [myShoes, setMyShoes] = useState([]); // [{ id, type, label }]
   const [editingShoeNameId, setEditingShoeNameId] = useState(null);
@@ -3443,6 +3708,45 @@ export default function StrikeLog() {
       setSelectedShoeId(sameDayGames[0].shoe.shoeRegistryId || null);
     }
   }, [gameDate, games, shoeTouched]);
+
+  // For a 2nd+ game on the same day, start with the same balls (all of them —
+  // 2nd, 3rd and on included) as the most recent game recorded that day.
+  // Reads from saved games, so it still works after closing and reopening the
+  // app between games. Never overrides a manual change in this session.
+  useEffect(() => {
+    if (ballTouched) return;
+    const sameDay = games.filter((g) => g.date === gameDate);
+    if (sameDay.length === 0) return;
+    const last = sameDay.reduce((a, b) =>
+      (b.gameNumber || 0) > (a.gameNumber || 0) ||
+      ((b.gameNumber || 0) === (a.gameNumber || 0) && (b.createdAt || 0) > (a.createdAt || 0))
+        ? b
+        : a
+    );
+    // Saved games keep the ball's name, not its id — find the registered ball by name.
+    const idOf = (b) => {
+      if (!b || !b.label) return null;
+      const t = b.type || "own";
+      return (
+        myBalls.find((x) => x.label === b.label && (x.type || "own") === t)?.id ||
+        myBalls.find((x) => x.label === b.label)?.id ||
+        null
+      );
+    };
+    if (last.ball) {
+      setBallType(last.ball.type || "house");
+      setSelectedBallId(idOf(last.ball));
+    }
+    if (last.ball2) {
+      setUseSecondBall(true);
+      setBallType2(last.ball2.type || "house");
+      setSelectedBallId2(idOf(last.ball2));
+    } else {
+      setUseSecondBall(false);
+      setSelectedBallId2(null);
+    }
+    setExtraBalls((last.extraBalls || []).map((eb) => ({ type: eb.type || "house", id: idOf(eb) })));
+  }, [gameDate, games, myBalls, ballTouched]);
 
   // Device-based access (users without an account). Waits until Firebase has
   // said whether an account is signed in, and ignores a late answer if an
@@ -3773,12 +4077,20 @@ export default function StrikeLog() {
         body: JSON.stringify({ messages: nextMessages }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data?.error || "回答の取得に失敗しました");
+      if (!response.ok) throw new Error(friendlyAiError(data?.error, "チャット相談"));
       const textBlock = (data.content || []).find((b) => b.type === "text");
       const reply = textBlock?.text?.trim() || "うまく答えられませんでした。もう一度試してください。";
       setChatMessages([...nextMessages, { role: "assistant", content: reply }]);
     } catch (e) {
-      setChatError(e.message || "エラーが発生しました。もう一度お試しください。");
+      // A thrown TypeError here means the request never reached the server.
+      // TypeError: never reached the server. SyntaxError: got a non-JSON page back.
+      setChatError(
+        e instanceof TypeError
+          ? friendlyAiError("network", "チャット相談")
+          : e instanceof SyntaxError
+          ? friendlyAiError("", "チャット相談")
+          : e.message || friendlyAiError("", "チャット相談")
+      );
     } finally {
       setChatSending(false);
     }
@@ -3937,8 +4249,10 @@ export default function StrikeLog() {
       const { base64, mediaType } = renderImageForAI(img, null);
       setImageMeta({ base64, mediaType });
       setImagePreview(`data:${mediaType};base64,${base64}`);
+      setCropRect(null);
+      setCropEditorOpen(true); // go straight to boxing the row, full screen
     } catch (e) {
-      setAnalyzeError(e.message);
+      setAnalyzeError(withPhotoTip(e.message));
     }
   };
 
@@ -4014,7 +4328,7 @@ export default function StrikeLog() {
         });
       }
     } catch (e) {
-      setAnalyzeError(e.message || "解析中にエラーが発生しました");
+      setAnalyzeError(withPhotoTip(e.message));
     } finally {
       setAnalyzing(false);
     }
@@ -4091,12 +4405,7 @@ export default function StrikeLog() {
     await saveBallConfig({ ballType, ballWeight, ballThumbless });
     await saveShoeConfig({ shoeType });
     setShoeTouched(false);
-    setUseSecondBall(false);
-    setBallType2("house");
-    setBallWeight2("");
-    setBallThumbless2(false);
-    setSelectedBallId2(null);
-    setExtraBalls([]);
+    setBallTouched(false);
     setPendingResult(null);
     setImagePreview(null);
     setImageMeta(null);
@@ -4575,16 +4884,37 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                 <div style={{ color: COLORS.strike, opacity: 0.75, fontSize: 12 }}>
                   名前〜合計まで囲むと精度アップ(省略OK)
                 </div>
-                <CropSelector src={imagePreview} rect={cropRect} onChange={setCropRect} />
-                {cropRect && (
+                <CropPreview src={imagePreview} rect={cropRect} />
+                <div className="flex items-center gap-4">
                   <button
                     type="button"
-                    onClick={() => setCropRect(null)}
-                    className="text-xs underline"
-                    style={{ color: COLORS.strike }}
+                    onClick={() => setCropEditorOpen(true)}
+                    className="rounded-lg px-4 py-2 text-sm flex items-center gap-2"
+                    style={{ border: `1px solid ${COLORS.gold}`, color: COLORS.gold, fontWeight: 700 }}
                   >
-                    囲みを解除する
+                    <Crop size={15} /> {cropRect ? "囲み直す" : "囲む"}
                   </button>
+                  {cropRect && (
+                    <button
+                      type="button"
+                      onClick={() => setCropRect(null)}
+                      className="text-xs underline"
+                      style={{ color: COLORS.strike }}
+                    >
+                      囲みを解除する
+                    </button>
+                  )}
+                </div>
+                {cropEditorOpen && (
+                  <CropEditor
+                    src={imagePreview}
+                    initialRect={cropRect}
+                    onDone={(r) => {
+                      setCropRect(r);
+                      setCropEditorOpen(false);
+                    }}
+                    onSkip={() => setCropEditorOpen(false)}
+                  />
                 )}
               </div>
             )}
@@ -4616,7 +4946,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
             )}
 
             {analyzeError && (
-              <div className="text-sm rounded-lg p-3" style={{ background: "#FBEAE5", color: COLORS.danger }}>
+              <div className="glass-card rounded-xl p-4" style={{ color: COLORS.strike, fontSize: 14, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>
                 {analyzeError}
               </div>
             )}
@@ -4795,7 +5125,11 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                   )}
                 </div>
 
-                <div className="glass-card rounded-xl p-3 space-y-3">
+                <div
+                  className="glass-card rounded-xl p-3 space-y-3"
+                  onClickCapture={() => setBallTouched(true)}
+                  onChangeCapture={() => setBallTouched(true)}
+                >
                   <div className="text-sm flex items-center gap-2" style={{ color: COLORS.cream }}>
                     <CircleDot size={16} /> 使用ボール
                   </div>
@@ -4811,12 +5145,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                           type="button"
                           onClick={() => setBallType(opt.key)}
                           className="flex-1 rounded-lg py-2 text-xs"
-                          style={{
-                            background: ballType === opt.key ? COLORS.ink : "rgba(40, 55, 95, 0.55)",
-                            color: COLORS.cream,
-                            border: `1px solid ${COLORS.oak}`,
-                            fontWeight: 700,
-                          }}
+                          style={toggleStyle(ballType === opt.key)}
                         >
                           {opt.label}
                         </button>
@@ -4876,12 +5205,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                             type="button"
                             onClick={() => setBallType2(opt.key)}
                             className="flex-1 rounded-lg py-2 text-xs"
-                            style={{
-                              background: ballType2 === opt.key ? COLORS.ink : "rgba(40, 55, 95, 0.55)",
-                              color: COLORS.cream,
-                              border: `1px solid ${COLORS.oak}`,
-                              fontWeight: 700,
-                            }}
+                            style={toggleStyle(ballType2 === opt.key)}
                           >
                             {opt.label}
                           </button>
@@ -4932,12 +5256,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                               type="button"
                               onClick={() => updateExtraBallType(idx, opt.key)}
                               className="flex-1 rounded-lg py-2 text-xs"
-                              style={{
-                                background: sel.type === opt.key ? COLORS.ink : "rgba(40, 55, 95, 0.55)",
-                                color: COLORS.cream,
-                                border: `1px solid ${COLORS.oak}`,
-                                fontWeight: 700,
-                              }}
+                              style={toggleStyle(sel.type === opt.key)}
                             >
                               {opt.label}
                             </button>
@@ -5002,12 +5321,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                           setShoeTouched(true);
                         }}
                         className="flex-1 rounded-lg py-2 text-xs"
-                        style={{
-                          background: shoeType === opt.key ? COLORS.ink : "rgba(40, 55, 95, 0.55)",
-                          color: COLORS.cream,
-                          border: `1px solid ${COLORS.oak}`,
-                          fontWeight: 700,
-                        }}
+                        style={toggleStyle(shoeType === opt.key)}
                       >
                         {opt.label}
                       </button>
@@ -5043,7 +5357,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                 <button
                   onClick={saveGame}
                   className="w-full rounded-lg py-3 flex items-center justify-center gap-2"
-                  style={{ background: COLORS.ink, color: COLORS.cream, fontWeight: 700 }}
+                  style={primaryButtonStyle()}
                 >
                   <Check size={18} /> 記録を保存
                 </button>
@@ -5122,7 +5436,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                         type="button"
                         onClick={saveEditedGame}
                         className="rounded-lg px-3 py-1 text-xs flex items-center gap-1"
-                        style={{ background: COLORS.ink, color: COLORS.cream, fontWeight: 700 }}
+                        style={primaryButtonStyle()}
                       >
                         <Check size={12} /> 保存
                       </button>
@@ -5177,12 +5491,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                             type="button"
                             onClick={() => setEditBallType(opt.key)}
                             className="flex-1 rounded-lg py-2 text-xs"
-                            style={{
-                              background: editBallType === opt.key ? COLORS.ink : "rgba(40, 55, 95, 0.55)",
-                              color: COLORS.cream,
-                              border: `1px solid ${COLORS.oak}`,
-                              fontWeight: 700,
-                            }}
+                            style={toggleStyle(editBallType === opt.key)}
                           >
                             {opt.label}
                           </button>
@@ -5229,12 +5538,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                               type="button"
                               onClick={() => setEditBallType2(opt.key)}
                               className="flex-1 rounded-lg py-2 text-xs"
-                              style={{
-                                background: editBallType2 === opt.key ? COLORS.ink : "rgba(40, 55, 95, 0.55)",
-                                color: COLORS.cream,
-                                border: `1px solid ${COLORS.oak}`,
-                                fontWeight: 700,
-                              }}
+                              style={toggleStyle(editBallType2 === opt.key)}
                             >
                               {opt.label}
                             </button>
@@ -5283,12 +5587,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                                 type="button"
                                 onClick={() => updateEditExtraBallType(idx, opt.key)}
                                 className="flex-1 rounded-lg py-2 text-xs"
-                                style={{
-                                  background: sel.type === opt.key ? COLORS.ink : "rgba(40, 55, 95, 0.55)",
-                                  color: COLORS.cream,
-                                  border: `1px solid ${COLORS.oak}`,
-                                  fontWeight: 700,
-                                }}
+                                style={toggleStyle(sel.type === opt.key)}
                               >
                                 {opt.label}
                               </button>
@@ -5346,12 +5645,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                           type="button"
                           onClick={() => setEditShoeType(opt.key)}
                           className="flex-1 rounded-lg py-2 text-xs"
-                          style={{
-                            background: editShoeType === opt.key ? COLORS.ink : "rgba(40, 55, 95, 0.55)",
-                            color: COLORS.cream,
-                            border: `1px solid ${COLORS.oak}`,
-                            fontWeight: 700,
-                          }}
+                          style={toggleStyle(editShoeType === opt.key)}
                         >
                           {opt.label}
                         </button>
@@ -5485,12 +5779,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                       type="button"
                       onClick={() => setPeriodMode(p.key)}
                       className="flex-1 rounded-lg py-2 text-sm"
-                      style={{
-                        background: periodMode === p.key ? COLORS.ink : "rgba(40, 55, 95, 0.55)",
-                        color: COLORS.cream,
-                        border: `1px solid ${COLORS.oak}`,
-                        fontWeight: 700,
-                      }}
+                      style={toggleStyle(periodMode === p.key)}
                     >
                       {p.label}
                     </button>
@@ -5886,12 +6175,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                         saveProfile({ dominantHand: opt.key });
                       }}
                       className="flex-1 rounded-lg py-2 text-sm"
-                      style={{
-                        background: dominantHand === opt.key ? COLORS.ink : "rgba(40, 55, 95, 0.55)",
-                        color: COLORS.cream,
-                        border: `1px solid ${COLORS.oak}`,
-                        fontWeight: 700,
-                      }}
+                      style={toggleStyle(dominantHand === opt.key)}
                     >
                       {opt.label}
                     </button>
@@ -6148,7 +6432,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                 onClick={addMyBall}
                 disabled={!newBallWeight}
                 className="w-full rounded-lg py-2 text-sm"
-                style={{ background: COLORS.ink, color: COLORS.cream, fontWeight: 700, opacity: newBallWeight ? 1 : 0.5 }}
+                style={primaryButtonStyle(!!newBallWeight)}
               >
                 追加する
               </button>
@@ -6229,7 +6513,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                 onClick={addMyShoe}
                 disabled={!newShoeName.trim()}
                 className="w-full rounded-lg py-2 text-sm"
-                style={{ background: COLORS.ink, color: COLORS.cream, fontWeight: 700, opacity: newShoeName.trim() ? 1 : 0.5 }}
+                style={primaryButtonStyle(!!newShoeName.trim())}
               >
                 追加する
               </button>

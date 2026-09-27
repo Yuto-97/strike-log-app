@@ -53,6 +53,20 @@ async function effectiveFixedCosts(month, cache) {
   return { items: [], from: null };
 }
 
+// Service problems the owner needs to fix (API credits ran out, API key
+// broken) that happened after they last pressed "対応した".
+async function activeAlerts() {
+  try {
+    const snap = await db.collection("alerts").get();
+    return snap.docs
+      .map((d) => d.data())
+      .filter((a) => a.lastAt && (!a.ackAt || a.lastAt > a.ackAt))
+      .map((a) => ({ kind: a.kind, lastAt: a.lastAt, count: a.count || 0 }));
+  } catch (e) {
+    return [];
+  }
+}
+
 async function usageView(month) {
   const monthRef = db.collection("usageMonths").doc(month);
   const [totalsDoc, usersSnap, reqSnap, lastSnap, finDoc, settingsDoc] = await Promise.all([
@@ -137,6 +151,16 @@ export default async function handler(req, res) {
       return;
     }
 
+    if (req.method === "POST" && (req.body || {}).action === "ackAlerts") {
+      const now = new Date().toISOString();
+      const snap = await db.collection("alerts").get();
+      const batch = db.batch();
+      snap.docs.forEach((d) => batch.set(d.ref, { ackAt: now }, { merge: true }));
+      await batch.commit();
+      res.status(200).json({ ok: true });
+      return;
+    }
+
     if (req.method === "POST" && (req.body || {}).action === "finance") {
       const { month, fixedCosts, revenueJpy, usdJpy } = req.body;
       if (!MONTH_RE.test(month || "")) {
@@ -170,7 +194,7 @@ export default async function handler(req, res) {
         }
         items.push({ id: d.id, ...data });
       }
-      res.status(200).json({ items });
+      res.status(200).json({ items, alerts: await activeAlerts() });
       return;
     }
 
