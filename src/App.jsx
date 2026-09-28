@@ -28,12 +28,12 @@ const COLORS = {
   danger: "#C0392B",
 };
 
-// Main action buttons (記録を保存, 保存, 追加する): solid gold so they stand
-// out on the dark background. When the button can't be pressed yet, it turns
-// into a dim outlined button so that's obvious too.
+// Main action buttons (記録を保存, 保存, 追加する): navy inside with gold text
+// and a gold outline, so they stand out on the dark background. When the
+// button can't be pressed yet, it turns dim so that's obvious too.
 function primaryButtonStyle(enabled = true) {
   return enabled
-    ? { background: COLORS.gold, color: COLORS.ink, fontWeight: 700, border: `1px solid ${COLORS.gold}` }
+    ? { background: COLORS.ink, color: COLORS.gold, fontWeight: 700, border: `1.5px solid ${COLORS.gold}` }
     : {
         background: "rgba(40, 55, 95, 0.55)",
         color: "rgba(245, 241, 228, 0.45)",
@@ -43,13 +43,13 @@ function primaryButtonStyle(enabled = true) {
 }
 
 // Style for "pick one" buttons (ハウス/マイボール, レンタル/マイシューズ, 期間, etc.).
-// The chosen one is gold — the same signal as the active tab in the bottom
-// bar — so it's obvious at a glance which is selected. The ring is drawn with
+// The chosen one has gold text and a gold outline (navy inside) — the same
+// signal as the active tab in the bottom bar — so it's obvious at a glance which is selected. The ring is drawn with
 // box-shadow rather than a thicker border, so nothing shifts when switching.
 function toggleStyle(active) {
   return active
     ? {
-        background: "rgba(224, 168, 0, 0.16)",
+        background: COLORS.ink,
         color: COLORS.gold,
         border: `1px solid ${COLORS.gold}`,
         boxShadow: `inset 0 0 0 1px ${COLORS.gold}`,
