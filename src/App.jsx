@@ -533,6 +533,9 @@ function computeGameSetStats(gamesList) {
     avg,
     highGame,
     lowGame,
+    frameCount,
+    spareChances,
+    splitOpenCount,
     strikeCount: strikes, strikeRate: pct(strikes, frameCount),
     spareCount: spares, spareRate: pct(spares, spareChances),
     openFrameCount: openFrames, openFrameRate: pct(openFrames, frameCount),
@@ -541,6 +544,133 @@ function computeGameSetStats(gamesList) {
     gutterCount: gutters, gutterRate: pct(gutters, totalBalls),
     foulCount: fouls, foulRate: pct(fouls, totalBalls),
   };
+}
+
+// ---------- ball sets (per-ball stats) ----------
+// Finds the registered ball a saved game refers to: by its stored id (games
+// saved from now on), else by name (older games only stored the name).
+function ballRegistryIdFor(b, myBalls) {
+  if (!b) return null;
+  if (b.registryId && myBalls.some((x) => x.id === b.registryId)) return b.registryId;
+  if (!b.label) return null;
+  const t = b.type || "own";
+  return (myBalls.find((x) => x.label === b.label && (x.type || "own") === t) || myBalls.find((x) => x.label === b.label))?.id || null;
+}
+
+// One ball of a game, as { key, name, weight }. The key is what makes two
+// games count as "the same ball": the registered ball when it can be found
+// (so renaming a ball keeps its history together), otherwise its saved name.
+function resolveBallRef(b, myBalls) {
+  if (!b) return null;
+  const type = b.type || "own";
+  const regId = ballRegistryIdFor(b, myBalls);
+  const reg = regId ? myBalls.find((x) => x.id === regId) : null;
+  if (reg) return { key: `id:${reg.id}`, name: reg.label, weight: reg.weight ?? b.weight ?? null };
+  if (b.registryId) return { key: `id:${b.registryId}`, name: b.label || "(削除したボール)", weight: b.weight ?? null };
+  if (b.label) return { key: `label:${type}:${b.label}`, name: b.label, weight: b.weight ?? null };
+  return { key: `none:${type}`, name: type === "house" ? "ハウスボール(未選択)" : "マイボール(未選択)", weight: null };
+}
+
+const BALL_STATS_MIN_GAMES = 3; // fewer games than this = shown as 参考値
+
+// Ball analysis by role. People use at most two balls per game:
+//   main  (1st ball) — thrown for strikes         → strike rate
+//   spare (2nd ball) — thrown to pick up spares   → spare rate
+//     (a game with no 2nd ball: the main ball took the spares too)
+//   set  (main + spare together)                  → final score (average, high)
+// A 3rd ball or later is left out of this analysis.
+const NO_BALL = { key: "__none__", name: "ボールの記録なし", weight: null };
+
+function groupBy(gamesList, keyOf) {
+  const m = new Map();
+  for (const g of gamesList) {
+    const k = keyOf(g);
+    if (!m.has(k.key)) m.set(k.key, { ...k, games: [] });
+    m.get(k.key).games.push(g);
+  }
+  return [...m.values()].map((grp) => ({
+    ...grp,
+    stats: computeGameSetStats(grp.games),
+    roles: roleCounters(grp.games),
+    reliable: grp.games.length >= BALL_STATS_MIN_GAMES,
+  }));
+}
+
+// Enough games first, then 参考値; within each, by the given measure (high → low).
+const byReliableThen = (measure) => (a, b) =>
+  a.reliable !== b.reliable ? (a.reliable ? -1 : 1) : measure(b) - measure(a) || b.games.length - a.games.length;
+
+// Every roll of a game tagged as the 1st or 2nd ball of its rack of pins.
+// Frames 1–9 are simple (1st roll, 2nd roll). In the 10th frame, a ball
+// thrown after a strike or spare faces a fresh rack, so it counts as a 1st
+// ball — e.g. X, 7, / is: 1st (strike), 1st (new rack), 2nd (spare).
+function rollsByRole(game) {
+  const out = [];
+  (game.frames || []).forEach((f, i) => {
+    const rolls = f.rolls || [];
+    const splits = f.splitRolls || [];
+    if (i < 9) {
+      rolls.forEach((label, idx) => {
+        if (label === undefined || label === "") return;
+        out.push({ label, first: idx === 0, split: !!splits[idx] });
+      });
+      return;
+    }
+    const pins = normalizeFrame(rolls, true).pins;
+    let nextIsFirst = true;
+    rolls.forEach((label, idx) => {
+      if (label === undefined || label === "") return;
+      const first = nextIsFirst;
+      out.push({ label, first, split: !!splits[idx] });
+      // A 1st ball that isn't a strike leaves pins → next is its 2nd ball.
+      // After a 2nd ball (or a strike) the pins are reset.
+      nextIsFirst = first ? (pins[idx] ?? 0) === 10 : true;
+    });
+  });
+  return out;
+}
+
+// Counts by role, over a list of games.
+//   1st balls: splits left, gutters, fouls
+//   2nd balls: split covers (split picked up for a spare), gutters, fouls
+function roleCounters(gamesList) {
+  const c = { firstBalls: 0, splits: 0, firstGutters: 0, firstFouls: 0, secondBalls: 0, splitChances: 0, splitCovers: 0, secondGutters: 0, secondFouls: 0 };
+  for (const g of gamesList) {
+    let pendingSplit = false;
+    for (const r of rollsByRole(g)) {
+      if (r.first) {
+        c.firstBalls += 1;
+        if (r.split) c.splits += 1;
+        if (r.label === "G") c.firstGutters += 1;
+        if (r.label === "F") c.firstFouls += 1;
+        pendingSplit = r.split;
+      } else {
+        c.secondBalls += 1;
+        if (pendingSplit) {
+          c.splitChances += 1;
+          if (r.label === "/") c.splitCovers += 1;
+        }
+        if (r.label === "G") c.secondGutters += 1;
+        if (r.label === "F") c.secondFouls += 1;
+        pendingSplit = false;
+      }
+    }
+  }
+  return c;
+}
+
+function computeBallRoleStats(gamesList, myBalls) {
+  const mainOf = (g) => resolveBallRef(g.ball, myBalls) || NO_BALL;
+  const spareOf = (g) => resolveBallRef(g.ball2, myBalls) || mainOf(g);
+
+  const mains = groupBy(gamesList, (g) => mainOf(g)).sort(byReliableThen((x) => x.stats.strikeRate));
+  const spares = groupBy(gamesList, (g) => spareOf(g)).sort(byReliableThen((x) => x.stats.spareRate));
+  const sets = groupBy(gamesList, (g) => {
+    const m = mainOf(g);
+    const s = g.ball2 ? resolveBallRef(g.ball2, myBalls) : null;
+    return { key: `${m.key}>${s ? s.key : "same"}`, main: m, spare: s };
+  }).sort(byReliableThen((x) => x.stats.avg));
+  return { mains, spares, sets };
 }
 
 // ---------- achievements (celebration triggers) ----------
@@ -1618,6 +1748,130 @@ function Celebration({ items, onClose }) {
         >
           閉じる
         </button>
+      </div>
+    </div>
+  );
+}
+
+// 記録タブ「ボール別の成績」: each measure as a 1位〜3位 ranking with a bar
+// showing its size, so balls compare at a glance. Which balls are ranked
+// depends on who is responsible for the result:
+//   ball set (main + spare) → final score, open frames
+//   main ball (1st ball)    → strikes, splits, gutters
+//   spare ball (2nd ball)   → spares, split covers
+// "(ワースト)" lists put the worst first. Empty places show 「ー 該当なし」.
+const RANK_SLOTS = 3;
+
+function BallRankings({ stats }) {
+  const setName = (s) => (s.spare ? `${s.main.name}＋${s.spare.name}` : s.main.name);
+  const rate = (a, b) => (b ? Math.round((a / b) * 100) : 0);
+  const byRate = (list, count, of, { worst = false, onlyIfAny = false } = {}) =>
+    list
+      .filter((x) => of(x) > 0 && (!onlyIfAny || count(x) > 0))
+      .map((x) => ({ x, count: count(x), r: rate(count(x), of(x)) }))
+      .sort((a, b) => b.r - a.r || b.count - a.count)
+      .map(({ x, count: n, r }) => ({ name: x.name ?? setName(x), bar: r, text: `${n}(${r}%)` }));
+  const byValue = (list, value, text, { asc = false } = {}) => {
+    const rows = list.map((x) => ({ x, v: value(x) })).sort((a, b) => (asc ? a.v - b.v : b.v - a.v));
+    const max = Math.max(1, ...rows.map((r) => r.v));
+    return rows.map(({ x, v }) => ({ name: setName(x), bar: (v / max) * 100, text: text(v) }));
+  };
+  // Balls and sets with fewer than 3 games are left out entirely: with that
+  // little data a ranking would mostly reflect luck.
+  const enough = (list) => list.filter((x) => x.reliable);
+  const sets = enough(stats.sets);
+  const mains = enough(stats.mains);
+  const spares = enough(stats.spares);
+
+  const rankings = [
+    { title: "ゲーム数", unit: "ボールセット", rows: byValue(sets, (s) => s.games.length, (v) => `${v}ゲーム`) },
+    { title: "アベレージ", unit: "ボールセット", rows: byValue(sets, (s) => s.stats.avg, (v) => `${v}`) },
+    { title: "ハイゲーム", unit: "ボールセット", rows: byValue(sets, (s) => s.stats.highGame, (v) => `${v}`) },
+    { title: "ローゲーム(ワースト)", unit: "ボールセット", rows: byValue(sets, (s) => s.stats.lowGame, (v) => `${v}`, { asc: true }) },
+    { title: "ストライク", unit: "メインボール", rows: byRate(mains, (m) => m.stats.strikeCount, (m) => m.stats.frameCount) },
+    { title: "スペア", unit: "スペアボール", rows: byRate(spares, (s) => s.stats.spareCount, (s) => s.stats.spareChances) },
+    {
+      title: "オープンフレーム(ワースト)",
+      unit: "ボールセット",
+      rows: byRate(sets, (s) => s.stats.openFrameCount, (s) => s.stats.frameCount, { onlyIfAny: true }),
+    },
+    { title: "スプリット(ワースト)", unit: "メインボール", rows: byRate(mains, (m) => m.roles.splits, (m) => m.roles.firstBalls, { onlyIfAny: true }) },
+    { title: "スプリットカバー", unit: "スペアボール", rows: byRate(spares, (s) => s.roles.splitCovers, (s) => s.roles.splitChances) },
+    {
+      title: "ガター(ワースト)",
+      unit: "メインボール",
+      rows: byRate(mains, (m) => m.roles.firstGutters, (m) => m.roles.firstBalls, { onlyIfAny: true }),
+      note: "※ガターは1投目(メインボール)の投球のみで集計しています",
+    },
+  ];
+
+  const medal = ["#E0A800", "#C9CED6", "#C08457"];
+  if (!sets.length && !mains.length && !spares.length) {
+    return (
+      <div className="px-3 pb-4" style={{ color: COLORS.strike, fontSize: 13, lineHeight: 1.7, opacity: 0.85 }}>
+        この期間に3ゲーム以上投げたボールがまだありません。
+        <br />
+        3ゲーム未満のボール・ボールセットは、たまたまの結果になりやすいため、ランキングに含めていません。期間を「月」や「期間指定」に広げると表示されることがあります。
+      </div>
+    );
+  }
+  return (
+    <div className="px-3 pb-3 space-y-3">
+      {rankings.map((rk) => {
+        const rows = rk.rows.slice(0, RANK_SLOTS);
+        while (rows.length < RANK_SLOTS) rows.push(null);
+        return (
+          <div key={rk.title} style={{ borderTop: "1px solid rgba(224,168,0,0.25)", paddingTop: 10 }}>
+            <div className="flex items-baseline justify-between gap-2" style={{ marginBottom: 6 }}>
+              <span style={{ color: COLORS.strike, fontWeight: 700, fontSize: 14 }}>{rk.title}</span>
+              <span style={{ color: COLORS.strike, opacity: 0.6, fontSize: 11 }}>{rk.unit}</span>
+            </div>
+            <div className="space-y-1.5">
+              {rows.map((row, i) => (
+                <div key={i}>
+                  <div className="flex items-center gap-2">
+                    <span
+                      style={{
+                        width: 30,
+                        flexShrink: 0,
+                        color: row ? medal[i] : "rgba(245,241,228,0.4)",
+                        fontFamily: "'Oswald', sans-serif",
+                        fontWeight: 700,
+                        fontSize: 14,
+                      }}
+                    >
+                      {i + 1}位
+                    </span>
+                    {row ? (
+                      <>
+                        <span
+                          style={{ flex: 1, minWidth: 0, color: COLORS.strike, fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                        >
+                          {row.name}
+                        </span>
+                        <span style={{ flexShrink: 0, color: COLORS.strike, fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 15 }}>
+                          {row.text}
+                        </span>
+                      </>
+                    ) : (
+                      <span style={{ flex: 1, color: COLORS.strike, opacity: 0.45, fontSize: 13 }}>ー 該当なし</span>
+                    )}
+                  </div>
+                  {row && (
+                    <div style={{ marginLeft: 38, height: 5, borderRadius: 3, background: "rgba(245,241,228,0.1)", overflow: "hidden" }}>
+                      <div style={{ width: `${Math.max(2, Math.min(100, row.bar))}%`, height: "100%", borderRadius: 3, background: medal[i] }} />
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+            {rk.note && <div style={{ color: COLORS.strike, opacity: 0.6, fontSize: 11, marginTop: 6 }}>{rk.note}</div>}
+          </div>
+        );
+      })}
+      <div style={{ color: COLORS.strike, opacity: 0.6, fontSize: 11, lineHeight: 1.6 }}>
+        ・3ゲーム未満のボール・ボールセットは、たまたまの結果になりやすいため、ランキングに含めていません
+        <br />・2個目のボールを使わなかったゲームは、メインボールでスペアを取ったものとして数えています
       </div>
     </div>
   );
@@ -3515,6 +3769,7 @@ export default function StrikeLog() {
   const [cropRect, setCropRect] = useState(null); // user's selection, 0..1 coords
   const [cropEditorOpen, setCropEditorOpen] = useState(false); // full-screen boxing editor
   const [celebration, setCelebration] = useState(null); // achievements to celebrate, or null
+  const [ballStatsOpen, setBallStatsOpen] = useState(false); // 記録タブの「ボール別の成績」, closed by default
   const [announcements, setAnnouncements] = useState([]); // active お知らせ, newest first
   const [bellOpen, setBellOpen] = useState(false);
   const [annReadIds, setAnnReadIds] = useState(() => readIdList(ANN_READ_KEY));
@@ -3725,6 +3980,7 @@ export default function StrikeLog() {
     );
     // Saved games keep the ball's name, not its id — find the registered ball by name.
     const idOf = (b) => {
+      if (b && b.registryId && myBalls.some((x) => x.id === b.registryId)) return b.registryId;
       if (!b || !b.label) return null;
       const t = b.type || "own";
       return (
@@ -4228,6 +4484,30 @@ export default function StrikeLog() {
     }
   }, []);
 
+  // One-time upgrade of older games: they only stored the ball's name. Add
+  // the registered ball's id while the names still match, so renaming a ball
+  // later never splits its per-ball stats. Runs until nothing is left to add.
+  useEffect(() => {
+    if (loadingGames || !myBalls.length || !games.length) return;
+    let changed = false;
+    const fix = (b) => {
+      if (!b || b.registryId || !b.label) return b;
+      const id = ballRegistryIdFor(b, myBalls);
+      if (!id) return b;
+      changed = true;
+      return { ...b, registryId: id };
+    };
+    const next = games.map((g) => {
+      const ball = fix(g.ball);
+      const ball2 = fix(g.ball2);
+      const extra = Array.isArray(g.extraBalls) ? g.extraBalls.map(fix) : g.extraBalls;
+      const extraChanged = Array.isArray(g.extraBalls) && extra.some((x, i) => x !== g.extraBalls[i]);
+      return ball !== g.ball || ball2 !== g.ball2 || extraChanged ? { ...g, ball, ball2, extraBalls: extra } : g;
+    });
+    if (changed) persistGames(next);
+  }, [games, myBalls, loadingGames, persistGames]);
+
+
   const handleFile = async (file) => {
     if (!file) return;
     setAnalyzeError("");
@@ -4349,6 +4629,7 @@ export default function StrikeLog() {
       weight: selectedBall ? selectedBall.weight : null,
       thumbless: selectedBall ? selectedBall.thumbless : false,
       label: selectedBall ? selectedBall.label : null,
+      registryId: selectedBall ? selectedBall.id : null, // survives renaming the ball
     };
     let ball2 = null;
     if (useSecondBall) {
@@ -4358,13 +4639,14 @@ export default function StrikeLog() {
         weight: selectedBall2 ? selectedBall2.weight : null,
         thumbless: selectedBall2 ? selectedBall2.thumbless : false,
         label: selectedBall2 ? selectedBall2.label : null,
+        registryId: selectedBall2 ? selectedBall2.id : null,
       };
     }
     const extraBallsData = extraBalls
       .filter((sel) => sel.id)
       .map((sel) => {
         const b = myBalls.find((x) => x.id === sel.id);
-        return { type: sel.type, weight: b ? b.weight : null, thumbless: b ? b.thumbless : false, label: b ? b.label : null };
+        return { type: sel.type, weight: b ? b.weight : null, thumbless: b ? b.thumbless : false, label: b ? b.label : null, registryId: b ? b.id : null };
       });
     const selectedShoe = myShoes.find((s) => s.id === selectedShoeId);
     const shoe =
@@ -4524,16 +4806,16 @@ function getNextRollCell(frameIdx, rollIdx, value) {
     setEditBallType(g.ball?.type || "house");
     setEditBallWeight(g.ball?.weight ? String(g.ball.weight) : "");
     setEditBallThumbless(!!g.ball?.thumbless);
-    setEditSelectedBallId(g.ball?.label ? myBalls.find((b) => b.label === g.ball.label)?.id || null : null);
+    setEditSelectedBallId(ballRegistryIdFor(g.ball, myBalls));
     setEditUseSecondBall(!!g.ball2);
     setEditBallType2(g.ball2?.type || "house");
     setEditBallWeight2(g.ball2?.weight ? String(g.ball2.weight) : "");
     setEditBallThumbless2(!!g.ball2?.thumbless);
-    setEditSelectedBallId2(g.ball2?.label ? myBalls.find((b) => b.label === g.ball2.label)?.id || null : null);
+    setEditSelectedBallId2(ballRegistryIdFor(g.ball2, myBalls));
     setEditExtraBalls(
       (g.extraBalls || []).map((eb) => ({
         type: eb.type || "house",
-        id: eb.label ? myBalls.find((b) => b.label === eb.label)?.id || null : null,
+        id: ballRegistryIdFor(eb, myBalls),
       }))
     );
     setEditShoeType(g.shoe?.type || "rental");
@@ -4601,6 +4883,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
       weight: selectedBall ? selectedBall.weight : null,
       thumbless: selectedBall ? selectedBall.thumbless : false,
       label: selectedBall ? selectedBall.label : null,
+      registryId: selectedBall ? selectedBall.id : null, // survives renaming the ball
     };
     let ball2 = null;
     if (editUseSecondBall) {
@@ -4610,13 +4893,14 @@ function getNextRollCell(frameIdx, rollIdx, value) {
         weight: selectedBall2 ? selectedBall2.weight : null,
         thumbless: selectedBall2 ? selectedBall2.thumbless : false,
         label: selectedBall2 ? selectedBall2.label : null,
+        registryId: selectedBall2 ? selectedBall2.id : null,
       };
     }
     const editExtraBallsData = editExtraBalls
       .filter((sel) => sel.id)
       .map((sel) => {
         const b = myBalls.find((x) => x.id === sel.id);
-        return { type: sel.type, weight: b ? b.weight : null, thumbless: b ? b.thumbless : false, label: b ? b.label : null };
+        return { type: sel.type, weight: b ? b.weight : null, thumbless: b ? b.thumbless : false, label: b ? b.label : null, registryId: b ? b.id : null };
       });
     const selectedShoe = myShoes.find((s) => s.id === editSelectedShoeId);
     const shoe =
@@ -4666,6 +4950,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
       ? getMonthRange(monthAnchor)
       : { start: customStart, end: customEnd };
   const periodGames = games.filter((g) => g.date >= periodRange.start && g.date <= periodRange.end);
+  const ballStats = computeBallRoleStats(periodGames, myBalls);
   const {
     avg, highGame, lowGame,
     strikeCount, strikeRate,
@@ -5985,6 +6270,26 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                         </div>
                       ))}
                     </div>
+
+                    {periodGames.length > 0 && (
+                      <div className="glass-card rounded-xl">
+                        <button
+                          type="button"
+                          onClick={() => setBallStatsOpen((o) => !o)}
+                          className="w-full flex items-center justify-between px-3 py-3"
+                          aria-expanded={ballStatsOpen}
+                        >
+                          <span className="flex items-center gap-2" style={{ color: COLORS.strike, fontWeight: 700, fontSize: 15 }}>
+                            <CircleDot size={16} style={{ color: COLORS.gold }} /> ボール別の成績
+                          </span>
+                          <ChevronDown
+                            size={18}
+                            style={{ color: COLORS.strike, transform: ballStatsOpen ? "rotate(180deg)" : "none", transition: "transform .2s" }}
+                          />
+                        </button>
+                        {ballStatsOpen && <BallRankings stats={ballStats} />}
+                      </div>
+                    )}
 
                     <details className="rounded-xl border glass-card overflow-hidden" style={{ borderColor: COLORS.oak }}>
                       <summary className="px-3 py-2 cursor-pointer text-sm" style={{ color: COLORS.strike }}>
