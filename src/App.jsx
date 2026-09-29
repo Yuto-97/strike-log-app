@@ -1801,7 +1801,6 @@ function BallRankings({ stats }) {
       title: "ガター(ワースト)",
       unit: "メインボール",
       rows: byRate(mains, (m) => m.roles.firstGutters, (m) => m.roles.firstBalls, { onlyIfAny: true }),
-      note: "※ガターは1投目(メインボール)の投球のみで集計しています",
     },
   ];
 
@@ -1809,9 +1808,11 @@ function BallRankings({ stats }) {
   if (!sets.length && !mains.length && !spares.length) {
     return (
       <div className="px-3 pb-4" style={{ color: COLORS.strike, fontSize: 13, lineHeight: 1.7, opacity: 0.85 }}>
-        この期間に3ゲーム以上投げたボールがまだありません。
+        ※この期間に3ゲーム以上使用したボール・ボールセットはありません
         <br />
-        3ゲーム未満のボール・ボールセットは、たまたまの結果になりやすいため、ランキングに含めていません。期間を「月」や「期間指定」に広げると表示されることがあります。
+        ※3ゲーム未満のボール・ボールセットは、統計的な信頼性が低いため、ランキングの対象外としています
+        <br />
+        ※期間を「月」「年」「期間指定」に広げると表示される場合があります
       </div>
     );
   }
@@ -1865,13 +1866,13 @@ function BallRankings({ stats }) {
                 </div>
               ))}
             </div>
-            {rk.note && <div style={{ color: COLORS.strike, opacity: 0.6, fontSize: 11, marginTop: 6 }}>{rk.note}</div>}
           </div>
         );
       })}
       <div style={{ color: COLORS.strike, opacity: 0.6, fontSize: 11, lineHeight: 1.6 }}>
-        ・3ゲーム未満のボール・ボールセットは、たまたまの結果になりやすいため、ランキングに含めていません
-        <br />・2個目のボールを使わなかったゲームは、メインボールでスペアを取ったものとして数えています
+        ※ガターは1投目(メインボール)の投球のみで集計しています
+        <br />※3ゲーム未満のボール・ボールセットは、統計的な信頼性が低いため、ランキングの対象外としています
+        <br />※2個目のボールを使用していないゲームは、メインボールでスペアを取ったものとして集計しています
       </div>
     </div>
   );
@@ -3769,7 +3770,6 @@ export default function StrikeLog() {
   const [cropRect, setCropRect] = useState(null); // user's selection, 0..1 coords
   const [cropEditorOpen, setCropEditorOpen] = useState(false); // full-screen boxing editor
   const [celebration, setCelebration] = useState(null); // achievements to celebrate, or null
-  const [ballStatsOpen, setBallStatsOpen] = useState(false); // 記録タブの「ボール別の成績」, closed by default
   const [announcements, setAnnouncements] = useState([]); // active お知らせ, newest first
   const [bellOpen, setBellOpen] = useState(false);
   const [annReadIds, setAnnReadIds] = useState(() => readIdList(ANN_READ_KEY));
@@ -3823,7 +3823,8 @@ export default function StrikeLog() {
   const [editingShoeNameId, setEditingShoeNameId] = useState(null);
   const [shoeNameDraft, setShoeNameDraft] = useState("");
   const [newShoeName, setNewShoeName] = useState("");
-  const [periodMode, setPeriodMode] = useState("week"); // "day" | "week" | "month" | "custom"
+  const [periodMode, setPeriodMode] = useState("week"); // "day" | "week" | "month" | "year" | "custom"
+  const [yearAnchor, setYearAnchor] = useState(() => new Date().getFullYear()); // 1/1〜12/31
   const [dayAnchor, setDayAnchor] = useState(() => toLocalISODate(new Date()));
   const [weekAnchor, setWeekAnchor] = useState(() => toLocalISODate(new Date()));
   const [monthAnchor, setMonthAnchor] = useState(() => {
@@ -4426,10 +4427,30 @@ export default function StrikeLog() {
     if (selectedBallId === id) setSelectedBallId(null);
   };
 
+  // Renaming a ball also renames it in every saved game (history cards show
+  // the name stored with each game), so the new name appears everywhere.
   const renameMyBall = (id, newLabel) => {
     const trimmed = newLabel.trim();
     if (!trimmed) return;
+    const target = myBalls.find((b) => b.id === id);
+    if (!target) return;
     persistMyBalls(myBalls.map((b) => (b.id === id ? { ...b, label: trimmed } : b)));
+    const isThisBall = (x) =>
+      x &&
+      (x.registryId === id ||
+        (!x.registryId && x.label === target.label && (x.type || "own") === (target.type || "own")));
+    const fix = (x) => (isThisBall(x) ? { ...x, label: trimmed, registryId: id } : x);
+    let changed = false;
+    const next = games.map((g) => {
+      const ball = fix(g.ball);
+      const ball2 = fix(g.ball2);
+      const extra = Array.isArray(g.extraBalls) ? g.extraBalls.map(fix) : g.extraBalls;
+      const touched = ball !== g.ball || ball2 !== g.ball2 || (Array.isArray(g.extraBalls) && extra.some((x, i) => x !== g.extraBalls[i]));
+      if (!touched) return g;
+      changed = true;
+      return { ...g, ball, ball2, extraBalls: extra };
+    });
+    if (changed) persistGames(next);
     setEditingBallNameId(null);
   };
 
@@ -4466,10 +4487,24 @@ export default function StrikeLog() {
     if (selectedShoeId === id) setSelectedShoeId(null);
   };
 
+  // Same for shoes: the new name replaces the old one in every saved game.
   const renameMyShoe = (id, newLabel) => {
     const trimmed = newLabel.trim();
     if (!trimmed) return;
+    const target = myShoes.find((s) => s.id === id);
+    if (!target) return;
     persistMyShoes(myShoes.map((s) => (s.id === id ? { ...s, label: trimmed } : s)));
+    let changed = false;
+    const next = games.map((g) => {
+      const sh = g.shoe;
+      if (!sh || sh.type !== "own") return g;
+      if (sh.shoeRegistryId === id || (!sh.shoeRegistryId && sh.label === target.label)) {
+        changed = true;
+        return { ...g, shoe: { ...sh, label: trimmed, shoeRegistryId: id } };
+      }
+      return g;
+    });
+    if (changed) persistGames(next);
     setEditingShoeNameId(null);
   };
 
@@ -4948,6 +4983,8 @@ function getNextRollCell(frameIdx, rollIdx, value) {
       ? getWeekRange(weekAnchor)
       : periodMode === "month"
       ? getMonthRange(monthAnchor)
+      : periodMode === "year"
+      ? { start: `${yearAnchor}-01-01`, end: `${yearAnchor}-12-31` }
       : { start: customStart, end: customEnd };
   const periodGames = games.filter((g) => g.date >= periodRange.start && g.date <= periodRange.end);
   const ballStats = computeBallRoleStats(periodGames, myBalls);
@@ -4972,6 +5009,22 @@ function getNextRollCell(frameIdx, rollIdx, value) {
           .slice()
           .sort((a, b) => (a.gameNumber || 1) - (b.gameNumber || 1))
           .map((g) => ({ label: `第${g.gameNumber || 1}G`, total: g.total }))
+      : periodMode === "year"
+      ? (() => {
+          // A whole year as one point per month (daily points would be too crowded).
+          const byMonth = {};
+          periodGames.forEach((g) => {
+            const m = g.date.slice(0, 7);
+            if (!byMonth[m]) byMonth[m] = [];
+            byMonth[m].push(g.total);
+          });
+          return Object.keys(byMonth)
+            .sort()
+            .map((m) => {
+              const vals = byMonth[m];
+              return { label: `${Number(m.slice(5))}月`, total: Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) };
+            });
+        })()
       : (() => {
           const byDate = {};
           periodGames.forEach((g) => {
@@ -6057,6 +6110,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                     { key: "day", label: "日" },
                     { key: "week", label: "週" },
                     { key: "month", label: "月" },
+                    { key: "year", label: "年" },
                     { key: "custom", label: "期間指定" },
                   ].map((p) => (
                     <button
@@ -6166,6 +6220,40 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                     </div>
                   )}
 
+                  {periodMode === "year" && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setYearAnchor((y) => y - 1)}
+                          className="w-8 h-8 rounded border flex items-center justify-center"
+                          style={{ borderColor: COLORS.oak, color: COLORS.cream }}
+                          aria-label="前の年"
+                        >
+                          ‹
+                        </button>
+                        <div
+                          className="px-2 py-1 rounded border text-sm flex-1 text-center"
+                          style={{ borderColor: COLORS.oak, color: COLORS.ink, background: "#FFFFFF", fontWeight: 700 }}
+                        >
+                          {yearAnchor}年
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setYearAnchor((y) => y + 1)}
+                          className="w-8 h-8 rounded border flex items-center justify-center"
+                          style={{ borderColor: COLORS.oak, color: COLORS.cream }}
+                          aria-label="次の年"
+                        >
+                          ›
+                        </button>
+                      </div>
+                      <div className="text-center text-xs" style={{ color: COLORS.strike }}>
+                        {yearAnchor}年1月1日 〜 12月31日
+                      </div>
+                    </div>
+                  )}
+
                   {periodMode === "custom" && (
                     <div className="flex items-center gap-2">
                       <input
@@ -6271,81 +6359,11 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                       ))}
                     </div>
 
-                    {periodGames.length > 0 && (
-                      <div className="glass-card rounded-xl">
-                        <button
-                          type="button"
-                          onClick={() => setBallStatsOpen((o) => !o)}
-                          className="w-full flex items-center justify-between px-3 py-3"
-                          aria-expanded={ballStatsOpen}
-                        >
-                          <span className="flex items-center gap-2" style={{ color: COLORS.strike, fontWeight: 700, fontSize: 15 }}>
-                            <CircleDot size={16} style={{ color: COLORS.gold }} /> ボール別の成績
-                          </span>
-                          <ChevronDown
-                            size={18}
-                            style={{ color: COLORS.strike, transform: ballStatsOpen ? "rotate(180deg)" : "none", transition: "transform .2s" }}
-                          />
-                        </button>
-                        {ballStatsOpen && <BallRankings stats={ballStats} />}
-                      </div>
-                    )}
-
-                    <details className="rounded-xl border glass-card overflow-hidden" style={{ borderColor: COLORS.oak }}>
-                      <summary className="px-3 py-2 cursor-pointer text-sm" style={{ color: COLORS.strike }}>
-                        用語と計算式
-                      </summary>
-                      <div className="px-3 pb-3 space-y-3" style={{ borderTop: `1px solid #EFE4CC`, paddingTop: 8 }}>
-                        {[
-                          {
-                            label: "ストライク率",
-                            meaning: "1投目で10本すべて倒すことを「ストライク」という",
-                            formula: "計算式:ストライク数 ÷ 投球フレーム数(1ゲーム10フレーム。10フレーム目のボーナス球は分母に含めない)",
-                          },
-                          {
-                            label: "スペア率",
-                            meaning: "1投目で倒しきれなかった場合、2投目までの合計で10本すべて倒すことを「スペア」という",
-                            formula: "計算式:スペア数 ÷ スペアチャンス数(1投目がストライクでなかったフレームの数)",
-                          },
-                          {
-                            label: "オープンフレーム率",
-                            meaning: "ストライクにもスペアにもならなかったフレームを「オープンフレーム」という(公式ルール上の用語)",
-                            formula: "計算式:オープンフレーム数 ÷ 投球フレーム数",
-                          },
-                          {
-                            label: "スプリット率",
-                            meaning: "1投目でヘッドピン(1番ピン)が倒れ、かつ残ったピンが離れて立っている状態を「スプリット」という",
-                            formula: "計算式:スプリット数 ÷ 投球フレーム数",
-                          },
-                          {
-                            label: "スプリットカバー率",
-                            meaning: "スプリットになったフレームで、2投目に残りすべてを倒してスペアにできることを「スプリットカバー」という",
-                            formula: "計算式:スプリットカバー数 ÷ 1投目がスプリットになったフレームの数",
-                          },
-                          {
-                            label: "ガター率",
-                            meaning: "ピンに当たらず、レーン両端の溝(ガター)にボールが落ちることを「ガター」という",
-                            formula: "計算式:ガター数 ÷ 投球した全ボール数",
-                          },
-                          {
-                            label: "ファール率",
-                            meaning: "投球時にファールラインを踏み越える、またはライン上の設備に触れることを「ファール」という(0本として記録される)",
-                            formula: "計算式:ファール数 ÷ 投球した全ボール数",
-                          },
-                        ].map((row) => (
-                          <div key={row.label}>
-                            <div className="text-xs" style={{ color: COLORS.cream, fontWeight: 700 }}>{row.label}</div>
-                            <div className="text-xs" style={{ color: COLORS.cream }}>{row.meaning}</div>
-                            <div className="text-xs" style={{ color: COLORS.strike }}>{row.formula}</div>
-                          </div>
-                        ))}
-                      </div>
-                    </details>
 
                     <div className="rounded-xl p-3 border glass-card" style={{ borderColor: COLORS.oak }}>
                       <div className="text-xs mb-2 flex items-center gap-1" style={{ color: COLORS.strike }}>
                         <TrendingUp size={14} />
-                        {periodMode === "day" ? "本日のゲームごとのスコア" : "日ごとの平均スコア推移"}
+                        {periodMode === "day" ? "本日のゲームごとのスコア" : periodMode === "year" ? "月ごとの平均スコア推移" : "日ごとの平均スコア推移"}
                       </div>
                       <ResponsiveContainer width="100%" height={240}>
                         <LineChart data={chartData} margin={{ top: 20, right: 10, left: -20, bottom: 0 }}>
@@ -6432,6 +6450,66 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                           })}
                       </div>
                     )}
+
+                    {periodGames.length > 0 && (
+                      <details className="rounded-xl border glass-card overflow-hidden" style={{ borderColor: COLORS.oak }}>
+                        <summary className="px-3 py-2 cursor-pointer text-sm" style={{ color: COLORS.strike }}>
+                          ボール別の成績
+                        </summary>
+                        <BallRankings stats={ballStats} />
+                      </details>
+                    )}
+
+                    <details className="rounded-xl border glass-card overflow-hidden" style={{ borderColor: COLORS.oak }}>
+                      <summary className="px-3 py-2 cursor-pointer text-sm" style={{ color: COLORS.strike }}>
+                        用語と計算式
+                      </summary>
+                      <div className="px-3 pb-3 space-y-3" style={{ borderTop: `1px solid #EFE4CC`, paddingTop: 8 }}>
+                        {[
+                          {
+                            label: "ストライク率",
+                            meaning: "1投目で10本すべて倒すことを「ストライク」という",
+                            formula: "計算式:ストライク数 ÷ 投球フレーム数(1ゲーム10フレーム。10フレーム目のボーナス球は分母に含めない)",
+                          },
+                          {
+                            label: "スペア率",
+                            meaning: "1投目で倒しきれなかった場合、2投目までの合計で10本すべて倒すことを「スペア」という",
+                            formula: "計算式:スペア数 ÷ スペアチャンス数(1投目がストライクでなかったフレームの数)",
+                          },
+                          {
+                            label: "オープンフレーム率",
+                            meaning: "ストライクにもスペアにもならなかったフレームを「オープンフレーム」という(公式ルール上の用語)",
+                            formula: "計算式:オープンフレーム数 ÷ 投球フレーム数",
+                          },
+                          {
+                            label: "スプリット率",
+                            meaning: "1投目でヘッドピン(1番ピン)が倒れ、かつ残ったピンが離れて立っている状態を「スプリット」という",
+                            formula: "計算式:スプリット数 ÷ 投球フレーム数",
+                          },
+                          {
+                            label: "スプリットカバー率",
+                            meaning: "スプリットになったフレームで、2投目に残りすべてを倒してスペアにできることを「スプリットカバー」という",
+                            formula: "計算式:スプリットカバー数 ÷ 1投目がスプリットになったフレームの数",
+                          },
+                          {
+                            label: "ガター率",
+                            meaning: "ピンに当たらず、レーン両端の溝(ガター)にボールが落ちることを「ガター」という",
+                            formula: "計算式:ガター数 ÷ 投球した全ボール数",
+                          },
+                          {
+                            label: "ファール率",
+                            meaning: "投球時にファールラインを踏み越える、またはライン上の設備に触れることを「ファール」という(0本として記録される)",
+                            formula: "計算式:ファール数 ÷ 投球した全ボール数",
+                          },
+                        ].map((row) => (
+                          <div key={row.label}>
+                            <div className="text-xs" style={{ color: COLORS.cream, fontWeight: 700 }}>{row.label}</div>
+                            <div className="text-xs" style={{ color: COLORS.cream }}>{row.meaning}</div>
+                            <div className="text-xs" style={{ color: COLORS.strike }}>{row.formula}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
                   </>
                 )}
               </>
@@ -6558,21 +6636,38 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                   >
                     <div className="flex-1">
                       {editingBallNameId === b.id ? (
-                        <div className="flex items-center gap-2 mb-1">
+                        <div className="space-y-2 mb-2">
                           <input
                             type="text"
                             value={ballNameDraft}
                             onChange={(e) => setBallNameDraft(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") renameMyBall(b.id, ballNameDraft);
+                            }}
+                            enterKeyHint="done"
                             autoFocus
-                            className="flex-1 px-2 py-1 rounded border text-sm"
-                            style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                            className="w-full px-3 py-2 rounded border"
+                            style={{ borderColor: COLORS.oak, color: COLORS.ink, fontSize: 16 }}
                           />
-                          <button onClick={() => renameMyBall(b.id, ballNameDraft)} aria-label="保存">
-                            <Check size={16} style={{ color: COLORS.gold }} />
-                          </button>
-                          <button onClick={() => setEditingBallNameId(null)} aria-label="キャンセル">
-                            <X size={16} style={{ color: COLORS.strike }} />
-                          </button>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setEditingBallNameId(null)}
+                              className="flex-1 rounded-lg py-2 text-sm"
+                              style={{ border: "1px solid rgba(184, 153, 104, 0.6)", color: COLORS.strike, fontWeight: 700 }}
+                            >
+                              キャンセル
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => renameMyBall(b.id, ballNameDraft)}
+                              disabled={!ballNameDraft.trim()}
+                              className="flex-1 rounded-lg py-2 text-sm"
+                              style={primaryButtonStyle(!!ballNameDraft.trim())}
+                            >
+                              保存
+                            </button>
+                          </div>
                         </div>
                       ) : (
                         <div className="text-sm" style={{ color: COLORS.cream, fontWeight: 700 }}>
@@ -6758,22 +6853,39 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                     style={{ borderTop: i === 0 ? "none" : `1px solid #EFE4CC` }}
                   >
                     {editingShoeNameId === s.id ? (
-                      <div className="flex-1 flex items-center gap-2">
-                        <input
-                          type="text"
-                          value={shoeNameDraft}
-                          onChange={(e) => setShoeNameDraft(e.target.value)}
-                          autoFocus
-                          className="flex-1 px-2 py-1 rounded border text-sm"
-                          style={{ borderColor: COLORS.oak, color: COLORS.ink }}
-                        />
-                        <button onClick={() => renameMyShoe(s.id, shoeNameDraft)} aria-label="保存">
-                          <Check size={16} style={{ color: COLORS.gold }} />
-                        </button>
-                        <button onClick={() => setEditingShoeNameId(null)} aria-label="キャンセル">
-                          <X size={16} style={{ color: COLORS.strike }} />
-                        </button>
-                      </div>
+                      <div className="flex-1 space-y-2">
+                          <input
+                            type="text"
+                            value={shoeNameDraft}
+                            onChange={(e) => setShoeNameDraft(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") renameMyShoe(s.id, shoeNameDraft);
+                            }}
+                            enterKeyHint="done"
+                            autoFocus
+                            className="w-full px-3 py-2 rounded border"
+                            style={{ borderColor: COLORS.oak, color: COLORS.ink, fontSize: 16 }}
+                          />
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setEditingShoeNameId(null)}
+                              className="flex-1 rounded-lg py-2 text-sm"
+                              style={{ border: "1px solid rgba(184, 153, 104, 0.6)", color: COLORS.strike, fontWeight: 700 }}
+                            >
+                              キャンセル
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => renameMyShoe(s.id, shoeNameDraft)}
+                              disabled={!shoeNameDraft.trim()}
+                              className="flex-1 rounded-lg py-2 text-sm"
+                              style={primaryButtonStyle(!!shoeNameDraft.trim())}
+                            >
+                              保存
+                            </button>
+                          </div>
+                        </div>
                     ) : (
                       <>
                         <div className="text-sm" style={{ color: COLORS.cream, fontWeight: 700 }}>{s.label}</div>
