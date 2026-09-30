@@ -1762,6 +1762,131 @@ function Celebration({ items, onClose }) {
 // "(ワースト)" lists put the worst first. Empty places show 「ー 該当なし」.
 const RANK_SLOTS = 3;
 
+// ポイント評価: 1位〜3位 = 3・2・1点, added up across rankings. Computed,
+// not AI (no cost). For ワースト measures the order is flipped so the BEST
+// result gets the points; ゲーム数 is left out (usage, not performance);
+// equal values share a place.
+function rankPoints(items, value, higherIsBetter) {
+  const withVal = items.map((x) => ({ x, v: value(x) })).filter((r) => r.v !== null && Number.isFinite(r.v));
+  const better = (a, b) => (higherIsBetter ? a > b + 1e-9 : a < b - 1e-9);
+  return withVal.map((r) => {
+    const place = 1 + withVal.filter((o) => better(o.v, r.v)).length;
+    return { x: r.x, points: place <= 3 ? 4 - place : 0 };
+  });
+}
+
+// Each group is compared only against its own kind — sets with sets, main
+// balls with main balls, spare balls with spare balls — so everyone competes
+// in the same rankings for the same maximum. A ranking where any compared item
+// has no data (e.g. a spare ball that never faced a split) gives nobody points,
+// so no ball loses points it never had the chance to earn. The maximum stays
+// fixed (12 / 9 / 6).
+// Always names ONE winner: on equal points, the higher key number wins
+// (tiebreak — average / strike rate / spare rate), then the one used in more games.
+function scoreGroup(items, measures, keyOf, nameOf, tiebreak) {
+  if (!items.length) return null;
+  // A single option would "win" every ranking by default — not a real result.
+  if (items.length < 2) return { single: true };
+  const acc = new Map(items.map((x) => [keyOf(x), { x, name: nameOf(x), points: 0 }]));
+  let counted = 0;
+  for (const [value, higherIsBetter] of measures) {
+    if (items.some((x) => value(x) === null || !Number.isFinite(value(x)))) continue;
+    counted += 1;
+    for (const { x, points } of rankPoints(items, value, higherIsBetter)) acc.get(keyOf(x)).points += points;
+  }
+  if (!counted) return null;
+  const tb = (r) => {
+    const v = tiebreak ? tiebreak(r.x) : null;
+    return v === null || !Number.isFinite(v) ? -Infinity : v;
+  };
+  const [top] = [...acc.values()].sort(
+    (a, b) => b.points - a.points || tb(b) - tb(a) || (b.x.games?.length || 0) - (a.x.games?.length || 0)
+  );
+  // 満点 is fixed: every ranking of the category × 3, whether or not it could
+  // be scored this time (a ranking without data simply gives everyone 0).
+  return { points: top.points, max: measures.length * 3, names: [top.name] };
+}
+
+function computeBallPoints({ sets, mains, spares }, setName) {
+  const ratio = (a, b) => (b > 0 ? a / b : null);
+  return {
+    set: scoreGroup(
+      sets,
+      [
+        [(s) => s.stats.avg, true],
+        [(s) => s.stats.highGame, true],
+        [(s) => s.stats.lowGame, true], // ローゲーム: a higher low game is better
+        [(s) => ratio(s.stats.openFrameCount, s.stats.frameCount), false], // fewer open frames is better
+      ],
+      (s) => s.key,
+      setName,
+      (s) => s.stats.avg
+    ),
+    main: scoreGroup(
+      mains,
+      [
+        [(m) => ratio(m.stats.strikeCount, m.stats.frameCount), true],
+        [(m) => ratio(m.roles.splits, m.roles.firstBalls), false],
+        [(m) => ratio(m.roles.firstGutters, m.roles.firstBalls), false],
+      ],
+      (b) => b.key,
+      (b) => b.name,
+      (m) => ratio(m.stats.strikeCount, m.stats.frameCount)
+    ),
+    spare: scoreGroup(
+      spares,
+      [
+        [(s) => ratio(s.stats.spareCount, s.stats.spareChances), true],
+        [(s) => ratio(s.roles.splitCovers, s.roles.splitChances), true],
+      ],
+      (b) => b.key,
+      (b) => b.name,
+      (s) => ratio(s.stats.spareCount, s.stats.spareChances)
+    ),
+  };
+}
+
+// Builds the 総合評価 cards: for sets / main balls / spare balls, the point
+// winner, its key number (average / strike rate / spare rate), and the
+// runner-up on that number for comparison.
+const EVAL_AVG_GAP = 5; // pins of average
+const EVAL_RATE_GAP = 5; // percentage points
+
+function buildEvaluationCards({ sets, mains, spares }, points, setName) {
+  const pct = (a, b) => (b ? Math.round((a / b) * 100) : null);
+  const card = (key, label, pts, items, nameOf, metricLabel, valueOf, unit) => {
+    if (!pts) return null;
+    if (pts.single) return { key, label, single: true };
+    const winner = items.find((x) => nameOf(x) === pts.names[0]);
+    const v = winner ? valueOf(winner) : null;
+    const second = items
+      .filter((x) => x !== winner && valueOf(x) !== null)
+      .sort((a, b) => valueOf(b) - valueOf(a))[0];
+    return {
+      key,
+      label,
+      name: pts.names[0],
+      points: pts.points,
+      max: pts.max,
+      metric: {
+        label: metricLabel,
+        value: v,
+        unit,
+        // the runner-up is shown only when the winner is really 1st on this
+        // number, so the word 「2位」 is always true
+        second: v !== null && second && v >= valueOf(second) ? { name: nameOf(second), value: valueOf(second) } : null,
+      },
+    };
+  };
+  return {
+    cards: [
+      card("set", "組み合わせ", points.set, sets, setName, "アベレージ", (s) => s.stats.avg, ""),
+      card("main", "メインボール", points.main, mains, (m) => m.name, "ストライク率", (m) => pct(m.stats.strikeCount, m.stats.frameCount), "%"),
+      card("spare", "スペアボール", points.spare, spares, (s) => s.name, "スペア率", (s) => pct(s.stats.spareCount, s.stats.spareChances), "%"),
+    ].filter(Boolean),
+  };
+}
+
 function BallRankings({ stats }) {
   const setName = (s) => (s.spare ? `${s.main.name}＋${s.spare.name}` : s.main.name);
   const rate = (a, b) => (b ? Math.round((a / b) * 100) : 0);
@@ -1805,6 +1930,8 @@ function BallRankings({ stats }) {
   ];
 
   const medal = ["#E0A800", "#C9CED6", "#C08457"];
+  const points = computeBallPoints({ sets, mains, spares }, setName);
+  const evaluation = buildEvaluationCards({ sets, mains, spares }, points, setName);
   if (!sets.length && !mains.length && !spares.length) {
     return (
       <div className="px-3 pb-4" style={{ color: COLORS.strike, fontSize: 13, lineHeight: 1.7, opacity: 0.85 }}>
@@ -1818,6 +1945,73 @@ function BallRankings({ stats }) {
   }
   return (
     <div className="px-3 pb-3 space-y-3">
+      {evaluation.cards.length > 0 && (
+        <div className="space-y-2">
+          <div>
+            <div className="flex items-center gap-2" style={{ color: COLORS.gold, fontWeight: 700, fontSize: 15 }}>
+              <Trophy size={16} /> 総合評価
+            </div>
+            <div style={{ color: COLORS.strike, opacity: 0.65, fontSize: 11.5, marginTop: 2 }}>
+              ランキング順位の合計点(1位3点・2位2点・3位1点)
+            </div>
+          </div>
+
+          {evaluation.cards.map((cd) => {
+            // Same trophy for every category: each card is that category's 1位.
+            const icon = <Trophy size={18} style={{ color: COLORS.gold }} />;
+            return (
+              <div key={cd.key} className="rounded-lg p-3" style={{ background: "rgba(10, 16, 34, 0.55)", border: "1px solid rgba(224,168,0,0.35)" }}>
+                <div className="flex items-center gap-3">
+                  <div
+                    className="flex items-center justify-center rounded-full"
+                    style={{ width: 34, height: 34, flexShrink: 0, border: `1.5px solid ${COLORS.gold}`, background: "rgba(224,168,0,0.1)" }}
+                  >
+                    {icon}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 11 }}>
+                      <span style={{ color: COLORS.strike, opacity: 0.65 }}>{cd.label}</span>
+                      {!cd.single && <span style={{ color: COLORS.gold, fontWeight: 700 }}> 1位</span>}
+                    </div>
+                    <div style={{ color: COLORS.strike, fontWeight: 700, fontSize: 14.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {cd.single ? "比較対象なし" : cd.name}
+                    </div>
+                  </div>
+                  {!cd.single && (
+                    <div className="text-right" style={{ flexShrink: 0, lineHeight: 1.1 }}>
+                      <div>
+                        <span style={{ color: COLORS.gold, fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 24 }}>{cd.points}</span>
+                        <span style={{ color: COLORS.gold, fontSize: 12, fontWeight: 700 }}>点</span>
+                      </div>
+                      <div style={{ color: COLORS.strike, opacity: 0.55, fontSize: 10.5 }}>{cd.max}点満点</div>
+                    </div>
+                  )}
+                </div>
+                {!cd.single && cd.metric.value !== null && (
+                  <div
+                    className="flex items-end justify-between gap-2"
+                    style={{ marginTop: 10, paddingTop: 8, borderTop: "1px solid rgba(224,168,0,0.18)" }}
+                  >
+                    <div style={{ color: COLORS.strike, whiteSpace: "nowrap" }}>
+                      <span style={{ opacity: 0.65, fontSize: 12 }}>{cd.metric.label} </span>
+                      <span style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 17 }}>
+                        {cd.metric.value}
+                        {cd.metric.unit}
+                      </span>
+                    </div>
+                    {cd.metric.second && (
+                      <div style={{ color: COLORS.strike, opacity: 0.6, fontSize: 11.5, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        2位 {cd.metric.second.name} {cd.metric.second.value}
+                        {cd.metric.unit}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
       {rankings.map((rk) => {
         const rows = rk.rows.slice(0, RANK_SLOTS);
         while (rows.length < RANK_SLOTS) rows.push(null);
@@ -1870,9 +2064,12 @@ function BallRankings({ stats }) {
         );
       })}
       <div style={{ color: COLORS.strike, opacity: 0.6, fontSize: 11, lineHeight: 1.6 }}>
-        ※ガターは1投目(メインボール)の投球のみで集計しています
-        <br />※3ゲーム未満のボール・ボールセットは、統計的な信頼性が低いため、ランキングの対象外としています
-        <br />※2個目のボールを使用していないゲームは、メインボールでスペアを取ったものとして集計しています
+        ※点数:各ランキングの1位・2位・3位に3点・2点・1点(ワーストは良い順、ゲーム数は対象外)
+        <br />※同点時:アベレージ(メインはストライク率、スペアはスペア率)が高い方、次にゲーム数が多い方を表示
+        <br />※データがないランキング(例:スプリットが一度もない)は全ボール0点
+        <br />※ガター:1投目(メインボール)のみで集計
+        <br />※3ゲーム未満のボール・組み合わせは対象外
+        <br />※2個目なしのゲームは、メインボールをスペアボールとして集計
       </div>
     </div>
   );
