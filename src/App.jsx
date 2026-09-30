@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Camera, History, BarChart3, Loader2, Check, X, Pencil, Trophy, TrendingUp, Calendar, CircleDot, Hash, User, Target, Trash2, ShieldCheck, CircleCheck, MessageCircle, Send, Settings, Crop, ImageOff, UserX, Bell, ImagePlus, ChevronDown, Download } from "lucide-react";
+import { Camera, History, BarChart3, Loader2, Check, X, Pencil, Trophy, TrendingUp, Calendar, CircleDot, Hash, User, Target, Trash2, ShieldCheck, CircleCheck, MessageCircle, Send, Settings, Crop, ImageOff, UserX, Bell, ImagePlus, ChevronDown, Download, MapPin } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { auth } from "./firebaseClient.js";
 import { noteLocalWrite, startSync, stopSync, scheduleFlush } from "./sync.js";
@@ -1750,6 +1750,144 @@ function AchievementIcon({ kind }) {
   return <Trophy size={22} style={s} />;
 }
 
+// ボウリング場 picker: centers used before (most recent first) in a dropdown,
+// plus 「新しいボウリング場を入力」 to type one that isn't listed yet.
+const NEW_CENTER = "__new__";
+function CenterPicker({ value, onChange, known }) {
+  const [typing, setTyping] = useState(false);
+  const listed = known.includes(value);
+  const showInput = typing || (value && !listed);
+  return (
+    <div className="space-y-2">
+      <select
+        value={showInput ? NEW_CENTER : value || ""}
+        onChange={(e) => {
+          if (e.target.value === NEW_CENTER) {
+            setTyping(true);
+            onChange("");
+          } else {
+            setTyping(false);
+            onChange(e.target.value);
+          }
+        }}
+        className="w-full px-3 py-2 rounded border"
+        style={{ borderColor: COLORS.oak, color: COLORS.ink, fontSize: 16 }}
+      >
+        <option value="">ボウリング場を選択</option>
+        {known.map((k) => (
+          <option key={k} value={k}>
+            {k}
+          </option>
+        ))}
+        <option value={NEW_CENTER}>+ 新しいボウリング場を入力</option>
+      </select>
+      {showInput && (
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="例: 〇〇ボウル"
+          autoFocus={typing}
+          className="w-full px-3 py-2 rounded border"
+          style={{ borderColor: COLORS.oak, color: COLORS.ink, fontSize: 16 }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Every center the user has played at, most recently used first (plus the
+// ホームセンター from settings), so they can be picked instead of typed again.
+function knownCentersFrom(games, homeCenter) {
+  const seen = new Map();
+  [...games]
+    .sort((a, b) => String(b.date).localeCompare(String(a.date)) || (b.createdAt || 0) - (a.createdAt || 0))
+    .forEach((g) => {
+      const n = (g.center || "").trim();
+      if (n && !seen.has(n)) seen.set(n, true);
+    });
+  const h = (homeCenter || "").trim();
+  if (h && !seen.has(h)) seen.set(h, true);
+  return [...seen.keys()];
+}
+
+// 記録タブ「ボウリング場別の成績」: each center with 3+ games in the period,
+// highest average first. Same 3-game rule as the ball analysis.
+function CenterStats({ games }) {
+  const groups = new Map();
+  for (const g of games) {
+    const n = (g.center || "").trim();
+    if (!n) continue;
+    if (!groups.has(n)) groups.set(n, []);
+    groups.get(n).push(g);
+  }
+  const rows = [...groups.entries()]
+    .map(([name, list]) => ({ name, list, stats: computeGameSetStats(list) }))
+    .filter((r) => r.list.length >= 3)
+    .sort((a, b) => b.stats.avg - a.stats.avg || b.list.length - a.list.length);
+  const pct = (v) => `${v}%`;
+  const medal = ["#E0A800", "#C9CED6", "#C08457"];
+  return (
+    <div className="px-3 pb-3 space-y-2">
+      {rows.length === 0 ? (
+        <div style={{ color: COLORS.strike, opacity: 0.8, fontSize: 12.5, lineHeight: 1.7 }}>
+          ※この期間に3ゲーム以上記録したボウリング場はありません
+        </div>
+      ) : (
+        rows.map((r, i) => (
+          <div key={r.name} className="rounded-lg p-3" style={{ background: "rgba(10, 16, 34, 0.55)", border: "1px solid rgba(224,168,0,0.35)" }}>
+            <div className="flex items-center gap-2">
+              <span
+                style={{
+                  color: i < 3 ? medal[i] : "rgba(245,241,228,0.6)",
+                  fontFamily: "'Oswald', sans-serif",
+                  fontWeight: 700,
+                  fontSize: 14,
+                  flexShrink: 0,
+                }}
+              >
+                {i + 1}位
+              </span>
+              <MapPin size={14} style={{ color: COLORS.gold, flexShrink: 0 }} />
+              <span style={{ color: COLORS.strike, fontWeight: 700, fontSize: 14.5, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {r.name}
+              </span>
+              <span style={{ color: COLORS.strike, opacity: 0.65, fontSize: 11.5, flexShrink: 0 }}>{r.list.length}ゲーム</span>
+            </div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(5, 1fr)",
+                marginTop: 10,
+                paddingTop: 8,
+                borderTop: "1px solid rgba(224,168,0,0.18)",
+              }}
+            >
+              {[
+                ["アベレージ", `${r.stats.avg}`],
+                ["ハイ", `${r.stats.highGame}`],
+                ["ロー", `${r.stats.lowGame}`],
+                ["ストライク", pct(r.stats.strikeRate)],
+                ["スペア", pct(r.stats.spareRate)],
+              ].map(([k, v], j) => (
+                <div key={k} className="text-center" style={{ borderLeft: j ? "1px solid rgba(224,168,0,0.15)" : "none", minWidth: 0 }}>
+                  <div style={{ color: COLORS.strike, opacity: 0.6, fontSize: 10, whiteSpace: "nowrap" }}>{k}</div>
+                  <div style={{ color: COLORS.strike, fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 15 }}>{v}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))
+      )}
+      <div style={{ color: COLORS.strike, opacity: 0.6, fontSize: 11, lineHeight: 1.6 }}>
+        ※アベレージの高い順に表示
+        <br />※3ゲーム未満のボウリング場は対象外
+        <br />※ボウリング場が未設定のゲームは対象外
+      </div>
+    </div>
+  );
+}
+
 // Centered popup used for prompts that need the user's attention.
 function AppModal({ title, children, footer }) {
   return (
@@ -1938,7 +2076,7 @@ function buildEvaluationCards({ sets, mains, spares }, points, setName) {
         ["ロー", `${s.stats.lowGame}`],
         ["オープン", pct(s.stats.openFrameCount, s.stats.frameCount)],
       ]),
-      card("main", "メインボール", points.main, mains, (m) => m.name, (m) => [
+      card("main", "1stボール", points.main, mains, (m) => m.name, (m) => [
         ["ストライク", pct(m.stats.strikeCount, m.stats.frameCount)],
         ["スプリット", pct(m.roles.splits, m.roles.firstBalls)],
         ["ガター", pct(m.roles.firstGutters, m.roles.firstBalls)],
@@ -1975,22 +2113,22 @@ function BallRankings({ stats }) {
   const spares = enough(stats.spares);
 
   const rankings = [
-    { title: "ゲーム数", unit: "ボールセット", rows: byValue(sets, (s) => s.games.length, (v) => `${v}ゲーム`) },
-    { title: "アベレージ", unit: "ボールセット", rows: byValue(sets, (s) => s.stats.avg, (v) => `${v}`) },
-    { title: "ハイゲーム", unit: "ボールセット", rows: byValue(sets, (s) => s.stats.highGame, (v) => `${v}`) },
-    { title: "ローゲーム(ワースト)", unit: "ボールセット", rows: byValue(sets, (s) => s.stats.lowGame, (v) => `${v}`, { asc: true }) },
-    { title: "ストライク", unit: "メインボール", rows: byRate(mains, (m) => m.stats.strikeCount, (m) => m.stats.frameCount) },
+    { title: "ゲーム数", unit: "組み合わせ", rows: byValue(sets, (s) => s.games.length, (v) => `${v}ゲーム`) },
+    { title: "アベレージ", unit: "組み合わせ", rows: byValue(sets, (s) => s.stats.avg, (v) => `${v}`) },
+    { title: "ハイゲーム", unit: "組み合わせ", rows: byValue(sets, (s) => s.stats.highGame, (v) => `${v}`) },
+    { title: "ローゲーム(ワースト)", unit: "組み合わせ", rows: byValue(sets, (s) => s.stats.lowGame, (v) => `${v}`, { asc: true }) },
+    { title: "ストライク", unit: "1stボール", rows: byRate(mains, (m) => m.stats.strikeCount, (m) => m.stats.frameCount) },
     { title: "スペア", unit: "スペアボール", rows: byRate(spares, (s) => s.stats.spareCount, (s) => s.stats.spareChances) },
     {
       title: "オープンフレーム(ワースト)",
-      unit: "ボールセット",
+      unit: "組み合わせ",
       rows: byRate(sets, (s) => s.stats.openFrameCount, (s) => s.stats.frameCount),
     },
-    { title: "スプリット(ワースト)", unit: "メインボール", rows: byRate(mains, (m) => m.roles.splits, (m) => m.roles.firstBalls) },
+    { title: "スプリット(ワースト)", unit: "1stボール", rows: byRate(mains, (m) => m.roles.splits, (m) => m.roles.firstBalls) },
     { title: "スプリットカバー", unit: "スペアボール", rows: byRate(spares, (s) => s.roles.splitCovers, (s) => s.roles.splitChances) },
     {
       title: "ガター(ワースト)",
-      unit: "メインボール",
+      unit: "1stボール",
       rows: byRate(mains, (m) => m.roles.firstGutters, (m) => m.roles.firstBalls),
     },
   ];
@@ -2001,9 +2139,9 @@ function BallRankings({ stats }) {
   if (!sets.length && !mains.length && !spares.length) {
     return (
       <div className="px-3 pb-4" style={{ color: COLORS.strike, fontSize: 13, lineHeight: 1.7, opacity: 0.85 }}>
-        ※この期間に3ゲーム以上使用したボール・ボールセットはありません
+        ※この期間に3ゲーム以上使用したボール・組み合わせはありません
         <br />
-        ※3ゲーム未満のボール・ボールセットは、統計的な信頼性が低いため、ランキングの対象外としています
+        ※3ゲーム未満のボール・組み合わせは、統計的な信頼性が低いため、ランキングの対象外としています
         <br />
         ※期間を「月」「年」「期間指定」に広げると表示される場合があります
       </div>
@@ -2133,11 +2271,11 @@ function BallRankings({ stats }) {
       })}
       <div style={{ color: COLORS.strike, opacity: 0.6, fontSize: 11, lineHeight: 1.6 }}>
         ※点数:各ランキングの1位・2位・3位に3点・2点・1点(ワーストは良い順、ゲーム数は対象外)
-        <br />※同点時:アベレージ(メインはストライク率、スペアはスペア率)が高い方、次にゲーム数が多い方を表示
+        <br />※同点時:アベレージ(1stボールはストライク率、スペアボールはスペア率)が高い方、次にゲーム数が多い方を表示
         <br />※データがないランキング(例:スプリットが一度もない)は全ボール0点
-        <br />※ガター:1投目(メインボール)のみで集計
+        <br />※ガター:1stボールの投球のみで集計
         <br />※3ゲーム未満のボール・組み合わせは対象外
-        <br />※2個目なしのゲームは、メインボールをスペアボールとして集計
+        <br />※スペアボールを使用していないゲームは、1stボールをスペアボールとして集計
       </div>
     </div>
   );
@@ -4087,6 +4225,9 @@ export default function StrikeLog() {
   const [shoeType, setShoeType] = useState("rental"); // "rental" | "own"
   const [shoeTouched, setShoeTouched] = useState(false);
   const [ballTouched, setBallTouched] = useState(false); // manual ball change this session — don't auto-fill over it
+  const [center, setCenter] = useState(""); // ボウリング場 for the game being recorded
+  const [centerTouched, setCenterTouched] = useState(false);
+  const [editCenter, setEditCenter] = useState("");
   const [selectedShoeId, setSelectedShoeId] = useState(null);
   const [myShoes, setMyShoes] = useState([]); // [{ id, type, label }]
   const [editingShoeNameId, setEditingShoeNameId] = useState(null);
@@ -4233,6 +4374,18 @@ export default function StrikeLog() {
       setSelectedShoeId(sameDayGames[0].shoe.shoeRegistryId || null);
     }
   }, [gameDate, games, shoeTouched]);
+
+  // ボウリング場 default: the one used earlier the same day, else the
+  // ホームセンター, else the most recent one. A manual choice always wins.
+  useEffect(() => {
+    if (centerTouched) return;
+    const byRecent = [...games].sort(
+      (a, b) => String(b.date).localeCompare(String(a.date)) || (b.createdAt || 0) - (a.createdAt || 0)
+    );
+    const sameDay = byRecent.find((g) => g.date === gameDate && g.center);
+    const last = byRecent.find((g) => g.center);
+    setCenter((sameDay && sameDay.center) || homeCenter || (last && last.center) || "");
+  }, [games, gameDate, homeCenter, centerTouched]);
 
   // For a 2nd+ game on the same day, start with the same balls (all of them —
   // 2nd, 3rd and on included) as the most recent game recorded that day.
@@ -4978,10 +5131,11 @@ export default function StrikeLog() {
 
   const saveGame = async () => {
     if (!pendingResult || !pendingResult.games?.length) return;
-    // Every ball slot and (for マイシューズ) the shoes must be chosen first.
+    // The ボウリング場, every ball slot and (for マイシューズ) the shoes must be chosen first.
     const missing = [];
-    if (!selectedBallId || !myBalls.some((b) => b.id === selectedBallId)) missing.push("1個目のボール");
-    if (useSecondBall && (!selectedBallId2 || !myBalls.some((b) => b.id === selectedBallId2))) missing.push("2個目のボール");
+    if (!center.trim()) missing.push("ボウリング場");
+    if (!selectedBallId || !myBalls.some((b) => b.id === selectedBallId)) missing.push("1stボール");
+    if (useSecondBall && (!selectedBallId2 || !myBalls.some((b) => b.id === selectedBallId2))) missing.push("スペアボール");
     extraBalls.forEach((eb, i) => {
       if (!eb.id || !myBalls.some((b) => b.id === eb.id)) missing.push(`${i + 3}個目のボール`);
     });
@@ -5039,6 +5193,7 @@ export default function StrikeLog() {
       ball2,
       extraBalls: extraBallsData,
       shoe,
+      center: center.trim() || null,
       createdAt: Date.now() + idx,
     }));
     reportAnalysisOutcome({
@@ -5056,6 +5211,7 @@ export default function StrikeLog() {
     await saveShoeConfig({ shoeType });
     setShoeTouched(false);
     setBallTouched(false);
+    setCenterTouched(false);
     setPendingResult(null);
     setImagePreview(null);
     setImageMeta(null);
@@ -5166,6 +5322,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
   // but operates on a game already saved in history) ----------
   const startEditGame = (g) => {
     setEditingGameId(g.id);
+    setEditCenter(g.center || "");
     setEditFrames(g.frames || []);
     setEditActiveCell(null);
     setEditSplitPending(false);
@@ -5293,6 +5450,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
               ball2,
               extraBalls: editExtraBallsData,
               shoe,
+              center: editCenter.trim() || null,
             }
           : g
       )
@@ -5414,8 +5572,9 @@ function getNextRollCell(frameIdx, rollIdx, value) {
             <button
               type="button"
               onClick={() => {
+                const target = saveBlockItems[0] === "ボウリング場" ? "scan-center-card" : "scan-ball-card";
                 setSaveBlockItems(null);
-                document.getElementById("scan-ball-card")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                document.getElementById(target)?.scrollIntoView({ behavior: "smooth", block: "start" });
               }}
               className="w-full rounded-lg py-3"
               style={primaryButtonStyle()}
@@ -5433,7 +5592,13 @@ function getNextRollCell(frameIdx, rollIdx, value) {
             ))}
           </div>
           <div style={{ color: COLORS.strike, opacity: 0.65, fontSize: 11.5, marginTop: 10, lineHeight: 1.6 }}>
-            ※選択肢にない場合は、「設定」タブでボール・シューズを登録してください
+            ※ボール・シューズが選択肢にない場合は、「設定」タブで登録してください
+            {saveBlockItems.includes("ボウリング場") && (
+              <>
+                <br />
+                ※ボウリング場が選択肢にない場合は、「+ 新しいボウリング場を入力」から追加できます
+              </>
+            )}
           </div>
         </AppModal>
       )}
@@ -5470,7 +5635,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                   <div className="flex gap-2" style={{ marginTop: 6 }}>
                     {[
                       { key: "strike", label: "1stボール" },
-                      { key: "spare", label: "スペア" },
+                      { key: "spare", label: "スペアボール" },
                     ].map((o) => (
                       <button
                         key={o.key}
@@ -5880,6 +6045,20 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                   )}
                 </div>
 
+                <div id="scan-center-card" className="glass-card rounded-xl p-3 space-y-2">
+                  <div className="text-sm flex items-center gap-2" style={{ color: COLORS.cream }}>
+                    <MapPin size={16} /> ボウリング場
+                  </div>
+                  <CenterPicker
+                    value={center}
+                    onChange={(v) => {
+                      setCenterTouched(true);
+                      setCenter(v);
+                    }}
+                    known={knownCentersFrom(games, homeCenter)}
+                  />
+                </div>
+
                 <div
                   id="scan-ball-card"
                   className="glass-card rounded-xl p-3 space-y-3"
@@ -5924,7 +6103,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                           .filter((b) => (b.type || "own") === ballType)
                           .map((b) => (
                             <option key={b.id} value={b.id}>
-                              {b.label}({b.weight}lb{b.thumbless ? "・サムレス" : ""}){b.role === "strike" ? " 1st" : b.role === "spare" ? " スペア" : ""}
+                              {b.label}({b.weight}lb{b.thumbless ? "・サムレス" : ""}){b.role === "strike" ? "・1stボール" : b.role === "spare" ? "・スペアボール" : ""}
                             </option>
                           ))}
                       </select>
@@ -5934,7 +6113,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                   {useSecondBall && (
                     <div className="space-y-2" style={{ borderTop: `1px solid rgba(224, 168, 0, 0.3)`, paddingTop: 10 }}>
                       <div className="flex items-center justify-between">
-                        <span className="text-xs" style={{ color: COLORS.oak }}>2個目のボール</span>
+                        <span className="text-xs" style={{ color: COLORS.oak }}>スペアボール</span>
                         <button
                           type="button"
                           onClick={() => {
@@ -5945,7 +6124,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                             setSelectedBallId2(null);
                             setExtraBalls([]);
                           }}
-                          aria-label="2つ目のボールを削除"
+                          aria-label="スペアボールを削除"
                         >
                           <X size={14} style={{ color: COLORS.strike }} />
                         </button>
@@ -5984,7 +6163,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                             .filter((b) => (b.type || "own") === ballType2)
                             .map((b) => (
                               <option key={b.id} value={b.id}>
-                                {b.label}({b.weight}lb{b.thumbless ? "・サムレス" : ""}){b.role === "strike" ? " 1st" : b.role === "spare" ? " スペア" : ""}
+                                {b.label}({b.weight}lb{b.thumbless ? "・サムレス" : ""}){b.role === "strike" ? "・1stボール" : b.role === "spare" ? "・スペアボール" : ""}
                               </option>
                             ))}
                         </select>
@@ -6035,7 +6214,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                               .filter((b) => (b.type || "own") === sel.type)
                               .map((b) => (
                                 <option key={b.id} value={b.id}>
-                                  {b.label}({b.weight}lb{b.thumbless ? "・サムレス" : ""}){b.role === "strike" ? " 1st" : b.role === "spare" ? " スペア" : ""}
+                                  {b.label}({b.weight}lb{b.thumbless ? "・サムレス" : ""}){b.role === "strike" ? "・1stボール" : b.role === "spare" ? "・スペアボール" : ""}
                                 </option>
                               ))}
                           </select>
@@ -6218,6 +6397,13 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                     <span className="text-xs" style={{ color: COLORS.strike }}>ゲーム目</span>
                   </div>
 
+                  <div>
+                    <div className="text-xs mb-1 flex items-center gap-1" style={{ color: COLORS.oak }}>
+                      <MapPin size={12} /> ボウリング場
+                    </div>
+                    <CenterPicker value={editCenter} onChange={setEditCenter} known={knownCentersFrom(games, homeCenter)} />
+                  </div>
+
                   <ScoreSheet frames={editFrames} editable activeCell={editActiveCell} onCellTap={handleEditCellTap} />
 
                   {editActiveCell && (
@@ -6269,7 +6455,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                             .filter((b) => (b.type || "own") === editBallType)
                             .map((b) => (
                               <option key={b.id} value={b.id}>
-                                {b.label}({b.weight}lb{b.thumbless ? "・サムレス" : ""}){b.role === "strike" ? " 1st" : b.role === "spare" ? " スペア" : ""}
+                                {b.label}({b.weight}lb{b.thumbless ? "・サムレス" : ""}){b.role === "strike" ? "・1stボール" : b.role === "spare" ? "・スペアボール" : ""}
                               </option>
                             ))}
                         </select>
@@ -6279,7 +6465,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                     {editUseSecondBall && (
                       <div className="space-y-2" style={{ borderTop: `1px solid rgba(224, 168, 0, 0.3)`, paddingTop: 10 }}>
                         <div className="flex items-center justify-between">
-                          <div className="text-xs" style={{ color: COLORS.oak }}>2個目のボール</div>
+                          <div className="text-xs" style={{ color: COLORS.oak }}>スペアボール</div>
                           <button type="button" onClick={() => setEditUseSecondBall(false)} aria-label="削除">
                             <X size={14} style={{ color: COLORS.oak }} />
                           </button>
@@ -6316,7 +6502,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                               .filter((b) => (b.type || "own") === editBallType2)
                               .map((b) => (
                                 <option key={b.id} value={b.id}>
-                                  {b.label}({b.weight}lb{b.thumbless ? "・サムレス" : ""}){b.role === "strike" ? " 1st" : b.role === "spare" ? " スペア" : ""}
+                                  {b.label}({b.weight}lb{b.thumbless ? "・サムレス" : ""}){b.role === "strike" ? "・1stボール" : b.role === "spare" ? "・スペアボール" : ""}
                                 </option>
                               ))}
                           </select>
@@ -6365,7 +6551,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                                 .filter((b) => (b.type || "own") === sel.type)
                                 .map((b) => (
                                   <option key={b.id} value={b.id}>
-                                    {b.label}({b.weight}lb{b.thumbless ? "・サムレス" : ""}){b.role === "strike" ? " 1st" : b.role === "spare" ? " スペア" : ""}
+                                    {b.label}({b.weight}lb{b.thumbless ? "・サムレス" : ""}){b.role === "strike" ? "・1stボール" : b.role === "spare" ? "・スペアボール" : ""}
                                   </option>
                                 ))}
                             </select>
@@ -6489,7 +6675,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                     {g.ball2.label ? g.ball2.label : g.ball2.type === "own" ? "マイボール" : "ハウスボール"}
                     {g.ball2.weight ? ` ${g.ball2.weight}lb` : ""}
                     {g.ball2.thumbless ? " ・ サムレス" : ""}
-                    <span style={{ color: COLORS.strike }}>(2つ目)</span>
+                    <span style={{ color: COLORS.strike }}>(スペアボール)</span>
                   </div>
                 )}
                 {(g.extraBalls || []).map((eb, ebIdx) => (
@@ -6498,9 +6684,15 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                     {eb.label ? eb.label : eb.type === "own" ? "マイボール" : "ハウスボール"}
                     {eb.weight ? ` ${eb.weight}lb` : ""}
                     {eb.thumbless ? " ・ サムレス" : ""}
-                    <span style={{ color: COLORS.strike }}>({ebIdx + 3}つ目)</span>
+                    <span style={{ color: COLORS.strike }}>({ebIdx + 3}個目のボール)</span>
                   </div>
                 ))}
+                {g.center && (
+                  <div className="flex items-center gap-1" style={{ color: COLORS.strike, fontSize: 13 }}>
+                    <MapPin size={11} />
+                    {g.center}
+                  </div>
+                )}
                 {g.shoe && g.shoe.type && (
                   <div className="mb-2 flex items-center gap-1" style={{ color: COLORS.strike, fontSize: 13 }}>
                     <CircleDot size={11} />
@@ -6885,6 +7077,15 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                       </details>
                     )}
 
+                    {periodGames.length > 0 && (
+                      <details className="rounded-xl border glass-card overflow-hidden" style={{ borderColor: COLORS.oak }}>
+                        <summary className="px-3 py-2 cursor-pointer text-sm" style={{ color: COLORS.strike }}>
+                          ボウリング場別の成績
+                        </summary>
+                        <CenterStats games={periodGames} />
+                      </details>
+                    )}
+
                     <details className="rounded-xl border glass-card overflow-hidden" style={{ borderColor: COLORS.oak }}>
                       <summary className="px-3 py-2 cursor-pointer text-sm" style={{ color: COLORS.strike }}>
                         用語と計算式
@@ -7078,7 +7279,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                             <div className="text-xs mb-1" style={{ color: COLORS.strike }}>用途</div>
                             <div className="flex gap-2">
                               {[
-                                { key: "strike", label: "1stボール(ストライク)" },
+                                { key: "strike", label: "1stボール" },
                                 { key: "spare", label: "スペアボール" },
                               ].map((o) => (
                                 <button
@@ -7191,7 +7392,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                 <div className="text-xs" style={{ color: COLORS.strike }}>用途</div>
                 <div className="flex gap-2">
                   {[
-                    { key: "strike", label: "1stボール(ストライク)" },
+                    { key: "strike", label: "1stボール" },
                     { key: "spare", label: "スペアボール" },
                   ].map((o) => (
                     <button
@@ -7300,7 +7501,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                   type="text"
                   value={newBallName}
                   onChange={(e) => setNewBallName(e.target.value)}
-                  placeholder="例: メインボール(未入力なら自動で名付けます)"
+                  placeholder="例: エース(未入力なら自動で名付けます)"
                   className="w-full px-3 py-2 rounded border text-sm"
                   style={{ borderColor: COLORS.oak, color: COLORS.ink }}
                 />
