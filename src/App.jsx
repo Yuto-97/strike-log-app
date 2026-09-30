@@ -557,6 +557,25 @@ function ballRegistryIdFor(b, myBalls) {
   return (myBalls.find((x) => x.label === b.label && (x.type || "own") === t) || myBalls.find((x) => x.label === b.label))?.id || null;
 }
 
+// Registered role of the ball a saved game refers to: "strike" (1stボール),
+// "spare" (スペアボール), or null when not set.
+function ballRoleOf(b, myBalls) {
+  const id = ballRegistryIdFor(b, myBalls);
+  const reg = id ? myBalls.find((x) => x.id === id) : null;
+  return reg && (reg.role === "strike" || reg.role === "spare") ? reg.role : null;
+}
+
+// If a game lists its balls in reverse (spare ball first, strike ball second),
+// swap them so the 1st ball is always the strike ball. Only acts when the
+// registered roles make it clear; otherwise the recorded order is kept.
+function normalizeBallOrder(g, myBalls) {
+  if (!g || !g.ball || !g.ball2) return g;
+  const r1 = ballRoleOf(g.ball, myBalls);
+  const r2 = ballRoleOf(g.ball2, myBalls);
+  const reversed = (r1 === "spare" && r2 !== "spare") || (r2 === "strike" && r1 !== "strike");
+  return reversed ? { ...g, ball: g.ball2, ball2: g.ball } : g;
+}
+
 // One ball of a game, as { key, name, weight }. The key is what makes two
 // games count as "the same ball": the registered ball when it can be found
 // (so renaming a ball keeps its history together), otherwise its saved name.
@@ -659,7 +678,8 @@ function roleCounters(gamesList) {
   return c;
 }
 
-function computeBallRoleStats(gamesList, myBalls) {
+function computeBallRoleStats(gamesListRaw, myBalls) {
+  const gamesList = gamesListRaw.map((g) => normalizeBallOrder(g, myBalls));
   const mainOf = (g) => resolveBallRef(g.ball, myBalls) || NO_BALL;
   const spareOf = (g) => resolveBallRef(g.ball2, myBalls) || mainOf(g);
 
@@ -1706,6 +1726,30 @@ function AchievementIcon({ kind }) {
   return <Trophy size={22} style={s} />;
 }
 
+// Centered popup used for prompts that need the user's attention.
+function AppModal({ title, children, footer }) {
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 58,
+        background: "rgba(8, 12, 26, 0.72)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 20,
+      }}
+    >
+      <div className="glass-card rounded-2xl w-full" style={{ maxWidth: 360, padding: "20px 18px", maxHeight: "85vh", overflowY: "auto" }}>
+        <div style={{ color: COLORS.gold, fontWeight: 700, fontSize: 16 }}>{title}</div>
+        <div style={{ marginTop: 10 }}>{children}</div>
+        {footer && <div style={{ marginTop: 16 }}>{footer}</div>}
+      </div>
+    </div>
+  );
+}
+
 function Celebration({ items, onClose }) {
   return (
     <div
@@ -1890,9 +1934,11 @@ function buildEvaluationCards({ sets, mains, spares }, points, setName) {
 function BallRankings({ stats }) {
   const setName = (s) => (s.spare ? `${s.main.name}＋${s.spare.name}` : s.main.name);
   const rate = (a, b) => (b ? Math.round((a / b) * 100) : 0);
-  const byRate = (list, count, of, { worst = false, onlyIfAny = false } = {}) =>
+  // A ball with a count of 0 has nothing to rank (e.g. 0 split covers), so it
+  // is left out and its place shows 「ー 該当なし」 — in every ranking.
+  const byRate = (list, count, of) =>
     list
-      .filter((x) => of(x) > 0 && (!onlyIfAny || count(x) > 0))
+      .filter((x) => of(x) > 0 && count(x) > 0)
       .map((x) => ({ x, count: count(x), r: rate(count(x), of(x)) }))
       .sort((a, b) => b.r - a.r || b.count - a.count)
       .map(({ x, count: n, r }) => ({ name: x.name ?? setName(x), bar: r, text: `${n}(${r}%)` }));
@@ -1918,14 +1964,14 @@ function BallRankings({ stats }) {
     {
       title: "オープンフレーム(ワースト)",
       unit: "ボールセット",
-      rows: byRate(sets, (s) => s.stats.openFrameCount, (s) => s.stats.frameCount, { onlyIfAny: true }),
+      rows: byRate(sets, (s) => s.stats.openFrameCount, (s) => s.stats.frameCount),
     },
-    { title: "スプリット(ワースト)", unit: "メインボール", rows: byRate(mains, (m) => m.roles.splits, (m) => m.roles.firstBalls, { onlyIfAny: true }) },
+    { title: "スプリット(ワースト)", unit: "メインボール", rows: byRate(mains, (m) => m.roles.splits, (m) => m.roles.firstBalls) },
     { title: "スプリットカバー", unit: "スペアボール", rows: byRate(spares, (s) => s.roles.splitCovers, (s) => s.roles.splitChances) },
     {
       title: "ガター(ワースト)",
       unit: "メインボール",
-      rows: byRate(mains, (m) => m.roles.firstGutters, (m) => m.roles.firstBalls, { onlyIfAny: true }),
+      rows: byRate(mains, (m) => m.roles.firstGutters, (m) => m.roles.firstBalls),
     },
   ];
 
@@ -3967,6 +4013,8 @@ export default function StrikeLog() {
   const [cropRect, setCropRect] = useState(null); // user's selection, 0..1 coords
   const [cropEditorOpen, setCropEditorOpen] = useState(false); // full-screen boxing editor
   const [celebration, setCelebration] = useState(null); // achievements to celebrate, or null
+  const [saveBlockItems, setSaveBlockItems] = useState(null); // what's still unselected when 記録を保存 is pressed
+  const [rolePromptDismissed, setRolePromptDismissed] = useState(false); // 「あとで」 for this session
   const [announcements, setAnnouncements] = useState([]); // active お知らせ, newest first
   const [bellOpen, setBellOpen] = useState(false);
   const [annReadIds, setAnnReadIds] = useState(() => readIdList(ANN_READ_KEY));
@@ -4004,6 +4052,7 @@ export default function StrikeLog() {
   const [homeCenter, setHomeCenter] = useState("");
   const [nickname, setNickname] = useState("");
   const [newBallType, setNewBallType] = useState("own"); // "own" | "house"
+  const [newBallRole, setNewBallRole] = useState("strike"); // "strike" (1stボール) | "spare"
   const [newBallName, setNewBallName] = useState("");
   const [newBallWeight, setNewBallWeight] = useState("");
   const [newBallThumbless, setNewBallThumbless] = useState(false);
@@ -4596,6 +4645,7 @@ export default function StrikeLog() {
     const ball = {
       id: uid(),
       type: newBallType,
+      role: newBallRole,
       label: newBallName.trim() || autoLabel,
       weight: Number(newBallWeight),
       thumbless: newBallThumbless,
@@ -4613,10 +4663,25 @@ export default function StrikeLog() {
     setNewBallWeight("");
     setNewBallThumbless(false);
     setNewBallType("own");
+    setNewBallRole("strike");
     setNewBallCore("");
     setNewBallCoverstock("");
     setNewBallMotion("");
     setNewBallLaneCondition("");
+  };
+
+  // Setting / changing a ball's role also puts already-saved games in the
+  // right order (strike ball first), so history and stats agree.
+  const setMyBallRole = (id, role) => {
+    const nextBalls = myBalls.map((b) => (b.id === id ? { ...b, role } : b));
+    persistMyBalls(nextBalls);
+    let changed = false;
+    const nextGames = games.map((g) => {
+      const n = normalizeBallOrder(g, nextBalls);
+      if (n !== g) changed = true;
+      return n;
+    });
+    if (changed) persistGames(nextGames);
   };
 
   const deleteMyBall = (id) => {
@@ -4855,6 +4920,18 @@ export default function StrikeLog() {
 
   const saveGame = async () => {
     if (!pendingResult || !pendingResult.games?.length) return;
+    // Every ball slot and (for マイシューズ) the shoes must be chosen first.
+    const missing = [];
+    if (!selectedBallId || !myBalls.some((b) => b.id === selectedBallId)) missing.push("1個目のボール");
+    if (useSecondBall && (!selectedBallId2 || !myBalls.some((b) => b.id === selectedBallId2))) missing.push("2個目のボール");
+    extraBalls.forEach((eb, i) => {
+      if (!eb.id || !myBalls.some((b) => b.id === eb.id)) missing.push(`${i + 3}個目のボール`);
+    });
+    if (shoeType === "own" && (!selectedShoeId || !myShoes.some((s) => s.id === selectedShoeId))) missing.push("シューズ");
+    if (missing.length) {
+      setSaveBlockItems(missing);
+      return;
+    }
     const selectedBall = myBalls.find((b) => b.id === selectedBallId);
     const ball = {
       type: ballType,
@@ -4911,10 +4988,11 @@ export default function StrikeLog() {
         (g) => g.analyzedRolls && g.analyzedRolls !== JSON.stringify((g.frames || []).map((f) => f.rolls))
       ).length,
     });
-    const next = [...games, ...newGames].sort(
+    const orderedNewGames = newGames.map((g) => normalizeBallOrder(g, myBalls));
+    const next = [...games, ...orderedNewGames].sort(
       (a, b) => a.date.localeCompare(b.date) || (a.gameNumber || 1) - (b.gameNumber || 1)
     );
-    const achievements = detectAchievements(games, next, newGames, { goalAverage, goalScore });
+    const achievements = detectAchievements(games, next, orderedNewGames, { goalAverage, goalScore });
     await persistGames(next);
     await saveBallConfig({ ballType, ballWeight, ballThumbless });
     await saveShoeConfig({ shoeType });
@@ -5160,6 +5238,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
             }
           : g
       )
+      .map((g) => (g.id === editingGameId ? normalizeBallOrder(g, myBalls) : g))
       .sort((a, b) => a.date.localeCompare(b.date) || (a.gameNumber || 1) - (b.gameNumber || 1));
     await persistGames(next);
     setEditingGameId(null);
@@ -5269,6 +5348,89 @@ function getNextRollCell(frameIdx, rollIdx, value) {
       }}
     >
       {celebration && <Celebration items={celebration} onClose={() => setCelebration(null)} />}
+
+      {saveBlockItems && (
+        <AppModal
+          title="未選択の項目があります"
+          footer={
+            <button
+              type="button"
+              onClick={() => {
+                setSaveBlockItems(null);
+                document.getElementById("scan-ball-card")?.scrollIntoView({ behavior: "smooth", block: "start" });
+              }}
+              className="w-full rounded-lg py-3"
+              style={primaryButtonStyle()}
+            >
+              選択する
+            </button>
+          }
+        >
+          <div style={{ color: COLORS.strike, fontSize: 13.5, lineHeight: 1.7 }}>記録を保存するには、次を選択してください。</div>
+          <div className="space-y-1" style={{ marginTop: 8 }}>
+            {saveBlockItems.map((m) => (
+              <div key={m} className="flex items-center gap-2" style={{ color: COLORS.strike, fontWeight: 700, fontSize: 14 }}>
+                <span style={{ color: COLORS.gold }}>●</span> {m}
+              </div>
+            ))}
+          </div>
+          <div style={{ color: COLORS.strike, opacity: 0.65, fontSize: 11.5, marginTop: 10, lineHeight: 1.6 }}>
+            ※選択肢にない場合は、「設定」タブでボール・シューズを登録してください
+          </div>
+        </AppModal>
+      )}
+
+      {(() => {
+        // Balls whose role (1stボール / スペア) hasn't been set yet.
+        const unset = myBalls.filter((b) => b.role !== "strike" && b.role !== "spare");
+        const busy = celebration || eventPopup || cropEditorOpen || saveBlockItems;
+        if (!unset.length || rolePromptDismissed || busy || accessStatus !== "approved") return null;
+        return (
+          <AppModal
+            title="ボールの用途を設定してください"
+            footer={
+              <button
+                type="button"
+                onClick={() => setRolePromptDismissed(true)}
+                className="w-full rounded-lg py-2.5 text-sm"
+                style={{ border: "1px solid rgba(184, 153, 104, 0.6)", color: COLORS.strike, fontWeight: 700 }}
+              >
+                あとで設定する
+              </button>
+            }
+          >
+            <div style={{ color: COLORS.strike, fontSize: 13, lineHeight: 1.7 }}>
+              用途を設定すると、ボール別の成績を正しく分析できます。
+            </div>
+            <div className="space-y-2" style={{ marginTop: 10 }}>
+              {unset.map((b) => (
+                <div key={b.id} className="rounded-lg p-2.5" style={{ border: "1px solid rgba(224,168,0,0.35)" }}>
+                  <div style={{ color: COLORS.strike, fontWeight: 700, fontSize: 14 }}>
+                    {b.label}
+                    <span style={{ fontWeight: 400, opacity: 0.7, fontSize: 12 }}> {b.weight}lb</span>
+                  </div>
+                  <div className="flex gap-2" style={{ marginTop: 6 }}>
+                    {[
+                      { key: "strike", label: "1stボール" },
+                      { key: "spare", label: "スペア" },
+                    ].map((o) => (
+                      <button
+                        key={o.key}
+                        type="button"
+                        onClick={() => setMyBallRole(b.id, o.key)}
+                        className="flex-1 rounded-lg py-2 text-sm"
+                        style={toggleStyle(false)}
+                      >
+                        {o.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </AppModal>
+        );
+      })()}
       {bellOpen && <BellPanel items={announcements} onClose={() => setBellOpen(false)} />}
       {eventPopup && (
         <EventPopup
@@ -5661,6 +5823,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                 </div>
 
                 <div
+                  id="scan-ball-card"
                   className="glass-card rounded-xl p-3 space-y-3"
                   onClickCapture={() => setBallTouched(true)}
                   onChangeCapture={() => setBallTouched(true)}
@@ -5703,7 +5866,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                           .filter((b) => (b.type || "own") === ballType)
                           .map((b) => (
                             <option key={b.id} value={b.id}>
-                              {b.label}({b.weight}lb{b.thumbless ? "・サムレス" : ""})
+                              {b.label}({b.weight}lb{b.thumbless ? "・サムレス" : ""}){b.role === "strike" ? " 1st" : b.role === "spare" ? " スペア" : ""}
                             </option>
                           ))}
                       </select>
@@ -5763,7 +5926,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                             .filter((b) => (b.type || "own") === ballType2)
                             .map((b) => (
                               <option key={b.id} value={b.id}>
-                                {b.label}({b.weight}lb{b.thumbless ? "・サムレス" : ""})
+                                {b.label}({b.weight}lb{b.thumbless ? "・サムレス" : ""}){b.role === "strike" ? " 1st" : b.role === "spare" ? " スペア" : ""}
                               </option>
                             ))}
                         </select>
@@ -5814,7 +5977,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                               .filter((b) => (b.type || "own") === sel.type)
                               .map((b) => (
                                 <option key={b.id} value={b.id}>
-                                  {b.label}({b.weight}lb{b.thumbless ? "・サムレス" : ""})
+                                  {b.label}({b.weight}lb{b.thumbless ? "・サムレス" : ""}){b.role === "strike" ? " 1st" : b.role === "spare" ? " スペア" : ""}
                                 </option>
                               ))}
                           </select>
@@ -6048,7 +6211,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                             .filter((b) => (b.type || "own") === editBallType)
                             .map((b) => (
                               <option key={b.id} value={b.id}>
-                                {b.label}({b.weight}lb{b.thumbless ? "・サムレス" : ""})
+                                {b.label}({b.weight}lb{b.thumbless ? "・サムレス" : ""}){b.role === "strike" ? " 1st" : b.role === "spare" ? " スペア" : ""}
                               </option>
                             ))}
                         </select>
@@ -6095,7 +6258,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                               .filter((b) => (b.type || "own") === editBallType2)
                               .map((b) => (
                                 <option key={b.id} value={b.id}>
-                                  {b.label}({b.weight}lb{b.thumbless ? "・サムレス" : ""})
+                                  {b.label}({b.weight}lb{b.thumbless ? "・サムレス" : ""}){b.role === "strike" ? " 1st" : b.role === "spare" ? " スペア" : ""}
                                 </option>
                               ))}
                           </select>
@@ -6144,7 +6307,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                                 .filter((b) => (b.type || "own") === sel.type)
                                 .map((b) => (
                                   <option key={b.id} value={b.id}>
-                                    {b.label}({b.weight}lb{b.thumbless ? "・サムレス" : ""})
+                                    {b.label}({b.weight}lb{b.thumbless ? "・サムレス" : ""}){b.role === "strike" ? " 1st" : b.role === "spare" ? " スペア" : ""}
                                   </option>
                                 ))}
                             </select>
@@ -6314,8 +6477,15 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                       key={p.key}
                       type="button"
                       onClick={() => setPeriodMode(p.key)}
-                      className="flex-1 rounded-lg py-2 text-sm"
-                      style={toggleStyle(periodMode === p.key)}
+                      className="rounded-lg py-2 text-sm"
+                      style={{
+                        ...toggleStyle(periodMode === p.key),
+                        // 「期間指定」 has 4 characters; the others have 1
+                        flex: p.key === "custom" ? 1.7 : 1,
+                        minWidth: 0,
+                        whiteSpace: "nowrap",
+                        padding: "8px 4px",
+                      }}
                     >
                       {p.label}
                     </button>
@@ -6890,6 +7060,27 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                             .join(" ・ ")}
                         </div>
                       )}
+                      {editingBallNameId !== b.id && (
+                        <div className="flex gap-1.5 mt-1.5">
+                          {[
+                            { key: "strike", label: "1stボール" },
+                            { key: "spare", label: "スペア" },
+                          ].map((o) => (
+                            <button
+                              key={o.key}
+                              type="button"
+                              onClick={() => setMyBallRole(b.id, o.key)}
+                              className="rounded-full px-2.5 py-0.5"
+                              style={{ ...toggleStyle(b.role === o.key), fontSize: 11 }}
+                            >
+                              {o.label}
+                            </button>
+                          ))}
+                          {!b.role && (
+                            <span style={{ color: COLORS.strike, opacity: 0.6, fontSize: 11, alignSelf: "center" }}>用途を選択</span>
+                          )}
+                        </div>
+                      )}
                     </div>
                     {editingBallNameId !== b.id && (
                       <div className="flex items-center gap-3">
@@ -6924,6 +7115,26 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                 <option value="own">マイボール</option>
                 <option value="house">ハウスボール</option>
               </select>
+
+              <div className="space-y-1">
+                <div className="text-xs" style={{ color: COLORS.strike }}>用途</div>
+                <div className="flex gap-2">
+                  {[
+                    { key: "strike", label: "1stボール(ストライク)" },
+                    { key: "spare", label: "スペアボール" },
+                  ].map((o) => (
+                    <button
+                      key={o.key}
+                      type="button"
+                      onClick={() => setNewBallRole(o.key)}
+                      className="flex-1 rounded-lg py-2 text-xs"
+                      style={toggleStyle(newBallRole === o.key)}
+                    >
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
               <div className="flex items-center gap-2">
                 <input
