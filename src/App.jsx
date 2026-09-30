@@ -470,6 +470,29 @@ function computeGameScores(pinFrames) {
 // so the sheet never shows a blank score through frame 10.
 // Computes score + detail stats for any set of games (used for the overall
 // period summary and for individual per-game breakdowns on "day" view).
+// Spare chances in the 10th frame. Every time a full rack is thrown at and not
+// struck, AND another ball follows in the frame, that's one chance at a spare
+// — e.g. X, 9, / is 1 chance (after the strike re-racks); 9, /, X is 1;
+// X, X, X is 0. Counting only "the first ball wasn't a strike" missed the
+// X, 9, / case, while its spare was still counted — inflating spare rates.
+function tenthFrameSpareChances(rolls) {
+  let chances = 0;
+  let fresh = true;
+  for (let k = 0; k < rolls.length; k++) {
+    const v = rolls[k];
+    if (v === undefined || v === "") break;
+    if (fresh) {
+      if (v === "X") continue; // strike re-racks; next ball is fresh again
+      const next = rolls[k + 1];
+      if (next !== undefined && next !== "") chances += 1;
+      fresh = false;
+    } else {
+      fresh = true; // only a spare gives another ball, and that one is fresh
+    }
+  }
+  return chances;
+}
+
 function computeGameSetStats(gamesList) {
   const totals = gamesList.map((g) => g.total);
   const avg = totals.length ? Math.round(totals.reduce((a, b) => a + b, 0) / totals.length) : 0;
@@ -488,14 +511,15 @@ function computeGameSetStats(gamesList) {
   let gutters = 0;
   let fouls = 0;
   gamesList.forEach((g) => {
-    (g.frames || []).forEach((f) => {
+    (g.frames || []).forEach((f, fi) => {
       const r0 = f.rolls?.[0];
+      if (fi === 9) spareChances += tenthFrameSpareChances(f.rolls || []);
       if (r0 !== undefined && r0 !== "") {
         frameCount += 1;
         if (r0 === "X") {
           strikes += 1;
         } else {
-          spareChances += 1;
+          if (fi !== 9) spareChances += 1; // the 10th is counted above
           // Open frame (official rule): neither a strike nor a spare — some
           // pins were left standing after this frame's rolls.
           if (f.rolls?.[1] !== "/") openFrames += 1;
@@ -1897,36 +1921,32 @@ const EVAL_AVG_GAP = 5; // pins of average
 const EVAL_RATE_GAP = 5; // percentage points
 
 function buildEvaluationCards({ sets, mains, spares }, points, setName) {
-  const pct = (a, b) => (b ? Math.round((a / b) * 100) : null);
-  const card = (key, label, pts, items, nameOf, metricLabel, valueOf, unit) => {
+  // Every measure that counts toward the category's points, shown as the
+  // winner's actual result — so it's clear the verdict isn't one number.
+  const pct = (a, b) => (b > 0 ? `${Math.round((a / b) * 100)}%` : "ー");
+  const card = (key, label, pts, items, nameOf, details) => {
     if (!pts) return null;
     if (pts.single) return { key, label, single: true };
     const winner = items.find((x) => nameOf(x) === pts.names[0]);
-    const v = winner ? valueOf(winner) : null;
-    const second = items
-      .filter((x) => x !== winner && valueOf(x) !== null)
-      .sort((a, b) => valueOf(b) - valueOf(a))[0];
-    return {
-      key,
-      label,
-      name: pts.names[0],
-      points: pts.points,
-      max: pts.max,
-      metric: {
-        label: metricLabel,
-        value: v,
-        unit,
-        // the runner-up is shown only when the winner is really 1st on this
-        // number, so the word 「2位」 is always true
-        second: v !== null && second && v >= valueOf(second) ? { name: nameOf(second), value: valueOf(second) } : null,
-      },
-    };
+    return { key, label, name: pts.names[0], points: pts.points, max: pts.max, details: winner ? details(winner) : [] };
   };
   return {
     cards: [
-      card("set", "組み合わせ", points.set, sets, setName, "アベレージ", (s) => s.stats.avg, ""),
-      card("main", "メインボール", points.main, mains, (m) => m.name, "ストライク率", (m) => pct(m.stats.strikeCount, m.stats.frameCount), "%"),
-      card("spare", "スペアボール", points.spare, spares, (s) => s.name, "スペア率", (s) => pct(s.stats.spareCount, s.stats.spareChances), "%"),
+      card("set", "組み合わせ", points.set, sets, setName, (s) => [
+        ["アベレージ", `${s.stats.avg}`],
+        ["ハイ", `${s.stats.highGame}`],
+        ["ロー", `${s.stats.lowGame}`],
+        ["オープン", pct(s.stats.openFrameCount, s.stats.frameCount)],
+      ]),
+      card("main", "メインボール", points.main, mains, (m) => m.name, (m) => [
+        ["ストライク", pct(m.stats.strikeCount, m.stats.frameCount)],
+        ["スプリット", pct(m.roles.splits, m.roles.firstBalls)],
+        ["ガター", pct(m.roles.firstGutters, m.roles.firstBalls)],
+      ]),
+      card("spare", "スペアボール", points.spare, spares, (s) => s.name, (s) => [
+        ["スペア", pct(s.stats.spareCount, s.stats.spareChances)],
+        ["スプリットカバー", pct(s.roles.splitCovers, s.roles.splitChances)],
+      ]),
     ].filter(Boolean),
   };
 }
@@ -2033,24 +2053,26 @@ function BallRankings({ stats }) {
                     </div>
                   )}
                 </div>
-                {!cd.single && cd.metric.value !== null && (
+                {!cd.single && cd.details.length > 0 && (
                   <div
-                    className="flex items-end justify-between gap-2"
-                    style={{ marginTop: 10, paddingTop: 8, borderTop: "1px solid rgba(224,168,0,0.18)" }}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: `repeat(${cd.details.length}, 1fr)`,
+                      marginTop: 10,
+                      paddingTop: 8,
+                      borderTop: "1px solid rgba(224,168,0,0.18)",
+                    }}
                   >
-                    <div style={{ color: COLORS.strike, whiteSpace: "nowrap" }}>
-                      <span style={{ opacity: 0.65, fontSize: 12 }}>{cd.metric.label} </span>
-                      <span style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 17 }}>
-                        {cd.metric.value}
-                        {cd.metric.unit}
-                      </span>
-                    </div>
-                    {cd.metric.second && (
-                      <div style={{ color: COLORS.strike, opacity: 0.6, fontSize: 11.5, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        2位 {cd.metric.second.name} {cd.metric.second.value}
-                        {cd.metric.unit}
+                    {cd.details.map(([k, v], i) => (
+                      <div
+                        key={k}
+                        className="text-center"
+                        style={{ borderLeft: i ? "1px solid rgba(224,168,0,0.15)" : "none", minWidth: 0 }}
+                      >
+                        <div style={{ color: COLORS.strike, opacity: 0.6, fontSize: 10.5, whiteSpace: "nowrap" }}>{k}</div>
+                        <div style={{ color: COLORS.strike, fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 16 }}>{v}</div>
                       </div>
-                    )}
+                    ))}
                   </div>
                 )}
               </div>
@@ -4046,6 +4068,7 @@ export default function StrikeLog() {
   const [myBalls, setMyBalls] = useState([]); // [{ id, label, weight, thumbless }]
   const [editingBallNameId, setEditingBallNameId] = useState(null);
   const [ballNameDraft, setBallNameDraft] = useState("");
+  const [ballRoleDraft, setBallRoleDraft] = useState(null); // role chosen in the ✎ editor
   const [dominantHand, setDominantHand] = useState("right"); // "right" | "left"
   const [goalAverage, setGoalAverage] = useState("");
   const [goalScore, setGoalScore] = useState("");
@@ -4668,6 +4691,41 @@ export default function StrikeLog() {
     setNewBallCoverstock("");
     setNewBallMotion("");
     setNewBallLaneCondition("");
+  };
+
+  // Saves the ✎ editor: new name and role together, in one write. Past games
+  // take the new name and are re-ordered for the role (strike ball first).
+  const saveBallEdit = (id, newLabel, newRole) => {
+    const trimmed = newLabel.trim();
+    if (!trimmed) return;
+    const target = myBalls.find((b) => b.id === id);
+    if (!target) return;
+    const nextBalls = myBalls.map((b) => (b.id === id ? { ...b, label: trimmed, ...(newRole ? { role: newRole } : {}) } : b));
+    persistMyBalls(nextBalls);
+    const isThisBall = (x) =>
+      x &&
+      (x.registryId === id ||
+        (!x.registryId && x.label === target.label && (x.type || "own") === (target.type || "own")));
+    const fix = (x) => (isThisBall(x) ? { ...x, label: trimmed, registryId: id } : x);
+    let changed = false;
+    const nextGames = games.map((g) => {
+      const renamed = {
+        ...g,
+        ball: fix(g.ball),
+        ball2: fix(g.ball2),
+        extraBalls: Array.isArray(g.extraBalls) ? g.extraBalls.map(fix) : g.extraBalls,
+      };
+      const ordered = normalizeBallOrder(renamed, nextBalls);
+      const same =
+        ordered.ball === g.ball &&
+        ordered.ball2 === g.ball2 &&
+        (!Array.isArray(g.extraBalls) || ordered.extraBalls.every((x, i) => x === g.extraBalls[i]));
+      if (same) return g;
+      changed = true;
+      return ordered;
+    });
+    if (changed) persistGames(nextGames);
+    setEditingBallNameId(null);
   };
 
   // Setting / changing a ball's role also puts already-saved games in the
@@ -7009,13 +7067,32 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                             value={ballNameDraft}
                             onChange={(e) => setBallNameDraft(e.target.value)}
                             onKeyDown={(e) => {
-                              if (e.key === "Enter") renameMyBall(b.id, ballNameDraft);
+                              if (e.key === "Enter") saveBallEdit(b.id, ballNameDraft, ballRoleDraft);
                             }}
                             enterKeyHint="done"
                             autoFocus
                             className="w-full px-3 py-2 rounded border"
                             style={{ borderColor: COLORS.oak, color: COLORS.ink, fontSize: 16 }}
                           />
+                          <div>
+                            <div className="text-xs mb-1" style={{ color: COLORS.strike }}>用途</div>
+                            <div className="flex gap-2">
+                              {[
+                                { key: "strike", label: "1stボール(ストライク)" },
+                                { key: "spare", label: "スペアボール" },
+                              ].map((o) => (
+                                <button
+                                  key={o.key}
+                                  type="button"
+                                  onClick={() => setBallRoleDraft(o.key)}
+                                  className="flex-1 rounded-lg py-2 text-xs"
+                                  style={toggleStyle(ballRoleDraft === o.key)}
+                                >
+                                  {o.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
                           <div className="flex gap-2">
                             <button
                               type="button"
@@ -7027,7 +7104,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                             </button>
                             <button
                               type="button"
-                              onClick={() => renameMyBall(b.id, ballNameDraft)}
+                              onClick={() => saveBallEdit(b.id, ballNameDraft, ballRoleDraft)}
                               disabled={!ballNameDraft.trim()}
                               className="flex-1 rounded-lg py-2 text-sm"
                               style={primaryButtonStyle(!!ballNameDraft.trim())}
@@ -7061,23 +7138,16 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                         </div>
                       )}
                       {editingBallNameId !== b.id && (
-                        <div className="flex gap-1.5 mt-1.5">
-                          {[
-                            { key: "strike", label: "1stボール" },
-                            { key: "spare", label: "スペア" },
-                          ].map((o) => (
-                            <button
-                              key={o.key}
-                              type="button"
-                              onClick={() => setMyBallRole(b.id, o.key)}
+                        <div className="mt-1.5">
+                          {b.role ? (
+                            <span
                               className="rounded-full px-2.5 py-0.5"
-                              style={{ ...toggleStyle(b.role === o.key), fontSize: 11 }}
+                              style={{ border: `1px solid ${COLORS.gold}`, color: COLORS.gold, fontSize: 11, fontWeight: 700 }}
                             >
-                              {o.label}
-                            </button>
-                          ))}
-                          {!b.role && (
-                            <span style={{ color: COLORS.strike, opacity: 0.6, fontSize: 11, alignSelf: "center" }}>用途を選択</span>
+                              {b.role === "strike" ? "1stボール" : "スペアボール"}
+                            </span>
+                          ) : (
+                            <span style={{ color: COLORS.strike, opacity: 0.6, fontSize: 11 }}>用途:未設定(鉛筆マークから設定)</span>
                           )}
                         </div>
                       )}
@@ -7088,6 +7158,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                           onClick={() => {
                             setEditingBallNameId(b.id);
                             setBallNameDraft(b.label);
+                            setBallRoleDraft(b.role || null);
                           }}
                           aria-label="名前を編集"
                         >
