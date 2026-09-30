@@ -1753,6 +1753,7 @@ function AchievementIcon({ kind }) {
 // ボウリング場 picker: centers used before (most recent first) in a dropdown,
 // plus 「新しいボウリング場を入力」 to type one that isn't listed yet.
 const NEW_CENTER = "__new__";
+const CENTER_BACKFILL_KEY = "center-backfill-v1"; // set once past games have a ボウリング場
 function CenterPicker({ value, onChange, known }) {
   const [typing, setTyping] = useState(false);
   const listed = known.includes(value);
@@ -4226,6 +4227,10 @@ export default function StrikeLog() {
   const [shoeTouched, setShoeTouched] = useState(false);
   const [ballTouched, setBallTouched] = useState(false); // manual ball change this session — don't auto-fill over it
   const [center, setCenter] = useState(""); // ボウリング場 for the game being recorded
+  const [storageLoaded, setStorageLoaded] = useState(false); // games, profile, balls… all read at startup
+  const [centerBackfillOpen, setCenterBackfillOpen] = useState(false); // ask which center past games were at
+  const [centerBackfillDraft, setCenterBackfillDraft] = useState("");
+  const [centerBackfillDismissed, setCenterBackfillDismissed] = useState(false);
   const [centerTouched, setCenterTouched] = useState(false);
   const [editCenter, setEditCenter] = useState("");
   const [selectedShoeId, setSelectedShoeId] = useState(null);
@@ -4351,7 +4356,7 @@ export default function StrikeLog() {
   }, []);
 
   useEffect(() => {
-    loadAllFromStorage();
+    loadAllFromStorage().then(() => setStorageLoaded(true));
   }, [loadAllFromStorage]);
 
   // Suggests the next game number for the selected date (existing games for
@@ -4992,6 +4997,41 @@ export default function StrikeLog() {
     }
   }, []);
 
+  // One-time: games recorded before ボウリング場 existed have none. Fill them
+  // with the ホームセンター from settings; if that isn't set, ask once (and
+  // save the answer as the ホームセンター too). Games that already have a
+  // center are never changed. Runs on each person's own phone, since that's
+  // where their records live.
+  useEffect(() => {
+    if (!storageLoaded || loadingGames) return;
+    if (localStorage.getItem(CENTER_BACKFILL_KEY)) return;
+    const missing = games.filter((g) => !(g.center || "").trim());
+    if (!missing.length) {
+      localStorage.setItem(CENTER_BACKFILL_KEY, "1");
+      return;
+    }
+    const h = (homeCenter || "").trim();
+    if (!h) {
+      setCenterBackfillOpen(true);
+      return;
+    }
+    // Not marked done here: another startup upgrade may save the game list at
+    // the same moment and overwrite this. The effect runs again whenever the
+    // games change, and only marks itself done (above) once none are missing.
+    persistGames(games.map((g) => ((g.center || "").trim() ? g : { ...g, center: h })));
+  }, [storageLoaded, loadingGames, games, homeCenter, persistGames]);
+
+  const applyCenterBackfill = async (name) => {
+    const n = name.trim();
+    if (!n) return;
+    await persistGames(games.map((g) => ((g.center || "").trim() ? g : { ...g, center: n })));
+    if (!(homeCenter || "").trim()) {
+      setHomeCenter(n);
+      await saveProfile({ homeCenter: n });
+    }
+    setCenterBackfillOpen(false);
+  };
+
   // One-time upgrade of older games: they only stored the ball's name. Add
   // the registered ball's id while the names still match, so renaming a ball
   // later never splits its per-ball stats. Runs until nothing is left to add.
@@ -5564,6 +5604,52 @@ function getNextRollCell(frameIdx, rollIdx, value) {
       }}
     >
       {celebration && <Celebration items={celebration} onClose={() => setCelebration(null)} />}
+
+      {centerBackfillOpen &&
+        !centerBackfillDismissed &&
+        !celebration &&
+        !eventPopup &&
+        !cropEditorOpen &&
+        !saveBlockItems &&
+        accessStatus === "approved" &&
+        !myBalls.some((b) => b.role !== "strike" && b.role !== "spare") && (
+          <AppModal
+            title="これまでの記録のボウリング場"
+            footer={
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() => applyCenterBackfill(centerBackfillDraft)}
+                  disabled={!centerBackfillDraft.trim()}
+                  className="w-full rounded-lg py-3"
+                  style={primaryButtonStyle(!!centerBackfillDraft.trim())}
+                >
+                  反映する
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCenterBackfillDismissed(true)}
+                  className="w-full rounded-lg py-2.5 text-sm"
+                  style={{ border: "1px solid rgba(184, 153, 104, 0.6)", color: COLORS.strike, fontWeight: 700 }}
+                >
+                  あとで設定する
+                </button>
+              </div>
+            }
+          >
+            <div style={{ color: COLORS.strike, fontSize: 13, lineHeight: 1.7 }}>
+              ボウリング場が未設定の記録が{games.filter((g) => !(g.center || "").trim()).length}
+              ゲームあります。よく行くボウリング場を選ぶと、未設定の記録すべてに反映します。
+            </div>
+            <div style={{ marginTop: 10 }}>
+              <CenterPicker value={centerBackfillDraft} onChange={setCenterBackfillDraft} known={knownCentersFrom(games, homeCenter)} />
+            </div>
+            <div style={{ color: COLORS.strike, opacity: 0.65, fontSize: 11.5, marginTop: 8, lineHeight: 1.6 }}>
+              ※選んだボウリング場は、設定の「ホームセンター」にも登録されます
+              <br />※違うボウリング場の記録は、履歴の編集から個別に変更できます
+            </div>
+          </AppModal>
+        )}
 
       {saveBlockItems && (
         <AppModal
