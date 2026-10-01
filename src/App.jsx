@@ -2153,46 +2153,27 @@ function CenterStats({ games }) {
   );
 }
 
-// Account form shared by the first screen and the 設定 tab.
-//   login / signup — email + password
-//   reset          — sends a password-reset email (Firebase)
-function AccountForm({ initialMode = "login", onLogin, onSignup, onReset, busy, errorMsg, infoMsg, intro, onBack }) {
-  const [mode, setMode] = useState(initialMode);
+// Account form shared by the first screen and the 設定 tab: two separate
+// boxes — ログイン first, then アカウント作成. Each opens its own fields;
+// only one is open at a time. 「パスワードを忘れた方」 lives in the ログイン box.
+function AccountForm({ onLogin, onSignup, onReset, busy, errorMsg, infoMsg, intro, onBack }) {
+  const [open, setOpen] = useState(null); // null | "login" | "reset" | "signup"
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const input = { borderColor: COLORS.oak, background: COLORS.cream, color: COLORS.ink, fontSize: 16 };
+  const openBox = (m) => {
+    setOpen(m);
+    setPassword("");
+  };
   const submit = async () => {
     if (!email.trim()) return;
-    if (mode === "reset") return onReset(email.trim());
+    if (open === "reset") return onReset(email.trim());
     if (!password) return;
-    if (mode === "login") await onLogin(email.trim(), password);
+    if (open === "login") await onLogin(email.trim(), password);
     else await onSignup(email.trim(), password);
   };
-  return (
-    <div className="space-y-3">
-      {mode !== "reset" && (
-        <div className="flex gap-2">
-          {[
-            { key: "login", label: "ログイン" },
-            { key: "signup", label: "アカウント作成" },
-          ].map((o) => (
-            <button key={o.key} type="button" onClick={() => setMode(o.key)} className="flex-1 rounded-lg py-2 text-xs" style={toggleStyle(mode === o.key)}>
-              {o.label}
-            </button>
-          ))}
-        </div>
-      )}
-      {mode === "reset" ? (
-        <div className="text-xs text-left" style={{ color: COLORS.strike, lineHeight: 1.7 }}>
-          登録したメールアドレスに、パスワード再設定用のメールを送ります。
-        </div>
-      ) : (
-        intro && (
-          <div className="text-xs text-left" style={{ color: COLORS.strike, lineHeight: 1.7 }}>
-            {intro}
-          </div>
-        )
-      )}
+  const fields = (mode) => (
+    <div className="space-y-2.5" style={{ marginTop: 10 }}>
       <input
         type="email"
         value={email}
@@ -2207,7 +2188,7 @@ function AccountForm({ initialMode = "login", onLogin, onSignup, onReset, busy, 
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          placeholder="パスワード(6文字以上)"
+          placeholder={mode === "signup" ? "パスワード(6文字以上)" : "パスワード"}
           autoComplete={mode === "signup" ? "new-password" : "current-password"}
           className="w-full px-3 py-2 rounded border"
           style={input}
@@ -2224,16 +2205,47 @@ function AccountForm({ initialMode = "login", onLogin, onSignup, onReset, busy, 
         {busy ? "処理中..." : mode === "login" ? "ログイン" : mode === "signup" ? "アカウントを作成" : "再設定メールを送る"}
       </button>
       {mode === "login" && (
-        <button type="button" onClick={() => setMode("reset")} className="w-full text-sm underline" style={{ color: COLORS.strike }}>
+        <button type="button" onClick={() => openBox("reset")} className="w-full text-sm underline" style={{ color: COLORS.strike }}>
           パスワードを忘れた方
         </button>
       )}
       {mode === "reset" && (
-        <button type="button" onClick={() => setMode("login")} className="w-full text-sm underline" style={{ color: COLORS.strike }}>
+        <button type="button" onClick={() => openBox("login")} className="w-full text-sm underline" style={{ color: COLORS.strike }}>
           ログインにもどる
         </button>
       )}
-      {onBack && mode !== "reset" && (
+    </div>
+  );
+  const box = (key, title, sub, openLabel, body) => {
+    const isOpen = open === key || (key === "login" && open === "reset");
+    return (
+      <div className="rounded-xl p-3 text-left" style={{ border: `1px solid ${isOpen ? COLORS.gold : "rgba(184, 153, 104, 0.6)"}`, background: "rgba(10, 16, 34, 0.35)" }}>
+        <div style={{ color: isOpen ? COLORS.gold : COLORS.strike, fontWeight: 700, fontSize: 14.5 }}>
+          {key === "login" && open === "reset" ? "パスワードの再設定" : title}
+        </div>
+        <div style={{ color: COLORS.strike, opacity: 0.7, fontSize: 12, lineHeight: 1.6, marginTop: 2 }}>
+          {key === "login" && open === "reset" ? "登録したメールアドレスに、パスワード再設定用のメールを送ります。" : sub}
+        </div>
+        {isOpen ? (
+          body
+        ) : (
+          <button
+            type="button"
+            onClick={() => openBox(key)}
+            className="w-full rounded-lg py-2.5 text-sm"
+            style={{ marginTop: 10, border: `1px solid ${COLORS.gold}`, color: COLORS.gold, fontWeight: 700 }}
+          >
+            {openLabel}
+          </button>
+        )}
+      </div>
+    );
+  };
+  return (
+    <div className="space-y-3">
+      {box("login", "ログイン", "アカウントをお持ちの方", "ログインする", fields(open === "reset" ? "reset" : "login"))}
+      {box("signup", "アカウント作成", intro || "はじめての方", "アカウントを作成する", fields("signup"))}
+      {onBack && (
         <button type="button" onClick={onBack} className="w-full text-sm underline" style={{ color: COLORS.strike }}>
           もどる
         </button>
@@ -2991,13 +3003,7 @@ function GateScreen({
               busy={authBusy}
               errorMsg={authErrorMsg}
               infoMsg={authInfoMsg}
-              intro={
-                <>
-                  アカウントを作っておくと、機種変更した時に再度承認を待たずに、ログインするだけで引き継げます。
-                  <br />
-                  (同時に使えるのは1台のみです。新しい端末でログインすると、前の端末は自動でログアウトされます)
-                </>
-              }
+              intro="はじめての方。作っておくと、機種変更した時に承認を待たずに、ログインするだけで引き継げます(同時に使えるのは1台のみ)"
               onBack={() => setShowAccountForm(false)}
             />
           </div>
@@ -7947,27 +7953,16 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                 </div>
               ) : (
                 auth && (
-                  <div className="space-y-2" style={{ borderTop: "1px solid rgba(224,168,0,0.18)", paddingTop: 10 }}>
-                    <div style={{ color: COLORS.strike, fontSize: 12.5, lineHeight: 1.7 }}>
-                      アカウントを作ると、機種変更してもログインするだけで記録を引き継げます(今の記録もそのまま引き継がれ、承認も不要です)。
-                    </div>
-                    {!accountFormOpen ? (
-                      <button type="button" onClick={() => setAccountFormOpen(true)} className="w-full rounded-lg py-2.5 text-sm" style={primaryButtonStyle()}>
-                        アカウントを作成・ログイン
-                      </button>
-                    ) : (
-                      <AccountForm
-                        initialMode="signup"
-                        onLogin={loginWithAccount}
-                        onSignup={signupWithAccount}
-                        onReset={resetPassword}
-                        busy={authBusy}
-                        errorMsg={authErrorMsg}
-                        infoMsg={authInfoMsg}
-                        intro="※同時に使えるのは1台のみです"
-                        onBack={() => setAccountFormOpen(false)}
-                      />
-                    )}
+                  <div style={{ borderTop: "1px solid rgba(224,168,0,0.18)", paddingTop: 10 }}>
+                    <AccountForm
+                      onLogin={loginWithAccount}
+                      onSignup={signupWithAccount}
+                      onReset={resetPassword}
+                      busy={authBusy}
+                      errorMsg={authErrorMsg}
+                      infoMsg={authInfoMsg}
+                      intro="はじめての方。作成すると、機種変更してもログインするだけで記録を引き継げます(今の記録もそのまま引き継がれ、承認も不要です)"
+                    />
                   </div>
                 )
               )}
