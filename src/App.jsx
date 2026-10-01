@@ -1557,6 +1557,245 @@ function AnnouncementCard({ a, imageSrc }) {
   );
 }
 
+// 月間ランキング (all users who opted in). Opened from the trophy in the header.
+// Scores are the final score read from each photo; the server does the
+// counting, so this screen only shows what it gets back.
+function monthOf(d) {
+  return toLocalISODate(d).slice(0, 7);
+}
+function monthLabel(m) {
+  return `${Number(m.slice(0, 4))}年${Number(m.slice(5))}月`;
+}
+
+const RANKING_AGE_OPTIONS = [
+  ["10s", "10代"],
+  ["20s", "20代"],
+  ["30s", "30代"],
+  ["40s", "40代"],
+  ["50s", "50代"],
+  ["60s", "60代"],
+  ["70s+", "70代以上"],
+];
+
+function RankingPanel({ authUser, deviceId, onClose, onGoToSettings }) {
+  const now = new Date();
+  const thisMonth = monthOf(now);
+  const lastMonth = monthOf(new Date(now.getFullYear(), now.getMonth() - 1, 1));
+  const [month, setMonth] = useState(thisMonth);
+  const [kind, setKind] = useState("average"); // "average" | "high"
+  const [fAge, setFAge] = useState(""); // filters — "" means すべて
+  const [fGender, setFGender] = useState("");
+  const [fBall, setFBall] = useState("");
+  const [data, setData] = useState(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!authUser) return;
+    let cancelled = false;
+    setData(null);
+    setError("");
+    (async () => {
+      try {
+        const token = await authUser.getIdToken();
+        const q = new URLSearchParams({ ranking: month });
+        if (fAge) q.set("age", fAge);
+        if (fGender) q.set("gender", fGender);
+        if (fBall) q.set("ball", fBall);
+        const res = await fetch(`/api/data?${q.toString()}`, {
+          headers: { Authorization: `Bearer ${token}`, "X-Device-Id": deviceId },
+        });
+        const d = await res.json();
+        if (!res.ok) throw new Error();
+        if (!cancelled) setData(d);
+      } catch (e) {
+        if (!cancelled) setError("ランキングを読み込めませんでした。時間をおいてお試しください。");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [authUser, deviceId, month, fAge, fGender, fBall]);
+
+  const medal = ["#E0A800", "#C9CED6", "#C08457"];
+  const filtered = !!(fAge || fGender || fBall);
+  const list = data ? data[kind] : null;
+  const fmt = (v) => (kind === "average" ? Number(v).toFixed(1) : String(v));
+  const Row = ({ r }) => (
+    <div
+      className="flex items-center gap-3 rounded-lg px-3 py-2.5"
+      style={{
+        background: r.isMe ? "rgba(224,168,0,0.12)" : "rgba(10, 16, 34, 0.55)",
+        border: r.isMe ? `1.5px solid ${COLORS.gold}` : "1px solid rgba(224,168,0,0.2)",
+      }}
+    >
+      <div style={{ width: 34, flexShrink: 0, textAlign: "center" }}>
+        {r.rank <= 3 ? (
+          <Trophy size={20} style={{ color: medal[r.rank - 1], margin: "0 auto" }} />
+        ) : (
+          <span style={{ color: COLORS.strike, fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 16 }}>{r.rank}</span>
+        )}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ color: COLORS.strike, fontWeight: 700, fontSize: 14.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {r.nickname}
+          {r.isMe && <span style={{ color: COLORS.gold, fontSize: 11 }}> あなた</span>}
+        </div>
+        <div style={{ color: COLORS.strike, opacity: 0.6, fontSize: 11 }}>
+          {r.rank <= 3 ? `${r.rank}位・` : ""}
+          {r.games}ゲーム
+        </div>
+      </div>
+      <div style={{ color: r.rank <= 3 ? medal[r.rank - 1] : COLORS.strike, fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 20, flexShrink: 0 }}>
+        {fmt(r.value)}
+      </div>
+    </div>
+  );
+
+  return (
+    <div
+      className="fixed left-0 right-0 top-0 bottom-0 flex flex-col"
+      style={{ background: `linear-gradient(160deg, ${COLORS.navyLight} 0%, ${COLORS.navyBg} 55%, #161D38 100%)`, zIndex: 50 }}
+    >
+      <div
+        className="flex items-center justify-between px-4"
+        style={{ background: COLORS.ink, paddingTop: "calc(16px + max(env(safe-area-inset-top), 20px))", paddingBottom: 16 }}
+      >
+        <div className="flex items-center gap-2">
+          <Trophy size={20} style={{ color: COLORS.gold }} />
+          <div style={{ color: COLORS.cream, fontWeight: 700 }}>月間ランキング</div>
+        </div>
+        <button type="button" onClick={onClose} aria-label="閉じる">
+          <X size={22} style={{ color: COLORS.cream }} />
+        </button>
+      </div>
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3" style={{ paddingBottom: "calc(16px + env(safe-area-inset-bottom))" }}>
+        {!authUser ? (
+          <div className="glass-card rounded-xl p-4 space-y-3 text-center">
+            <Trophy size={32} style={{ color: COLORS.gold, margin: "0 auto" }} />
+            <div style={{ color: COLORS.strike, fontWeight: 700, fontSize: 15 }}>ランキングにはアカウントが必要です</div>
+            <div style={{ color: COLORS.strike, opacity: 0.8, fontSize: 13, lineHeight: 1.7 }}>
+              アカウントを作成すると、月間ランキングを見たり、参加したりできます。
+            </div>
+            <button type="button" onClick={onGoToSettings} className="w-full rounded-lg py-3" style={primaryButtonStyle()}>
+              設定でアカウントを作成
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="flex gap-2">
+              {[
+                { key: lastMonth, label: monthLabel(lastMonth) },
+                { key: thisMonth, label: `${monthLabel(thisMonth)}(今月)` },
+              ].map((o) => (
+                <button key={o.key} type="button" onClick={() => setMonth(o.key)} className="flex-1 rounded-lg py-2 text-sm" style={toggleStyle(month === o.key)}>
+                  {o.label}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              {[
+                { key: "average", label: "アベレージ" },
+                { key: "high", label: "ハイゲーム" },
+              ].map((o) => (
+                <button key={o.key} type="button" onClick={() => setKind(o.key)} className="flex-1 rounded-lg py-2 text-sm" style={toggleStyle(kind === o.key)}>
+                  {o.label}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              {[
+                { label: "年代", value: fAge, set: setFAge, options: RANKING_AGE_OPTIONS },
+                { label: "性別", value: fGender, set: setFGender, options: [["male", "男性"], ["female", "女性"]] },
+                { label: "ボール", value: fBall, set: setFBall, options: [["house", "ハウス"], ["own", "マイボール"]] },
+              ].map((f) => (
+                <div key={f.label} style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ color: COLORS.strike, opacity: 0.65, fontSize: 11, marginBottom: 2 }}>{f.label}</div>
+                  <select
+                    value={f.value}
+                    onChange={(e) => f.set(e.target.value)}
+                    className="w-full rounded-lg px-1.5 py-1.5"
+                    style={{
+                      fontSize: 16,
+                      background: f.value ? COLORS.ink : "rgba(40, 55, 95, 0.55)",
+                      color: f.value ? COLORS.gold : COLORS.strike,
+                      border: `1px solid ${f.value ? COLORS.gold : "rgba(184, 153, 104, 0.6)"}`,
+                      fontWeight: f.value ? 700 : 400,
+                    }}
+                  >
+                    <option value="">すべて</option>
+                    {f.options.map(([k, l]) => (
+                      <option key={k} value={k}>
+                        {l}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+            </div>
+
+            {error && <div className="glass-card rounded-xl p-4" style={{ color: COLORS.strike, fontSize: 13 }}>{error}</div>}
+            {!data && !error && <div className="text-center py-8" style={{ color: COLORS.strike, opacity: 0.8 }}>読み込み中...</div>}
+
+            {data && (
+              <>
+                <div className="rounded-xl p-3" style={{ border: "1px solid rgba(224,168,0,0.35)" }}>
+                  <div style={{ color: COLORS.strike, opacity: 0.65, fontSize: 11.5 }}>あなたの{monthLabel(month)}の成績</div>
+                  <div className="flex items-baseline gap-4" style={{ marginTop: 2 }}>
+                    {[
+                      ["ゲーム", `${data.me.games}`],
+                      ["アベレージ", data.me.avg !== null ? Number(data.me.avg).toFixed(1) : "ー"],
+                      ["ハイ", data.me.high !== null ? `${data.me.high}` : "ー"],
+                    ].map(([k, v]) => (
+                      <div key={k}>
+                        <span style={{ color: COLORS.strike, opacity: 0.6, fontSize: 11 }}>{k} </span>
+                        <span style={{ color: COLORS.strike, fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 17 }}>{v}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {data.me.excluded ? (
+                    <div style={{ color: "#E8836A", fontSize: 12, marginTop: 6 }}>ランキングの対象外に設定されています</div>
+                  ) : !data.me.optIn ? (
+                    <button type="button" onClick={onGoToSettings} className="text-xs underline" style={{ color: COLORS.gold, marginTop: 6 }}>
+                      ランキングに参加していません(設定から参加できます)
+                    </button>
+                  ) : null}
+                </div>
+
+                {list.top.length === 0 ? (
+                  <div className="text-center py-8" style={{ color: COLORS.strike, opacity: 0.8, fontSize: 13.5 }}>
+                    {filtered ? "この条件に当てはまる参加者はいません" : "まだランキングに載っている人はいません"}
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {list.top.map((r, i) => (
+                      <Row key={i} r={r} />
+                    ))}
+                    {list.me && (
+                      <>
+                        <div className="text-center" style={{ color: COLORS.strike, opacity: 0.5 }}>⋮</div>
+                        <Row r={list.me} />
+                      </>
+                    )}
+                  </div>
+                )}
+
+                <div style={{ color: COLORS.strike, opacity: 0.6, fontSize: 11, lineHeight: 1.7 }}>
+                  ※写真から読み取った最終スコアで集計しています(手で修正した点数は反映されません)
+                  <br />※アベレージは、その月に{data.minGames}ゲーム以上記録した人が対象です
+                  <br />※同じ写真を複数回登録した場合は、1回分のみ集計します
+                  <br />※日本時間の毎月1日〜月末で集計します
+                  <br />※ボールの絞り込みは、各ゲームの1stボールの種類で集計しています
+                  <br />※年代・性別を設定していない参加者は、「すべて」の時のみ表示されます
+                </div>
+              </>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function BellPanel({ items, onClose }) {
   return (
     <div
@@ -3622,6 +3861,16 @@ function AdminPanel() {
     }
   };
 
+  // Remove someone from the monthly ranking (or restore them).
+  const toggleRankingExclude = async (uid, excluded) => {
+    await fetch("/api/admin/requests", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password, action: "rankingExclude", uid, excluded }),
+    });
+    load(password);
+  };
+
   const updateStatus = async (deviceId, status) => {
     await fetch("/api/admin/requests", {
       method: "POST",
@@ -3768,6 +4017,21 @@ function AdminPanel() {
                     <span style={{ color: COLORS.strike }}>No.{formatRequestNumber(r.requestNumber)}</span> {r.name}
                     {r.isAccount && <span style={{ color: COLORS.gold, fontSize: 11 }}> ・アカウント</span>}
                     {r.linkedAccountUid && <span style={{ color: COLORS.strike, opacity: 0.6, fontSize: 11 }}> ・アカウントに移行済み</span>}
+                    {r.rankingOptIn && (
+                      <span style={{ fontSize: 11 }}>
+                        <span style={{ color: r.rankingExcluded ? "#E8836A" : COLORS.gold }}>
+                          {r.rankingExcluded ? " ・ランキング除外中" : " ・ランキング参加中"}
+                        </span>{" "}
+                        <button
+                          type="button"
+                          onClick={() => toggleRankingExclude(r.id, !r.rankingExcluded)}
+                          className="underline"
+                          style={{ color: COLORS.strike, fontSize: 11 }}
+                        >
+                          {r.rankingExcluded ? "除外を解除" : "除外する"}
+                        </button>
+                      </span>
+                    )}
                   </div>
                   <div style={{ color: COLORS.strike, fontSize: 13 }}>{r.requestedAt}</div>
                 </div>
@@ -3805,6 +4069,21 @@ function AdminPanel() {
                     <span style={{ color: COLORS.strike }}>No.{formatRequestNumber(r.requestNumber)}</span> {r.name}
                     {r.isAccount && <span style={{ color: COLORS.gold, fontSize: 11 }}> ・アカウント</span>}
                     {r.linkedAccountUid && <span style={{ color: COLORS.strike, opacity: 0.6, fontSize: 11 }}> ・アカウントに移行済み</span>}
+                    {r.rankingOptIn && (
+                      <span style={{ fontSize: 11 }}>
+                        <span style={{ color: r.rankingExcluded ? "#E8836A" : COLORS.gold }}>
+                          {r.rankingExcluded ? " ・ランキング除外中" : " ・ランキング参加中"}
+                        </span>{" "}
+                        <button
+                          type="button"
+                          onClick={() => toggleRankingExclude(r.id, !r.rankingExcluded)}
+                          className="underline"
+                          style={{ color: COLORS.strike, fontSize: 11 }}
+                        >
+                          {r.rankingExcluded ? "除外を解除" : "除外する"}
+                        </button>
+                      </span>
+                    )}
                   </div>
                   <div style={{ color: COLORS.strike, fontSize: 13 }}>承認済み ・ {r.updatedAt}</div>
                 </div>
@@ -3834,6 +4113,21 @@ function AdminPanel() {
                       <span style={{ color: COLORS.strike }}>No.{formatRequestNumber(r.requestNumber)}</span> {r.name}
                     {r.isAccount && <span style={{ color: COLORS.gold, fontSize: 11 }}> ・アカウント</span>}
                     {r.linkedAccountUid && <span style={{ color: COLORS.strike, opacity: 0.6, fontSize: 11 }}> ・アカウントに移行済み</span>}
+                    {r.rankingOptIn && (
+                      <span style={{ fontSize: 11 }}>
+                        <span style={{ color: r.rankingExcluded ? "#E8836A" : COLORS.gold }}>
+                          {r.rankingExcluded ? " ・ランキング除外中" : " ・ランキング参加中"}
+                        </span>{" "}
+                        <button
+                          type="button"
+                          onClick={() => toggleRankingExclude(r.id, !r.rankingExcluded)}
+                          className="underline"
+                          style={{ color: COLORS.strike, fontSize: 11 }}
+                        >
+                          {r.rankingExcluded ? "除外を解除" : "除外する"}
+                        </button>
+                      </span>
+                    )}
                     </div>
                     <div style={{ color: COLORS.strike, fontSize: 13 }}>却下 ・ {r.updatedAt}</div>
                   </div>
@@ -4086,6 +4380,8 @@ function LegalPage({ page }) {
 ・端末を識別するための番号(本サービスが端末ごとに発行するもの)
 ・スコアシートの写真
 ・記録されたスコア・統計データ、登録されたボール・シューズ等の情報
+・記録時に選択・入力されたボウリング場の名称
+・月間ランキングへの参加の有無、ランキング表示名、および任意で登録された年代・性別
 ・サポートチャットでの質問内容
 ・改善要望として送信された内容
 ・本サービスの利用状況(スコア解析・サポートチャットの利用回数と日時、読み取り結果の修正の有無など)
@@ -4096,27 +4392,31 @@ function LegalPage({ page }) {
 ・機種変更時などに、記録を新しい端末へ引き継ぐため
 ・お問い合わせ・改善要望への対応のため
 ・利用状況の把握、サービスの品質改善、および公平な利用のための利用量の管理のため
+・月間ランキングの集計・表示のため(参加を選択された場合)
 
 3. AIサービスの利用について
 スコア画像の解析とサポートチャットの回答には、Anthropic社のClaude APIを利用しています。解析のためにアップロードされた画像、およびサポートチャットでの質問内容は、処理の目的でAnthropic社のサーバーに送信されます。
 
-4. 外部サービスの利用
+4. 月間ランキングについて
+月間ランキングへの参加を選択された利用者のランキング表示名と月間の成績(アベレージ、ハイゲーム、ゲーム数)は、ランキングを閲覧する他の利用者にも表示されます。任意で登録された年代・性別、および各ゲームで使用したボールの種類(ハウスボール・マイボール)は、ランキングの絞り込みにのみ使用し、それ自体を他の利用者に表示することはありません。ただし、絞り込んだランキングに表示されることにより、その条件に該当することが他の利用者に推測される場合があります。メールアドレス、ID、写真は他の利用者に表示されません。参加は設定画面からいつでも取りやめることができ、取りやめた時点でランキングに表示されなくなります。また、運営者は公平な運営のため、特定の利用者をランキングの対象外とする場合があります。
+
+5. 外部サービスの利用
 本サービスは、データの保存にGoogle Firebaseを、決済処理にStripeを利用しています。それぞれの外部サービスにおける情報の取り扱いは、各社のプライバシーポリシーに準じます。
 
-5. 第三者提供
+6. 第三者提供
 運営者は、法令に基づく場合を除き、利用者の同意なく個人情報を第三者に提供しません。
 
-6. 情報の管理
+7. 情報の管理
 運営者は、取得した情報の漏洩・滅失・毀損の防止のため、適切な安全管理措置を講じます。
 
-7. 開示・削除等の請求
+8. 開示・削除等の請求
 利用者は、運営者に対して、自己の個人情報の開示・訂正・削除を請求できます。ご希望の場合は下記お問い合わせ先までご連絡ください。
 
-8. お問い合わせ先
+9. お問い合わせ先
 sy.bsk.1209@docomo.ne.jp
 
 制定日:2026年8月17日
-改定日:2026年9月26日`,
+改定日:2026年10月1日`,
     },
     tokushoho: {
       title: "特定商取引法に基づく表記",
@@ -4283,6 +4583,13 @@ export default function StrikeLog() {
   const [storageLoaded, setStorageLoaded] = useState(false); // games, profile, balls… all read at startup
   const [accountFormOpen, setAccountFormOpen] = useState(false); // 設定: account form shown?
   const [accountDone, setAccountDone] = useState(null); // "signup" | "login" — show the completion popup
+  const [photoHash, setPhotoHash] = useState(null); // fingerprint of the chosen photo
+  const [rankingOptIn, setRankingOptIn] = useState(false); // 月間ランキングに参加する
+  const [rankingName, setRankingName] = useState(""); // ランキング表示名 (separate from the nickname)
+  const [ageGroup, setAgeGroup] = useState(""); // "10s"…"70s+" or "" — only for ranking filters
+  const [gender, setGender] = useState(""); // "male" | "female" | "" — only for ranking filters
+  const [rankingOpen, setRankingOpen] = useState(false);
+  const [rankingNeedNickname, setRankingNeedNickname] = useState(false);
   const [accountNotice, setAccountNotice] = useState(null); // { kind: "created" | "login", email } → completion popup
   const [centerBackfillOpen, setCenterBackfillOpen] = useState(false); // ask which center past games were at
   const [centerBackfillDraft, setCenterBackfillDraft] = useState("");
@@ -4375,6 +4682,10 @@ export default function StrikeLog() {
           if (p.goalAverage) setGoalAverage(p.goalAverage);
           if (p.goalScore) setGoalScore(p.goalScore);
           if (p.homeCenter) setHomeCenter(p.homeCenter);
+          setRankingOptIn(!!p.rankingOptIn);
+          if (p.rankingName) setRankingName(p.rankingName);
+          if (p.ageGroup) setAgeGroup(p.ageGroup);
+          if (p.gender) setGender(p.gender);
           if (p.nickname) setNickname(p.nickname);
         }
       } catch (e) {
@@ -4890,7 +5201,7 @@ export default function StrikeLog() {
   };
 
   const saveProfile = async (patch) => {
-    const next = { dominantHand, goalAverage, goalScore, homeCenter, nickname, ...patch };
+    const next = { dominantHand, goalAverage, goalScore, homeCenter, nickname, rankingOptIn, rankingName, ageGroup, gender, ...patch };
     try {
       await storage.set(PROFILE_KEY, JSON.stringify(next));
       setProfileSaved(true);
@@ -5163,6 +5474,18 @@ export default function StrikeLog() {
     }
     try {
       const img = await loadImageFromFile(file);
+      // A short fingerprint of the photo file, to spot the same photo used again.
+      try {
+        const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+        setPhotoHash(
+          [...new Uint8Array(digest)]
+            .slice(0, 12)
+            .map((b) => b.toString(16).padStart(2, "0"))
+            .join("")
+        );
+      } catch (e) {
+        setPhotoHash(null);
+      }
       sourceImgRef.current = img;
       const { base64, mediaType } = renderImageForAI(img, null);
       setImageMeta({ base64, mediaType });
@@ -5198,7 +5521,10 @@ export default function StrikeLog() {
             return { ...f, splitRolls };
           });
           let norm = normalizeGame(framesWithSplitRolls);
-          const ocrTotal = Number(game.total_score);
+          // Number(null) is 0, so an unreadable total must be kept as "none"
+          // explicitly — otherwise it would count as a 0-point game.
+          const rawTotal = game.total_score;
+          const ocrTotal = rawTotal === null || rawTotal === undefined || rawTotal === "" ? NaN : Number(rawTotal);
           const hasOcrTotal = Number.isFinite(ocrTotal);
           // The per-frame cumulative numbers exactly as copied off the screen.
           const ocrScores = (game.frames || []).slice(0, 10).map((f) => Number(f?.score));
@@ -5324,6 +5650,11 @@ export default function StrikeLog() {
       extraBalls: extraBallsData,
       shoe,
       center: center.trim() || null,
+      // 月間ランキング: the final score as read from the photo (hand edits to
+      // the frames don't change it), and which photo it came from, so the
+      // same photo uploaded twice is only counted once.
+      photoTotal: Number.isFinite(g.ocrTotal) ? g.ocrTotal : null,
+      photoKey: photoHash ? `${photoHash}:${idx}` : null,
       createdAt: Date.now() + idx,
     }));
     reportAnalysisOutcome({
@@ -5908,6 +6239,18 @@ function getNextRollCell(frameIdx, rollIdx, value) {
         );
       })()}
       {bellOpen && <BellPanel items={announcements} onClose={() => setBellOpen(false)} />}
+      {rankingOpen && (
+        <RankingPanel
+          authUser={authUser}
+          deviceId={deviceId}
+          onClose={() => setRankingOpen(false)}
+          onGoToSettings={() => {
+            setRankingOpen(false);
+            setTab("profile");
+            window.scrollTo(0, 0);
+          }}
+        />
+      )}
       {eventPopup && (
         <EventPopup
           a={eventPopup}
@@ -5957,6 +6300,15 @@ function getNextRollCell(frameIdx, rollIdx, value) {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setRankingOpen(true)}
+              className="rounded-full flex items-center justify-center"
+              style={{ width: 36, height: 36, background: COLORS.strike, color: COLORS.ink }}
+              aria-label="月間ランキング"
+            >
+              <Trophy size={18} />
+            </button>
             <button
               type="button"
               onClick={() => {
@@ -7447,6 +7799,114 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                     <span style={{ color: COLORS.strike, fontSize: 13, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {authUser.email}
                     </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3" style={{ paddingTop: 4 }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ color: COLORS.strike, fontWeight: 700, fontSize: 13.5 }}>月間ランキングに参加する</div>
+                      <div style={{ color: COLORS.strike, opacity: 0.6, fontSize: 11, lineHeight: 1.5 }}>
+                        ランキング表示名と成績が、他の利用者に表示されます
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={rankingOptIn}
+                      aria-label="月間ランキングに参加する"
+                      onClick={() => {
+                        const next = !rankingOptIn;
+                        if (next && !rankingName.trim()) {
+                          setRankingNeedNickname(true);
+                          return;
+                        }
+                        setRankingNeedNickname(false);
+                        setRankingOptIn(next);
+                        saveProfile({ rankingOptIn: next });
+                      }}
+                      style={{
+                        width: 48,
+                        height: 28,
+                        borderRadius: 999,
+                        flexShrink: 0,
+                        position: "relative",
+                        background: rankingOptIn ? COLORS.gold : "rgba(245,241,228,0.2)",
+                        transition: "background .2s",
+                      }}
+                    >
+                      <span
+                        style={{
+                          position: "absolute",
+                          top: 3,
+                          left: rankingOptIn ? 23 : 3,
+                          width: 22,
+                          height: 22,
+                          borderRadius: "50%",
+                          background: "#FFFFFF",
+                          transition: "left .2s",
+                        }}
+                      />
+                    </button>
+                  </div>
+                  <div className="space-y-2 rounded-lg p-2.5" style={{ background: "rgba(10, 16, 34, 0.45)" }}>
+                    <div>
+                      <div className="text-xs mb-1" style={{ color: COLORS.strike }}>ランキング表示名(必須・20文字まで)</div>
+                      <input
+                        type="text"
+                        value={rankingName}
+                        maxLength={20}
+                        onChange={(e) => setRankingName(e.target.value)}
+                        onBlur={(e) => saveProfile({ rankingName: e.target.value.trim() })}
+                        placeholder="例: ボウラーY"
+                        className="w-full px-3 py-2 rounded border"
+                        style={{
+                          borderColor: rankingNeedNickname && !rankingName.trim() ? "#E8836A" : COLORS.oak,
+                          color: COLORS.ink,
+                          fontSize: 16,
+                        }}
+                      />
+                      {rankingNeedNickname && !rankingName.trim() && (
+                        <div style={{ color: "#E8836A", fontSize: 12, marginTop: 4 }}>ランキングに参加するには、ランキング表示名を入力してください</div>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <div style={{ flex: 1 }}>
+                        <div className="text-xs mb-1" style={{ color: COLORS.strike }}>年代(任意)</div>
+                        <select
+                          value={ageGroup}
+                          onChange={(e) => {
+                            setAgeGroup(e.target.value);
+                            saveProfile({ ageGroup: e.target.value });
+                          }}
+                          className="w-full px-2 py-2 rounded border"
+                          style={{ borderColor: COLORS.oak, color: COLORS.ink, fontSize: 16 }}
+                        >
+                          <option value="">未設定</option>
+                          {RANKING_AGE_OPTIONS.map(([k, l]) => (
+                            <option key={k} value={k}>
+                              {l}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div className="text-xs mb-1" style={{ color: COLORS.strike }}>性別(任意)</div>
+                        <select
+                          value={gender}
+                          onChange={(e) => {
+                            setGender(e.target.value);
+                            saveProfile({ gender: e.target.value });
+                          }}
+                          className="w-full px-2 py-2 rounded border"
+                          style={{ borderColor: COLORS.oak, color: COLORS.ink, fontSize: 16 }}
+                        >
+                          <option value="">回答しない</option>
+                          <option value="male">男性</option>
+                          <option value="female">女性</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div style={{ color: COLORS.strike, opacity: 0.6, fontSize: 11, lineHeight: 1.6 }}>
+                      ※年代・性別はランキングの絞り込みにのみ使い、他の利用者には表示しません。未設定の場合は「すべて」の時だけ表示されます
+                    </div>
                   </div>
                   <div style={{ color: COLORS.strike, opacity: 0.6, fontSize: 11.5, lineHeight: 1.6 }}>
                     ※同時に使えるのは1台のみです。他の端末でログインすると、この端末は自動でログアウトされます

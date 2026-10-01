@@ -151,6 +151,18 @@ export default async function handler(req, res) {
       return;
     }
 
+    // Remove someone from (or restore them to) the monthly ranking.
+    if (req.method === "POST" && (req.body || {}).action === "rankingExclude") {
+      const { uid, excluded } = req.body;
+      if (!uid || typeof uid !== "string" || uid.includes("/")) {
+        res.status(400).json({ error: "uid is required" });
+        return;
+      }
+      await db.collection("rankingParticipants").doc(uid).set({ excluded: !!excluded, updatedAt: new Date().toISOString() }, { merge: true });
+      res.status(200).json({ ok: true });
+      return;
+    }
+
     if (req.method === "POST" && (req.body || {}).action === "ackAlerts") {
       const now = new Date().toISOString();
       const snap = await db.collection("alerts").get();
@@ -193,6 +205,21 @@ export default async function handler(req, res) {
           data.requestNumber = requestNumber;
         }
         items.push({ id: d.id, ...data });
+      }
+      // ランキング: who takes part, and who the admin has removed
+      try {
+        const parts = await db.collection("rankingParticipants").get();
+        const byId = new Map(parts.docs.map((x) => [x.id, x.data()]));
+        for (const it of items) {
+          const p = byId.get(it.id);
+          if (p) {
+            it.rankingOptIn = !!p.optIn;
+            it.rankingExcluded = !!p.excluded;
+            it.rankingNickname = p.nickname || "";
+          }
+        }
+      } catch (e) {
+        // ranking info is optional for this list
       }
       res.status(200).json({ items, alerts: await activeAlerts() });
       return;
