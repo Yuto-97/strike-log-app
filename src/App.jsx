@@ -8,6 +8,7 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut,
+  sendPasswordResetEmail,
 } from "firebase/auth";
 
 // ---------- palette ----------
@@ -1889,6 +1890,95 @@ function CenterStats({ games }) {
   );
 }
 
+// Account form shared by the first screen and the 設定 tab.
+//   login / signup — email + password
+//   reset          — sends a password-reset email (Firebase)
+function AccountForm({ initialMode = "login", onLogin, onSignup, onReset, busy, errorMsg, infoMsg, intro, onBack }) {
+  const [mode, setMode] = useState(initialMode);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const input = { borderColor: COLORS.oak, background: COLORS.cream, color: COLORS.ink, fontSize: 16 };
+  const submit = async () => {
+    if (!email.trim()) return;
+    if (mode === "reset") return onReset(email.trim());
+    if (!password) return;
+    if (mode === "login") await onLogin(email.trim(), password);
+    else await onSignup(email.trim(), password);
+  };
+  return (
+    <div className="space-y-3">
+      {mode !== "reset" && (
+        <div className="flex gap-2">
+          {[
+            { key: "login", label: "ログイン" },
+            { key: "signup", label: "アカウント作成" },
+          ].map((o) => (
+            <button key={o.key} type="button" onClick={() => setMode(o.key)} className="flex-1 rounded-lg py-2 text-xs" style={toggleStyle(mode === o.key)}>
+              {o.label}
+            </button>
+          ))}
+        </div>
+      )}
+      {mode === "reset" ? (
+        <div className="text-xs text-left" style={{ color: COLORS.strike, lineHeight: 1.7 }}>
+          登録したメールアドレスに、パスワード再設定用のメールを送ります。
+        </div>
+      ) : (
+        intro && (
+          <div className="text-xs text-left" style={{ color: COLORS.strike, lineHeight: 1.7 }}>
+            {intro}
+          </div>
+        )
+      )}
+      <input
+        type="email"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        placeholder="メールアドレス"
+        autoComplete="email"
+        className="w-full px-3 py-2 rounded border"
+        style={input}
+      />
+      {mode !== "reset" && (
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="パスワード(6文字以上)"
+          autoComplete={mode === "signup" ? "new-password" : "current-password"}
+          className="w-full px-3 py-2 rounded border"
+          style={input}
+        />
+      )}
+      {mode === "signup" && (
+        <div className="text-left" style={{ color: COLORS.strike, opacity: 0.7, fontSize: 11, lineHeight: 1.6 }}>
+          ※携帯会社のメール(docomo・au・SoftBankなど)は、パスワード再設定のメールが届かない場合があります。Gmailなどのメールアドレスがおすすめです
+        </div>
+      )}
+      {errorMsg && <div className="text-left" style={{ color: "#E8836A", fontSize: 13 }}>{errorMsg}</div>}
+      {infoMsg && <div className="text-left" style={{ color: COLORS.strike, fontSize: 13, lineHeight: 1.6 }}>{infoMsg}</div>}
+      <button type="button" onClick={submit} disabled={busy} className="w-full rounded-lg py-3" style={primaryButtonStyle(!busy)}>
+        {busy ? "処理中..." : mode === "login" ? "ログイン" : mode === "signup" ? "アカウントを作成" : "再設定メールを送る"}
+      </button>
+      {mode === "login" && (
+        <button type="button" onClick={() => setMode("reset")} className="w-full text-sm underline" style={{ color: COLORS.strike }}>
+          パスワードを忘れた方
+        </button>
+      )}
+      {mode === "reset" && (
+        <button type="button" onClick={() => setMode("login")} className="w-full text-sm underline" style={{ color: COLORS.strike }}>
+          ログインにもどる
+        </button>
+      )}
+      {onBack && mode !== "reset" && (
+        <button type="button" onClick={onBack} className="w-full text-sm underline" style={{ color: COLORS.strike }}>
+          もどる
+        </button>
+      )}
+    </div>
+  );
+}
+
 // Centered popup used for prompts that need the user's attention.
 function AppModal({ title, children, footer }) {
   return (
@@ -2549,16 +2639,15 @@ function GateScreen({
   requestNumber,
   onLogin,
   onSignup,
+  onReset,
   authBusy,
   authErrorMsg,
+  authInfoMsg,
   justSignedOut,
 }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [showAccountForm, setShowAccountForm] = useState(false);
-  const [accountMode, setAccountMode] = useState("login"); // "login" | "signup"
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
 
   const submit = async () => {
     if (!name.trim()) {
@@ -2574,12 +2663,6 @@ function GateScreen({
     } finally {
       setSubmitting(false);
     }
-  };
-
-  const submitAccount = async () => {
-    if (!email.trim() || !password) return;
-    if (accountMode === "login") await onLogin(email.trim(), password);
-    else await onSignup(email.trim(), password);
   };
 
   return (
@@ -2637,60 +2720,23 @@ function GateScreen({
         )}
 
         {(mode === "not_found" || mode === "error" || mode === "pending" || mode === "rejected") && showAccountForm && (
-          <div className="rounded-xl p-4 space-y-3" style={{ border: `1px solid ${COLORS.oak}` }}>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setAccountMode("login")}
-                className="flex-1 rounded-lg py-2 text-xs"
-                style={toggleStyle(accountMode === "login")}
-              >
-                ログイン
-              </button>
-              <button
-                onClick={() => setAccountMode("signup")}
-                className="flex-1 rounded-lg py-2 text-xs"
-                style={toggleStyle(accountMode === "signup")}
-              >
-                アカウント作成
-              </button>
-            </div>
-            <div className="text-xs text-left" style={{ color: COLORS.strike }}>
-              アカウントを作っておくと、機種変更した時に再度承認を待たずに、ログインするだけで引き継げます。
-              <br />
-              (同時に使えるのは1台のみです。新しい端末でログインすると、前の端末は自動でログアウトされます)
-            </div>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="メールアドレス"
-              className="w-full px-3 py-2 rounded border text-sm"
-              style={{ borderColor: COLORS.oak, background: COLORS.cream, color: COLORS.ink }}
+          <div className="rounded-xl p-4" style={{ border: `1px solid ${COLORS.oak}` }}>
+            <AccountForm
+              onLogin={onLogin}
+              onSignup={onSignup}
+              onReset={onReset}
+              busy={authBusy}
+              errorMsg={authErrorMsg}
+              infoMsg={authInfoMsg}
+              intro={
+                <>
+                  アカウントを作っておくと、機種変更した時に再度承認を待たずに、ログインするだけで引き継げます。
+                  <br />
+                  (同時に使えるのは1台のみです。新しい端末でログインすると、前の端末は自動でログアウトされます)
+                </>
+              }
+              onBack={() => setShowAccountForm(false)}
             />
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="パスワード(6文字以上)"
-              className="w-full px-3 py-2 rounded border text-sm"
-              style={{ borderColor: COLORS.oak, background: COLORS.cream, color: COLORS.ink }}
-            />
-            {authErrorMsg && <div style={{ color: "#E8836A", fontSize: 13 }}>{authErrorMsg}</div>}
-            <button
-              onClick={submitAccount}
-              disabled={authBusy}
-              className="w-full rounded-lg py-3"
-              style={{ background: COLORS.gold, color: COLORS.cream, fontWeight: 700 }}
-            >
-              {authBusy ? "処理中..." : accountMode === "login" ? "ログイン" : "アカウントを作成"}
-            </button>
-            <button
-              onClick={() => setShowAccountForm(false)}
-              className="w-full text-sm underline"
-              style={{ color: COLORS.strike }}
-            >
-              もどる
-            </button>
           </div>
         )}
 
@@ -3720,6 +3766,8 @@ function AdminPanel() {
                 <div>
                   <div style={{ color: COLORS.cream, fontWeight: 700 }}>
                     <span style={{ color: COLORS.strike }}>No.{formatRequestNumber(r.requestNumber)}</span> {r.name}
+                    {r.isAccount && <span style={{ color: COLORS.gold, fontSize: 11 }}> ・アカウント</span>}
+                    {r.linkedAccountUid && <span style={{ color: COLORS.strike, opacity: 0.6, fontSize: 11 }}> ・アカウントに移行済み</span>}
                   </div>
                   <div style={{ color: COLORS.strike, fontSize: 13 }}>{r.requestedAt}</div>
                 </div>
@@ -3755,6 +3803,8 @@ function AdminPanel() {
                 <div>
                   <div style={{ color: COLORS.cream, fontWeight: 700 }}>
                     <span style={{ color: COLORS.strike }}>No.{formatRequestNumber(r.requestNumber)}</span> {r.name}
+                    {r.isAccount && <span style={{ color: COLORS.gold, fontSize: 11 }}> ・アカウント</span>}
+                    {r.linkedAccountUid && <span style={{ color: COLORS.strike, opacity: 0.6, fontSize: 11 }}> ・アカウントに移行済み</span>}
                   </div>
                   <div style={{ color: COLORS.strike, fontSize: 13 }}>承認済み ・ {r.updatedAt}</div>
                 </div>
@@ -3782,6 +3832,8 @@ function AdminPanel() {
                   <div>
                     <div style={{ color: COLORS.cream, fontWeight: 700 }}>
                       <span style={{ color: COLORS.strike }}>No.{formatRequestNumber(r.requestNumber)}</span> {r.name}
+                    {r.isAccount && <span style={{ color: COLORS.gold, fontSize: 11 }}> ・アカウント</span>}
+                    {r.linkedAccountUid && <span style={{ color: COLORS.strike, opacity: 0.6, fontSize: 11 }}> ・アカウントに移行済み</span>}
                     </div>
                     <div style={{ color: COLORS.strike, fontSize: 13 }}>却下 ・ {r.updatedAt}</div>
                   </div>
@@ -4133,6 +4185,7 @@ export default function StrikeLog() {
   const [authUser, setAuthUser] = useState(null);
   const [authBusy, setAuthBusy] = useState(false);
   const [authErrorMsg, setAuthErrorMsg] = useState("");
+  const [authInfoMsg, setAuthInfoMsg] = useState(""); // e.g. 「再設定メールを送信しました」
   const [justSignedOut, setJustSignedOut] = useState(false);
   const [authReady, setAuthReady] = useState(false); // Firebase has told us whether someone is signed in
   const [syncState, setSyncState] = useState("idle"); // "idle" | "syncing" | "ready" | "failed"
@@ -4227,7 +4280,8 @@ export default function StrikeLog() {
   const [shoeTouched, setShoeTouched] = useState(false);
   const [ballTouched, setBallTouched] = useState(false); // manual ball change this session — don't auto-fill over it
   const [center, setCenter] = useState(""); // ボウリング場 for the game being recorded
-  const [storageLoaded, setStorageLoaded] = useState(false); // games, profile, balls… all read at startup
+  const [storageLoaded, setStorageLoaded] = useState(false);
+  const [accountFormOpen, setAccountFormOpen] = useState(false); // 設定: account form shown? // games, profile, balls… all read at startup
   const [centerBackfillOpen, setCenterBackfillOpen] = useState(false); // ask which center past games were at
   const [centerBackfillDraft, setCenterBackfillDraft] = useState("");
   const [centerBackfillDismissed, setCenterBackfillDismissed] = useState(false);
@@ -4630,7 +4684,33 @@ export default function StrikeLog() {
     } catch (e) {
       if (e.code === "auth/email-already-in-use") setAuthErrorMsg("このメールアドレスは既に登録されています");
       else if (e.code === "auth/weak-password") setAuthErrorMsg("パスワードは6文字以上にしてください");
+      else if (e.code === "auth/invalid-email") setAuthErrorMsg("メールアドレスの形式が正しくありません");
       else setAuthErrorMsg("登録に失敗しました。もう一度お試しください");
+    } finally {
+      setAuthBusy(false);
+    }
+  };
+
+  // 「パスワードを忘れた方」: Firebase emails a link to set a new password.
+  // The same message is shown whether or not the address is registered, so
+  // the form can't be used to find out who has an account.
+  const resetPassword = async (email) => {
+    if (!auth) {
+      setAuthErrorMsg("現在アカウント機能を利用できません。時間をおいてお試しください");
+      return;
+    }
+    setAuthBusy(true);
+    setAuthErrorMsg("");
+    setAuthInfoMsg("");
+    try {
+      auth.languageCode = "ja"; // the email is sent in Japanese
+      await sendPasswordResetEmail(auth, email);
+      setAuthInfoMsg("パスワード再設定用のメールを送信しました。メール内のリンクから新しいパスワードを設定してください。届かない場合は、迷惑メールフォルダもご確認ください。");
+    } catch (e) {
+      if (e.code === "auth/invalid-email") setAuthErrorMsg("メールアドレスの形式が正しくありません");
+      else if (e.code === "auth/user-not-found")
+        setAuthInfoMsg("パスワード再設定用のメールを送信しました。メール内のリンクから新しいパスワードを設定してください。届かない場合は、迷惑メールフォルダもご確認ください。");
+      else setAuthErrorMsg("送信に失敗しました。時間をおいてお試しください");
     } finally {
       setAuthBusy(false);
     }
@@ -5588,8 +5668,10 @@ function getNextRollCell(frameIdx, rollIdx, value) {
         requestNumber={myRequestNumber}
         onLogin={loginWithAccount}
         onSignup={signupWithAccount}
+        onReset={resetPassword}
         authBusy={authBusy}
         authErrorMsg={authErrorMsg}
+        authInfoMsg={authInfoMsg}
         justSignedOut={justSignedOut}
       />
     );
@@ -7231,17 +7313,35 @@ function getNextRollCell(frameIdx, rollIdx, value) {
 
         {tab === "profile" && (
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="text-sm" style={{ color: COLORS.strike }}>基本情報</div>
-              {profileSaved && <span style={{ color: COLORS.strike, fontSize: 13 }}>保存しました</span>}
-            </div>
-
-            <div className="rounded-xl p-3 border glass-card space-y-3" style={{ borderColor: COLORS.oak }}>
-              {myRequestNumber && (
-                <div style={{ color: COLORS.cream, fontSize: 15, fontWeight: 700 }}>
-                  ID:{formatRequestNumber(myRequestNumber)}
+            <div className="text-sm" style={{ color: COLORS.strike }}>アカウント</div>
+            <div className="rounded-xl p-3 glass-card space-y-3" style={{ border: `1px solid ${COLORS.gold}` }}>
+              <div className="flex items-center gap-3">
+                <div
+                  className="flex items-center justify-center rounded-full"
+                  style={{ width: 46, height: 46, flexShrink: 0, border: `1.5px solid ${COLORS.gold}`, background: "rgba(224,168,0,0.1)" }}
+                >
+                  <User size={22} style={{ color: COLORS.gold }} />
                 </div>
-              )}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ color: COLORS.strike, fontWeight: 700, fontSize: 17, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {nickname.trim() || "ニックネーム未設定"}
+                  </div>
+                  <div style={{ color: COLORS.strike, opacity: 0.7, fontSize: 12.5, fontFamily: "'Oswald', sans-serif", letterSpacing: "0.03em" }}>
+                    ID {myRequestNumber ? formatRequestNumber(myRequestNumber) : "ー"}
+                  </div>
+                </div>
+                <span
+                  className="rounded-full px-2.5 py-0.5"
+                  style={
+                    authUser
+                      ? { border: `1px solid ${COLORS.gold}`, color: COLORS.gold, fontSize: 11, fontWeight: 700, flexShrink: 0 }
+                      : { border: "1px solid rgba(245,241,228,0.35)", color: "rgba(245,241,228,0.7)", fontSize: 11, flexShrink: 0 }
+                  }
+                >
+                  {authUser ? "アカウント" : "アカウント未作成"}
+                </span>
+              </div>
+
               <div>
                 <div className="text-xs mb-1" style={{ color: COLORS.strike }}>ニックネーム</div>
                 <input
@@ -7250,11 +7350,65 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                   onChange={(e) => setNickname(e.target.value)}
                   onBlur={(e) => saveProfile({ nickname: e.target.value })}
                   placeholder="例: ヤマダ"
-                  className="w-full px-3 py-2 rounded border text-sm"
-                  style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                  className="w-full px-3 py-2 rounded border"
+                  style={{ borderColor: COLORS.oak, color: COLORS.ink, fontSize: 16 }}
                 />
               </div>
 
+              {authUser ? (
+                <div className="space-y-2" style={{ borderTop: "1px solid rgba(224,168,0,0.18)", paddingTop: 10 }}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span style={{ color: COLORS.strike, opacity: 0.7, fontSize: 12 }}>メールアドレス</span>
+                    <span style={{ color: COLORS.strike, fontSize: 13, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {authUser.email}
+                    </span>
+                  </div>
+                  <div style={{ color: COLORS.strike, opacity: 0.6, fontSize: 11.5, lineHeight: 1.6 }}>
+                    ※同時に使えるのは1台のみです。他の端末でログインすると、この端末は自動でログアウトされます
+                  </div>
+                  <button
+                    type="button"
+                    onClick={logoutAccount}
+                    className="w-full rounded-lg py-2 text-sm"
+                    style={{ border: "1px solid rgba(184, 153, 104, 0.6)", color: COLORS.strike, fontWeight: 700 }}
+                  >
+                    ログアウト
+                  </button>
+                </div>
+              ) : (
+                auth && (
+                  <div className="space-y-2" style={{ borderTop: "1px solid rgba(224,168,0,0.18)", paddingTop: 10 }}>
+                    <div style={{ color: COLORS.strike, fontSize: 12.5, lineHeight: 1.7 }}>
+                      アカウントを作ると、機種変更してもログインするだけで記録を引き継げます(今の記録もそのまま引き継がれ、承認も不要です)。
+                    </div>
+                    {!accountFormOpen ? (
+                      <button type="button" onClick={() => setAccountFormOpen(true)} className="w-full rounded-lg py-2.5 text-sm" style={primaryButtonStyle()}>
+                        アカウントを作成・ログイン
+                      </button>
+                    ) : (
+                      <AccountForm
+                        initialMode="signup"
+                        onLogin={loginWithAccount}
+                        onSignup={signupWithAccount}
+                        onReset={resetPassword}
+                        busy={authBusy}
+                        errorMsg={authErrorMsg}
+                        infoMsg={authInfoMsg}
+                        intro="※同時に使えるのは1台のみです"
+                        onBack={() => setAccountFormOpen(false)}
+                      />
+                    )}
+                  </div>
+                )
+              )}
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div className="text-sm" style={{ color: COLORS.strike }}>基本情報</div>
+              {profileSaved && <span style={{ color: COLORS.strike, fontSize: 13 }}>保存しました</span>}
+            </div>
+
+            <div className="rounded-xl p-3 border glass-card space-y-3" style={{ borderColor: COLORS.oak }}>
               <div>
                 <div className="text-xs mb-1" style={{ color: COLORS.strike }}>利き手</div>
                 <div className="flex gap-2">
@@ -7701,28 +7855,6 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                 追加する
               </button>
             </div>
-
-            {authUser && (
-              <>
-                <div className="text-sm" style={{ color: COLORS.strike }}>アカウント</div>
-                <div className="rounded-xl p-3 border glass-card space-y-2" style={{ borderColor: COLORS.oak }}>
-                  <div className="text-xs" style={{ color: COLORS.strike }}>
-                    ログイン中: {authUser.email}
-                  </div>
-                  <div className="text-xs" style={{ color: COLORS.strike, opacity: 0.7 }}>
-                    この端末が、このアカウントの利用端末として登録されています。他の端末でログインすると、この端末は自動的にログアウトされます。
-                  </div>
-                  <button
-                    type="button"
-                    onClick={logoutAccount}
-                    className="w-full rounded-lg py-2 text-sm"
-                    style={{ border: `1px solid ${COLORS.oak}`, color: COLORS.cream, fontWeight: 700 }}
-                  >
-                    ログアウト
-                  </button>
-                </div>
-              </>
-            )}
 
             <div className="text-sm" style={{ color: COLORS.strike }}>ご意見・要望</div>
             <div className="rounded-xl p-3 border glass-card space-y-2" style={{ borderColor: COLORS.oak }}>

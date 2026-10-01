@@ -36,12 +36,26 @@ export default async function handler(req, res) {
     const prev = existing.exists ? existing.data() : {};
     const now = new Date().toISOString();
 
-    const requestNumber = prev.requestNumber || (await generateUniqueId());
-    const status = prev.status || "pending";
+    // A brand-new account created on a phone that was already approved
+    // (people who used the app before accounts existed) inherits that
+    // approval, name and registration number — no second approval needed.
+    // Only for new accounts, and only from an approved device record.
+    let inherited = null;
+    if (!existing.exists) {
+      const dev = await db.collection("accessRequests").doc(deviceId).get();
+      if (dev.exists && dev.data().status === "approved" && !dev.data().isAccount) {
+        inherited = dev.data();
+        await dev.ref.set({ linkedAccountUid: caller.uid, updatedAt: now }, { merge: true });
+      }
+    }
+
+    const requestNumber = prev.requestNumber || (inherited && inherited.requestNumber) || (await generateUniqueId());
+    const status = prev.status || (inherited ? "approved" : "pending");
 
     await ref.set(
       {
-        name: caller.email || prev.name || null,
+        ...(inherited ? { linkedDeviceId: deviceId, deviceName: inherited.name || null } : {}),
+        name: (inherited && inherited.name) || prev.name || caller.email || null,
         email: caller.email || prev.email || null,
         isAccount: true,
         activeDeviceId: deviceId,
