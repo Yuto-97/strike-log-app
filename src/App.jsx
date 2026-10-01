@@ -4280,8 +4280,10 @@ export default function StrikeLog() {
   const [shoeTouched, setShoeTouched] = useState(false);
   const [ballTouched, setBallTouched] = useState(false); // manual ball change this session — don't auto-fill over it
   const [center, setCenter] = useState(""); // ボウリング場 for the game being recorded
-  const [storageLoaded, setStorageLoaded] = useState(false);
-  const [accountFormOpen, setAccountFormOpen] = useState(false); // 設定: account form shown? // games, profile, balls… all read at startup
+  const [storageLoaded, setStorageLoaded] = useState(false); // games, profile, balls… all read at startup
+  const [accountFormOpen, setAccountFormOpen] = useState(false); // 設定: account form shown?
+  const [accountDone, setAccountDone] = useState(null); // "signup" | "login" — show the completion popup
+  const [accountNotice, setAccountNotice] = useState(null); // { kind: "created" | "login", email } → completion popup
   const [centerBackfillOpen, setCenterBackfillOpen] = useState(false); // ask which center past games were at
   const [centerBackfillDraft, setCenterBackfillDraft] = useState("");
   const [centerBackfillDismissed, setCenterBackfillDismissed] = useState(false);
@@ -4664,6 +4666,10 @@ export default function StrikeLog() {
     setJustSignedOut(false);
     try {
       await signInWithEmailAndPassword(auth, email, password);
+      setAccountDone("login");
+      setAccountFormOpen(false);
+      setAccountNotice({ kind: "login", email });
+      setAccountFormOpen(false);
     } catch (e) {
       setAuthErrorMsg("メールアドレスまたはパスワードが正しくありません");
     } finally {
@@ -4681,6 +4687,10 @@ export default function StrikeLog() {
     setJustSignedOut(false);
     try {
       await createUserWithEmailAndPassword(auth, email, password);
+      setAccountDone("signup");
+      setAccountFormOpen(false);
+      setAccountNotice({ kind: "created", email });
+      setAccountFormOpen(false);
     } catch (e) {
       if (e.code === "auth/email-already-in-use") setAuthErrorMsg("このメールアドレスは既に登録されています");
       else if (e.code === "auth/weak-password") setAuthErrorMsg("パスワードは6文字以上にしてください");
@@ -5689,6 +5699,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
 
       {centerBackfillOpen &&
         !centerBackfillDismissed &&
+        !accountDone &&
         !celebration &&
         !eventPopup &&
         !cropEditorOpen &&
@@ -5733,6 +5744,80 @@ function getNextRollCell(frameIdx, rollIdx, value) {
           </AppModal>
         )}
 
+      {accountNotice && accessStatus === "approved" && syncState !== "syncing" && !celebration && (
+        <AppModal
+          title={accountNotice.kind === "created" ? "アカウントを作成しました" : "ログインしました"}
+          footer={
+            <button type="button" onClick={() => setAccountNotice(null)} className="w-full rounded-lg py-3" style={primaryButtonStyle()}>
+              OK
+            </button>
+          }
+        >
+          <div className="flex items-center gap-3">
+            <div
+              className="flex items-center justify-center rounded-full"
+              style={{ width: 40, height: 40, flexShrink: 0, border: `1.5px solid ${COLORS.gold}`, background: "rgba(224,168,0,0.12)" }}
+            >
+              <Check size={22} style={{ color: COLORS.gold }} />
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ color: COLORS.strike, opacity: 0.65, fontSize: 11.5 }}>メールアドレス</div>
+              <div style={{ color: COLORS.strike, fontWeight: 700, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {accountNotice.email}
+              </div>
+            </div>
+          </div>
+          <div style={{ color: COLORS.strike, fontSize: 13, lineHeight: 1.7, marginTop: 12 }}>
+            {accountNotice.kind === "created" ? (
+              <>
+                これからの記録は、クラウドにも自動で保存されます。
+                <br />
+                機種変更の時は、新しいスマホでこのメールアドレスとパスワードでログインしてください。
+              </>
+            ) : (
+              <>記録の読み込みが完了しました。</>
+            )}
+          </div>
+        </AppModal>
+      )}
+
+      {accountDone && authUser && accessStatus === "approved" && syncState !== "syncing" && (
+        <AppModal
+          title={accountDone === "signup" ? "アカウントを作成しました" : "ログインしました"}
+          footer={
+            <button type="button" onClick={() => setAccountDone(null)} className="w-full rounded-lg py-3" style={primaryButtonStyle()}>
+              OK
+            </button>
+          }
+        >
+          <div className="flex flex-col items-center" style={{ marginBottom: 12 }}>
+            <div
+              className="flex items-center justify-center rounded-full"
+              style={{ width: 56, height: 56, border: `2px solid ${COLORS.gold}`, background: "rgba(224,168,0,0.12)" }}
+            >
+              <CircleCheck size={30} style={{ color: COLORS.gold }} />
+            </div>
+            <div style={{ color: COLORS.strike, fontSize: 13, marginTop: 8, opacity: 0.8 }}>{authUser.email}</div>
+          </div>
+          <div className="space-y-2">
+            {(accountDone === "signup"
+              ? ["これまでの記録は、クラウドにも保存されます", "機種変更しても、このメールアドレスとパスワードでログインすれば記録を引き継げます"]
+              : ["このアカウントの記録を読み込みました", "この端末でアカウントを利用中です(同時に使えるのは1台のみ)"]
+            ).map((t) => (
+              <div key={t} className="flex gap-2" style={{ color: COLORS.strike, fontSize: 13, lineHeight: 1.6 }}>
+                <Check size={16} style={{ color: COLORS.gold, flexShrink: 0, marginTop: 2 }} />
+                <span>{t}</span>
+              </div>
+            ))}
+          </div>
+          {accountDone === "signup" && (
+            <div style={{ color: COLORS.strike, opacity: 0.65, fontSize: 11.5, marginTop: 10, lineHeight: 1.6 }}>
+              ※パスワードは忘れないよう控えておいてください
+            </div>
+          )}
+        </AppModal>
+      )}
+
       {saveBlockItems && (
         <AppModal
           title="未選択の項目があります"
@@ -5774,7 +5859,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
       {(() => {
         // Balls whose role (1stボール / スペア) hasn't been set yet.
         const unset = myBalls.filter((b) => b.role !== "strike" && b.role !== "spare");
-        const busy = celebration || eventPopup || cropEditorOpen || saveBlockItems;
+        const busy = celebration || eventPopup || cropEditorOpen || saveBlockItems || accountDone;
         if (!unset.length || rolePromptDismissed || busy || accessStatus !== "approved") return null;
         return (
           <AppModal
