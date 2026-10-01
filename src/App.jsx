@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Camera, History, BarChart3, Loader2, Check, X, Pencil, Trophy, TrendingUp, Calendar, CircleDot, Hash, User, Target, Trash2, ShieldCheck, CircleCheck, MessageCircle, Send, Settings, Crop, ImageOff, UserX, Bell, ImagePlus, ChevronDown, Download, MapPin } from "lucide-react";
+import { Camera, History, BarChart3, Loader2, Check, X, Pencil, Trophy, TrendingUp, Calendar, CircleDot, Hash, User, Target, Trash2, ShieldCheck, CircleCheck, MessageCircle, Send, Settings, Crop, ImageOff, UserX, Bell, ImagePlus, ChevronDown, ChevronLeft, ChevronRight, Download, MapPin } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { auth } from "./firebaseClient.js";
 import { noteLocalWrite, startSync, stopSync, scheduleFlush } from "./sync.js";
@@ -1518,39 +1518,146 @@ async function compressAnnouncementImage(file) {
   throw new Error("画像を十分に小さくできませんでした。別の画像でお試しください");
 }
 
-// One announcement as shown in the bell list (and in the admin preview).
-function AnnouncementCard({ a, imageSrc }) {
+// ---------- お知らせの表示 ----------
+// Bell = two levels, like most apps: a list of titles → tap one for the detail.
+function AnnouncementMeta({ a }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span
+        style={{
+          fontSize: 12,
+          fontWeight: 700,
+          padding: "2px 9px",
+          borderRadius: 999,
+          background: a.type === "event" ? COLORS.gold : "rgba(255,255,255,0.14)",
+          color: a.type === "event" ? COLORS.ink : COLORS.strike,
+          flexShrink: 0,
+        }}
+      >
+        {ANNOUNCEMENT_TYPE_LABEL[a.type] || "お知らせ"}
+      </span>
+      <span style={{ color: COLORS.strike, opacity: 0.75, fontSize: 13 }}>
+        {a.type === "event" && a.endDate
+          ? `${a.startDate ? formatMonthDay(a.startDate) : ""}〜${formatMonthDay(a.endDate)}`
+          : formatMonthDay(a.startDate || (a.createdAt || "").slice(0, 10))}
+      </span>
+    </div>
+  );
+}
+
+// Body text with a tiny bit of structure so it reads at a glance:
+//   "## 見出し" → small heading,  "- 項目" or "・項目" → bullet,  blank line → gap.
+// Anything else is a normal paragraph, so plain text from the admin screen works as before.
+function AnnouncementBody({ text }) {
+  const blocks = [];
+  let list = null;
+  String(text || "")
+    .split("\n")
+    .forEach((raw, i) => {
+      const line = raw.trim();
+      const bullet = line.match(/^(?:-|・)\s*(.+)$/);
+      if (bullet) {
+        if (!list) {
+          list = { kind: "list", items: [], key: i };
+          blocks.push(list);
+        }
+        list.items.push(bullet[1]);
+        return;
+      }
+      list = null;
+      if (!line) return;
+      const h = line.match(/^##\s*(.+)$/);
+      blocks.push(h ? { kind: "h", text: h[1], key: i } : { kind: "p", text: line, key: i });
+    });
+  return (
+    <div style={{ color: COLORS.cream, fontSize: 15, lineHeight: 1.75, overflowWrap: "anywhere" }}>
+      {blocks.map((b, idx) =>
+        b.kind === "h" ? (
+          <div
+            key={b.key}
+            style={{ color: COLORS.gold, fontWeight: 700, fontSize: 15, marginTop: idx === 0 ? 0 : 20, marginBottom: 6 }}
+          >
+            {b.text}
+          </div>
+        ) : b.kind === "list" ? (
+          <ul key={b.key} style={{ margin: idx === 0 ? 0 : "6px 0 0", padding: 0, listStyle: "none" }}>
+            {b.items.map((t, j) => (
+              <li key={j} className="flex" style={{ gap: 8, marginTop: j === 0 ? 0 : 4 }}>
+                <span style={{ color: COLORS.gold, flexShrink: 0 }}>•</span>
+                <span>{t}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p key={b.key} style={{ margin: idx === 0 ? 0 : "10px 0 0" }}>
+            {b.text}
+          </p>
+        )
+      )}
+    </div>
+  );
+}
+
+// One line in the bell list: unread dot, kind + date, title, and a thumbnail for events.
+function AnnouncementListRow({ a, unread, onOpen, imageSrc }) {
   const src = imageSrc || (a.hasImage ? announcementImageUrl(a) : null);
   return (
-    <div className="glass-card rounded-xl p-4 space-y-2">
-      <div className="flex items-center gap-2">
-        <span
+    <button
+      type="button"
+      onClick={onOpen}
+      className="glass-card rounded-xl w-full text-left flex items-center"
+      style={{ padding: "14px 12px 14px 14px", gap: 12 }}
+    >
+      <span
+        aria-hidden
+        style={{ width: 8, height: 8, borderRadius: 999, background: unread ? "#E8836A" : "transparent", flexShrink: 0 }}
+      />
+      <div className="flex-1" style={{ minWidth: 0 }}>
+        <AnnouncementMeta a={a} />
+        <div
           style={{
-            fontSize: 11,
-            fontWeight: 700,
-            padding: "2px 8px",
-            borderRadius: 999,
-            background: a.type === "event" ? COLORS.gold : "rgba(255,255,255,0.14)",
-            color: a.type === "event" ? COLORS.ink : COLORS.strike,
+            color: COLORS.cream,
+            fontWeight: unread ? 700 : 500,
+            fontSize: 16,
+            lineHeight: 1.45,
+            marginTop: 6,
+            display: "-webkit-box",
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: "vertical",
+            overflow: "hidden",
           }}
         >
-          {ANNOUNCEMENT_TYPE_LABEL[a.type] || "お知らせ"}
-        </span>
-        <span style={{ color: COLORS.strike, opacity: 0.7, fontSize: 12 }}>
-          {a.type === "event" && a.endDate
-            ? `${a.startDate ? formatMonthDay(a.startDate) : ""}〜${formatMonthDay(a.endDate)}`
-            : formatMonthDay(a.startDate || (a.createdAt || "").slice(0, 10))}
-        </span>
+          {a.title}
+        </div>
       </div>
-      <div style={{ color: COLORS.strike, fontWeight: 700, fontSize: 16, overflowWrap: "anywhere" }}>{a.title}</div>
       {src && (
-        <img src={src} alt={a.title} style={{ width: "100%", borderRadius: 10, display: "block" }} loading="lazy" />
+        <img
+          src={src}
+          alt=""
+          loading="lazy"
+          style={{ width: 52, height: 52, objectFit: "cover", borderRadius: 8, flexShrink: 0 }}
+        />
       )}
+      <ChevronRight size={20} style={{ color: COLORS.strike, opacity: 0.6, flexShrink: 0 }} />
+    </button>
+  );
+}
+
+// The detail page of one announcement (also used for the admin preview).
+function AnnouncementDetail({ a, imageSrc }) {
+  const src = imageSrc || (a.hasImage ? announcementImageUrl(a) : null);
+  return (
+    <div className="space-y-4">
+      <div>
+        <AnnouncementMeta a={a} />
+        <div style={{ color: COLORS.cream, fontWeight: 700, fontSize: 20, lineHeight: 1.45, marginTop: 8, overflowWrap: "anywhere" }}>
+          {a.title}
+        </div>
+      </div>
+      {src && <img src={src} alt={a.title} style={{ width: "100%", borderRadius: 10, display: "block" }} />}
       {a.body && (
-        <div
-          style={{ color: COLORS.strike, opacity: 0.85, fontSize: 14, lineHeight: 1.7, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
-        >
-          {a.body}
+        <div className="glass-card rounded-xl" style={{ padding: 16 }}>
+          <AnnouncementBody text={a.body} />
         </div>
       )}
     </div>
@@ -1820,7 +1927,9 @@ function RankingPanel({ authUser, deviceId, onClose, onGoToSettings, embedded = 
   );
 }
 
-function BellPanel({ items, onClose }) {
+function BellPanel({ items, readIds, onOpenItem, onClose }) {
+  const [openId, setOpenId] = useState(null);
+  const current = openId ? items.find((a) => a.id === openId) : null;
   return (
     <div
       className="fixed left-0 right-0 top-0 bottom-0 flex flex-col"
@@ -1830,26 +1939,48 @@ function BellPanel({ items, onClose }) {
         className="flex items-center justify-between px-4"
         style={{ background: COLORS.ink, paddingTop: "calc(16px + max(env(safe-area-inset-top), 20px))", paddingBottom: 16 }}
       >
-        <div className="flex items-center gap-2">
-          <Bell size={20} style={{ color: COLORS.strike }} />
-          <div style={{ color: COLORS.cream, fontWeight: 700 }}>お知らせ</div>
-        </div>
+        {current ? (
+          <button type="button" onClick={() => setOpenId(null)} className="flex items-center gap-1" aria-label="お知らせ一覧に戻る">
+            <ChevronLeft size={24} style={{ color: COLORS.cream, marginLeft: -6 }} />
+            <span style={{ color: COLORS.cream, fontWeight: 700 }}>お知らせ</span>
+          </button>
+        ) : (
+          <div className="flex items-center gap-2">
+            <Bell size={20} style={{ color: COLORS.strike }} />
+            <div style={{ color: COLORS.cream, fontWeight: 700 }}>お知らせ</div>
+          </div>
+        )}
         <button type="button" onClick={onClose} aria-label="閉じる">
           <X size={22} style={{ color: COLORS.cream }} />
         </button>
       </div>
       <div
-        className="flex-1 overflow-y-auto px-4 py-4 space-y-3"
-        style={{ paddingBottom: "calc(16px + env(safe-area-inset-bottom))" }}
+        key={current ? current.id : "list"}
+        className="flex-1 overflow-y-auto px-4 py-4"
+        style={{ paddingBottom: "calc(24px + env(safe-area-inset-bottom))" }}
       >
-        {items.length === 0 && (
-          <div className="text-center py-10" style={{ color: COLORS.strike, opacity: 0.8, fontSize: 14 }}>
-            お知らせはまだありません
+        {current ? (
+          <AnnouncementDetail a={current} />
+        ) : (
+          <div className="space-y-2">
+            {items.length === 0 && (
+              <div className="text-center py-10" style={{ color: COLORS.strike, opacity: 0.8, fontSize: 14 }}>
+                お知らせはまだありません
+              </div>
+            )}
+            {items.map((a) => (
+              <AnnouncementListRow
+                key={a.id}
+                a={a}
+                unread={!readIds.includes(a.id)}
+                onOpen={() => {
+                  setOpenId(a.id);
+                  onOpenItem(a.id);
+                }}
+              />
+            ))}
           </div>
         )}
-        {items.map((a) => (
-          <AnnouncementCard key={a.id} a={a} />
-        ))}
       </div>
     </div>
   );
@@ -3771,8 +3902,10 @@ function AdminAnnouncements({ password }) {
 
       {showPreview && (
         <div className="space-y-3">
-          <div className="text-xs" style={{ color: COLORS.strike }}>プレビュー:ベルのお知らせ一覧</div>
-          <AnnouncementCard a={previewItem} imageSrc={previewImageSrc} />
+          <div className="text-xs" style={{ color: COLORS.strike }}>プレビュー:ベルの一覧</div>
+          <AnnouncementListRow a={previewItem} imageSrc={previewImageSrc} unread onOpen={() => {}} />
+          <div className="text-xs" style={{ color: COLORS.strike }}>プレビュー:押したあとの詳細</div>
+          <AnnouncementDetail a={previewItem} imageSrc={previewImageSrc} />
           {form.type === "event" && previewImageSrc && (
             <>
               <div className="text-xs" style={{ color: COLORS.strike }}>プレビュー:起動時の表示</div>
@@ -3851,6 +3984,113 @@ function AdminAnnouncements({ password }) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+
+// ---------- 管理画面:登録者カード ----------
+// "2026-10-01T12:03:44.512Z" → "10/1 21:03" (Japan time). Anything unparsable is shown as is.
+function formatAdminDateTime(v) {
+  if (!v) return "";
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return String(v);
+  return d.toLocaleString("ja-JP", { timeZone: "Asia/Tokyo", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function AdminChip({ children, tone = "muted" }) {
+  const tones = {
+    gold: { background: "rgba(224, 168, 0, 0.16)", color: COLORS.gold, border: "1px solid rgba(224, 168, 0, 0.55)" },
+    muted: { background: "rgba(255,255,255,0.08)", color: COLORS.strike, border: "1px solid rgba(255,255,255,0.18)" },
+    warn: { background: "rgba(232, 131, 106, 0.16)", color: "#E8836A", border: "1px solid rgba(232, 131, 106, 0.5)" },
+  };
+  return (
+    <span style={{ fontSize: 12, fontWeight: 700, padding: "2px 8px", borderRadius: 999, whiteSpace: "nowrap", ...tones[tone] }}>
+      {children}
+    </span>
+  );
+}
+
+function AdminButton({ children, onClick, kind = "outline", ariaLabel }) {
+  const styles = {
+    primary: { background: COLORS.gold, color: COLORS.ink, border: `1px solid ${COLORS.gold}` },
+    light: { background: COLORS.strike, color: COLORS.ink, border: `1px solid ${COLORS.strike}` },
+    outline: { background: "transparent", color: COLORS.cream, border: `1px solid ${COLORS.oak}` },
+  };
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={ariaLabel}
+      className="rounded-lg flex items-center justify-center"
+      style={{ minHeight: 36, padding: "0 14px", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", ...styles[kind] }}
+    >
+      {children}
+    </button>
+  );
+}
+
+// One registrant. Top: number + kind. Middle: name, email, ranking. Bottom: date and the buttons.
+function AdminRequestCard({ r, dateLabel, onToggleRanking, actions, children }) {
+  const migrated = !!r.linkedAccountUid;
+  const showEmail = r.email && r.email !== r.name;
+  return (
+    <div className="rounded-xl border glass-card" style={{ borderColor: COLORS.oak, padding: 14, opacity: migrated ? 0.75 : 1 }}>
+      <div className="flex items-center justify-between gap-2">
+        <span style={{ color: COLORS.strike, fontSize: 13, fontWeight: 700, letterSpacing: 0.5 }}>No.{formatRequestNumber(r.requestNumber)}</span>
+        <div className="flex items-center gap-1 flex-wrap justify-end">
+          {migrated ? (
+            <AdminChip>移行済み(古い記録)</AdminChip>
+          ) : r.isAccount ? (
+            <AdminChip tone="gold">アカウント</AdminChip>
+          ) : (
+            <AdminChip>端末のみ</AdminChip>
+          )}
+        </div>
+      </div>
+
+      <div
+        style={{ color: COLORS.cream, fontWeight: 700, fontSize: 17, marginTop: 6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+      >
+        {r.name || "(名前なし)"}
+      </div>
+      {showEmail && (
+        <div style={{ color: COLORS.strike, fontSize: 13, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {r.email}
+        </div>
+      )}
+
+      {r.rankingOptIn && (
+        <div className="flex items-center justify-between gap-2 rounded-lg" style={{ marginTop: 10, padding: "8px 10px", background: "rgba(255,255,255,0.05)" }}>
+          <div className="flex items-center gap-2" style={{ minWidth: 0 }}>
+            <Trophy size={15} style={{ color: r.rankingExcluded ? "#E8836A" : COLORS.gold, flexShrink: 0 }} />
+            <div style={{ minWidth: 0 }}>
+              <div style={{ color: r.rankingExcluded ? "#E8836A" : COLORS.cream, fontSize: 13, fontWeight: 700 }}>
+                {r.rankingExcluded ? "ランキング除外中" : "ランキング参加中"}
+              </div>
+              {r.rankingNickname && (
+                <div style={{ color: COLORS.strike, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  表示名:{r.rankingNickname}
+                </div>
+              )}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onToggleRanking}
+            className="rounded-lg"
+            style={{ padding: "6px 10px", fontSize: 12, fontWeight: 700, color: COLORS.strike, border: "1px solid rgba(255,255,255,0.25)", whiteSpace: "nowrap", flexShrink: 0 }}
+          >
+            {r.rankingExcluded ? "除外を解除" : "除外する"}
+          </button>
+        </div>
+      )}
+
+      <div className="flex items-center justify-between gap-2" style={{ marginTop: 12 }}>
+        <span style={{ color: COLORS.strike, fontSize: 12, opacity: 0.85 }}>{dateLabel}</span>
+        <div className="flex gap-2">{actions}</div>
+      </div>
+      {children}
     </div>
   );
 }
@@ -4056,47 +4296,18 @@ function AdminPanel() {
           <div className="space-y-2">
             {pending.length === 0 && <div className="text-xs" style={{ color: COLORS.strike }}>承認待ちの申請はありません</div>}
             {pending.map((r) => (
-              <div key={r.id} className="rounded-xl p-3 border glass-card flex items-center justify-between" style={{ borderColor: COLORS.oak }}>
-                <div>
-                  <div style={{ color: COLORS.cream, fontWeight: 700 }}>
-                    <span style={{ color: COLORS.strike }}>No.{formatRequestNumber(r.requestNumber)}</span> {r.name}
-                    {r.isAccount && <span style={{ color: COLORS.gold, fontSize: 11 }}> ・アカウント</span>}
-                    {r.linkedAccountUid && <span style={{ color: COLORS.strike, opacity: 0.6, fontSize: 11 }}> ・アカウントに移行済み</span>}
-                    {r.rankingOptIn && (
-                      <span style={{ fontSize: 11 }}>
-                        <span style={{ color: r.rankingExcluded ? "#E8836A" : COLORS.gold }}>
-                          {r.rankingExcluded ? " ・ランキング除外中" : " ・ランキング参加中"}
-                        </span>{" "}
-                        <button
-                          type="button"
-                          onClick={() => toggleRankingExclude(r.id, !r.rankingExcluded)}
-                          className="underline"
-                          style={{ color: COLORS.strike, fontSize: 11 }}
-                        >
-                          {r.rankingExcluded ? "除外を解除" : "除外する"}
-                        </button>
-                      </span>
-                    )}
-                  </div>
-                  <div style={{ color: COLORS.strike, fontSize: 13 }}>{r.requestedAt}</div>
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => updateStatus(r.id, "approved")}
-                    className="rounded px-3 py-1 text-xs"
-                    style={{ background: COLORS.gold, color: "white", fontWeight: 700 }}
-                  >
-                    承認
-                  </button>
-                  <button
-                    onClick={() => updateStatus(r.id, "rejected")}
-                    className="rounded px-3 py-1 text-xs"
-                    style={{ background: COLORS.strike, color: COLORS.ink, fontWeight: 700 }}
-                  >
-                    却下
-                  </button>
-                </div>
-              </div>
+              <AdminRequestCard
+                key={r.id}
+                r={r}
+                dateLabel={`申請 ${formatAdminDateTime(r.requestedAt)}`}
+                onToggleRanking={() => toggleRankingExclude(r.id, !r.rankingExcluded)}
+                actions={
+                  <>
+                    <AdminButton kind="light" onClick={() => updateStatus(r.id, "rejected")}>却下</AdminButton>
+                    <AdminButton kind="primary" onClick={() => updateStatus(r.id, "approved")}>承認</AdminButton>
+                  </>
+                }
+              />
             ))}
           </div>
         </div>
@@ -4118,48 +4329,19 @@ function AdminPanel() {
           <div className="space-y-2">
             {approved.length === 0 && <div className="text-xs" style={{ color: COLORS.strike }}>承認済みの申請はありません</div>}
             {approved.map((r) => (
-              <div key={r.id} className="rounded-xl p-3 border glass-card flex items-center justify-between" style={{ borderColor: COLORS.oak }}>
-                <div>
-                  <div style={{ color: COLORS.cream, fontWeight: 700 }}>
-                    <span style={{ color: COLORS.strike }}>No.{formatRequestNumber(r.requestNumber)}</span> {r.name}
-                    {r.isAccount && <span style={{ color: COLORS.gold, fontSize: 11 }}> ・アカウント</span>}
-                    {r.linkedAccountUid && <span style={{ color: COLORS.strike, opacity: 0.6, fontSize: 11 }}> ・アカウントに移行済み</span>}
-                    {r.rankingOptIn && (
-                      <span style={{ fontSize: 11 }}>
-                        <span style={{ color: r.rankingExcluded ? "#E8836A" : COLORS.gold }}>
-                          {r.rankingExcluded ? " ・ランキング除外中" : " ・ランキング参加中"}
-                        </span>{" "}
-                        <button
-                          type="button"
-                          onClick={() => toggleRankingExclude(r.id, !r.rankingExcluded)}
-                          className="underline"
-                          style={{ color: COLORS.strike, fontSize: 11 }}
-                        >
-                          {r.rankingExcluded ? "除外を解除" : "除外する"}
-                        </button>
-                      </span>
-                    )}
-                  </div>
-                  <div style={{ color: COLORS.strike, fontSize: 13 }}>承認済み ・ {r.updatedAt}</div>
-                </div>
-                {r.linkedAccountUid ? (
-                  <button
-                    onClick={() => deleteMigrated([r.id])}
-                    className="rounded px-3 py-1 text-xs"
-                    style={{ border: `1px solid ${COLORS.oak}`, color: COLORS.cream, fontWeight: 700, flexShrink: 0 }}
-                  >
-                    削除
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => updateStatus(r.id, "rejected")}
-                    className="rounded px-3 py-1 text-xs"
-                    style={{ border: `1px solid ${COLORS.oak}`, color: COLORS.cream, fontWeight: 700, flexShrink: 0 }}
-                  >
-                    却下に変更
-                  </button>
-                )}
-              </div>
+              <AdminRequestCard
+                key={r.id}
+                r={r}
+                dateLabel={`承認 ${formatAdminDateTime(r.updatedAt)}`}
+                onToggleRanking={() => toggleRankingExclude(r.id, !r.rankingExcluded)}
+                actions={
+                  r.linkedAccountUid ? (
+                    <AdminButton onClick={() => deleteMigrated([r.id])}>削除</AdminButton>
+                  ) : (
+                    <AdminButton onClick={() => updateStatus(r.id, "rejected")}>却下に変更</AdminButton>
+                  )
+                }
+              />
             ))}
           </div>
         </div>
@@ -4171,49 +4353,20 @@ function AdminPanel() {
           <div className="space-y-2">
             {rejected.length === 0 && <div className="text-xs" style={{ color: COLORS.strike }}>却下した申請はありません</div>}
             {rejected.map((r) => (
-              <div key={r.id} className="rounded-xl p-3 border glass-card" style={{ borderColor: COLORS.oak }}>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div style={{ color: COLORS.cream, fontWeight: 700 }}>
-                      <span style={{ color: COLORS.strike }}>No.{formatRequestNumber(r.requestNumber)}</span> {r.name}
-                    {r.isAccount && <span style={{ color: COLORS.gold, fontSize: 11 }}> ・アカウント</span>}
-                    {r.linkedAccountUid && <span style={{ color: COLORS.strike, opacity: 0.6, fontSize: 11 }}> ・アカウントに移行済み</span>}
-                    {r.rankingOptIn && (
-                      <span style={{ fontSize: 11 }}>
-                        <span style={{ color: r.rankingExcluded ? "#E8836A" : COLORS.gold }}>
-                          {r.rankingExcluded ? " ・ランキング除外中" : " ・ランキング参加中"}
-                        </span>{" "}
-                        <button
-                          type="button"
-                          onClick={() => toggleRankingExclude(r.id, !r.rankingExcluded)}
-                          className="underline"
-                          style={{ color: COLORS.strike, fontSize: 11 }}
-                        >
-                          {r.rankingExcluded ? "除外を解除" : "除外する"}
-                        </button>
-                      </span>
-                    )}
-                    </div>
-                    <div style={{ color: COLORS.strike, fontSize: 13 }}>却下 ・ {r.updatedAt}</div>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => updateStatus(r.id, "approved")}
-                      className="rounded px-3 py-1 text-xs"
-                      style={{ border: `1px solid ${COLORS.oak}`, color: COLORS.cream, fontWeight: 700 }}
-                    >
-                      承認に変更
-                    </button>
-                    <button
-                      onClick={() => setConfirmDeleteRequestId(r.id)}
-                      className="rounded px-2 py-1"
-                      style={{ border: `1px solid ${COLORS.oak}` }}
-                      aria-label="削除"
-                    >
-                      <Trash2 size={14} style={{ color: COLORS.strike }} />
-                    </button>
-                  </div>
-                </div>
+              <AdminRequestCard
+                key={r.id}
+                r={r}
+                dateLabel={`却下 ${formatAdminDateTime(r.updatedAt)}`}
+                onToggleRanking={() => toggleRankingExclude(r.id, !r.rankingExcluded)}
+                actions={
+                  <>
+                    <AdminButton onClick={() => setConfirmDeleteRequestId(r.id)} ariaLabel="削除">
+                      <Trash2 size={15} style={{ color: COLORS.strike }} />
+                    </AdminButton>
+                    <AdminButton onClick={() => updateStatus(r.id, "approved")}>承認に変更</AdminButton>
+                  </>
+                }
+              >
                 {confirmDeleteRequestId === r.id && (
                   <div className="mt-2 rounded-lg p-2 flex items-center justify-between" style={{ background: "#FBEAE5" }}>
                     <span className="text-xs" style={{ color: COLORS.danger, fontWeight: 700 }}>本当に削除しますか?</span>
@@ -4235,7 +4388,7 @@ function AdminPanel() {
                     </div>
                   </div>
                 )}
-              </div>
+              </AdminRequestCard>
             ))}
           </div>
         </div>
@@ -6302,7 +6455,14 @@ function getNextRollCell(frameIdx, rollIdx, value) {
           </AppModal>
         );
       })()}
-      {bellOpen && <BellPanel items={announcements} onClose={() => setBellOpen(false)} />}
+      {bellOpen && (
+        <BellPanel
+          items={announcements}
+          readIds={annReadIds}
+          onOpenItem={(id) => markAnnouncementsRead([id])}
+          onClose={() => setBellOpen(false)}
+        />
+      )}
       {eventPopup && (
         <EventPopup
           a={eventPopup}
@@ -6366,8 +6526,8 @@ function getNextRollCell(frameIdx, rollIdx, value) {
             <button
               type="button"
               onClick={() => {
+                // Each one becomes "read" when it's opened (the red dot / badge stay until then).
                 setBellOpen(true);
-                markAnnouncementsRead(announcements.map((a) => a.id));
               }}
               className="rounded-full flex items-center justify-center relative"
               style={{ width: 36, height: 36, background: COLORS.strike, color: COLORS.ink }}
