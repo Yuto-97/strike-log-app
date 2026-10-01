@@ -3910,6 +3910,21 @@ function AdminPanel() {
     load(password);
   };
 
+  // Old phone records whose owner has moved to an account (approval, name
+  // and number already copied over) — safe to remove.
+  const deleteMigrated = async (ids) => {
+    if (!ids.length) return;
+    if (!window.confirm(`アカウントに移行済みの記録を${ids.length}件削除します。よろしいですか?\n(アカウント側の承認・記録には影響しません)`)) return;
+    for (const id of ids) {
+      await fetch("/api/admin/requests", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password, deviceId: id }),
+      });
+    }
+    load(password);
+  };
+
   const deleteRequest = async (deviceId) => {
     await fetch("/api/admin/requests", {
       method: "DELETE",
@@ -4090,6 +4105,16 @@ function AdminPanel() {
           <div className="text-sm mb-2" style={{ color: COLORS.strike, fontWeight: 700 }}>
             承認済み ({approved.length})
           </div>
+          {approved.some((r) => r.linkedAccountUid) && (
+            <button
+              type="button"
+              onClick={() => deleteMigrated(approved.filter((r) => r.linkedAccountUid).map((r) => r.id))}
+              className="w-full rounded-lg py-2 text-sm mb-2"
+              style={{ border: "1px solid rgba(184, 153, 104, 0.6)", color: COLORS.strike, fontWeight: 700 }}
+            >
+              アカウントに移行済みの記録をまとめて削除({approved.filter((r) => r.linkedAccountUid).length}件)
+            </button>
+          )}
           <div className="space-y-2">
             {approved.length === 0 && <div className="text-xs" style={{ color: COLORS.strike }}>承認済みの申請はありません</div>}
             {approved.map((r) => (
@@ -4117,13 +4142,23 @@ function AdminPanel() {
                   </div>
                   <div style={{ color: COLORS.strike, fontSize: 13 }}>承認済み ・ {r.updatedAt}</div>
                 </div>
-                <button
-                  onClick={() => updateStatus(r.id, "rejected")}
-                  className="rounded px-3 py-1 text-xs"
-                  style={{ border: `1px solid ${COLORS.oak}`, color: COLORS.cream, fontWeight: 700 }}
-                >
-                  却下に変更
-                </button>
+                {r.linkedAccountUid ? (
+                  <button
+                    onClick={() => deleteMigrated([r.id])}
+                    className="rounded px-3 py-1 text-xs"
+                    style={{ border: `1px solid ${COLORS.oak}`, color: COLORS.cream, fontWeight: 700, flexShrink: 0 }}
+                  >
+                    削除
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => updateStatus(r.id, "rejected")}
+                    className="rounded px-3 py-1 text-xs"
+                    style={{ border: `1px solid ${COLORS.oak}`, color: COLORS.cream, fontWeight: 700, flexShrink: 0 }}
+                  >
+                    却下に変更
+                  </button>
+                )}
               </div>
             ))}
           </div>
