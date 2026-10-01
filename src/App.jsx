@@ -1577,7 +1577,7 @@ const RANKING_AGE_OPTIONS = [
   ["70s+", "70代以上"],
 ];
 
-function RankingPanel({ authUser, deviceId, onClose, onGoToSettings }) {
+function RankingPanel({ authUser, deviceId, onClose, onGoToSettings, embedded = false }) {
   const now = new Date();
   const thisMonth = monthOf(now);
   const lastMonth = monthOf(new Date(now.getFullYear(), now.getMonth() - 1, 1));
@@ -1651,24 +1651,8 @@ function RankingPanel({ authUser, deviceId, onClose, onGoToSettings }) {
     </div>
   );
 
-  return (
-    <div
-      className="fixed left-0 right-0 top-0 bottom-0 flex flex-col"
-      style={{ background: `linear-gradient(160deg, ${COLORS.navyLight} 0%, ${COLORS.navyBg} 55%, #161D38 100%)`, zIndex: 50 }}
-    >
-      <div
-        className="flex items-center justify-between px-4"
-        style={{ background: COLORS.ink, paddingTop: "calc(16px + max(env(safe-area-inset-top), 20px))", paddingBottom: 16 }}
-      >
-        <div className="flex items-center gap-2">
-          <Trophy size={20} style={{ color: COLORS.gold }} />
-          <div style={{ color: COLORS.cream, fontWeight: 700 }}>月間ランキング</div>
-        </div>
-        <button type="button" onClick={onClose} aria-label="閉じる">
-          <X size={22} style={{ color: COLORS.cream }} />
-        </button>
-      </div>
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3" style={{ paddingBottom: "calc(16px + env(safe-area-inset-bottom))" }}>
+  const content = (
+    <>
         {!authUser ? (
           <div className="glass-card rounded-xl p-4 space-y-3 text-center">
             <Trophy size={32} style={{ color: COLORS.gold, margin: "0 auto" }} />
@@ -1755,9 +1739,17 @@ function RankingPanel({ authUser, deviceId, onClose, onGoToSettings }) {
                   {data.me.excluded ? (
                     <div style={{ color: "#E8836A", fontSize: 12, marginTop: 6 }}>ランキングの対象外に設定されています</div>
                   ) : !data.me.optIn ? (
-                    <button type="button" onClick={onGoToSettings} className="text-xs underline" style={{ color: COLORS.gold, marginTop: 6 }}>
-                      ランキングに参加していません(設定から参加できます)
-                    </button>
+                    <div className="flex items-center justify-between gap-2" style={{ marginTop: 8 }}>
+                      <span style={{ color: COLORS.strike, opacity: 0.75, fontSize: 12, whiteSpace: "nowrap" }}>ランキングに未参加です</span>
+                      <button
+                        type="button"
+                        onClick={onGoToSettings}
+                        className="rounded-full px-3 py-1"
+                        style={{ border: `1px solid ${COLORS.gold}`, color: COLORS.gold, fontSize: 12, fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0 }}
+                      >
+                        設定から参加する
+                      </button>
+                    </div>
                   ) : null}
                 </div>
 
@@ -1791,6 +1783,38 @@ function RankingPanel({ authUser, deviceId, onClose, onGoToSettings }) {
             )}
           </>
         )}
+    </>
+  );
+  // As the 「ランキング」 tab: a normal page inside the app.
+  if (embedded) {
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center gap-2" style={{ color: COLORS.cream, fontWeight: 700 }}>
+          <Trophy size={18} style={{ color: COLORS.gold }} /> 月間ランキング
+        </div>
+        {content}
+      </div>
+    );
+  }
+  return (
+    <div
+      className="fixed left-0 right-0 top-0 bottom-0 flex flex-col"
+      style={{ background: `linear-gradient(160deg, ${COLORS.navyLight} 0%, ${COLORS.navyBg} 55%, #161D38 100%)`, zIndex: 50 }}
+    >
+      <div
+        className="flex items-center justify-between px-4"
+        style={{ background: COLORS.ink, paddingTop: "calc(16px + max(env(safe-area-inset-top), 20px))", paddingBottom: 16 }}
+      >
+        <div className="flex items-center gap-2">
+          <Trophy size={20} style={{ color: COLORS.gold }} />
+          <div style={{ color: COLORS.cream, fontWeight: 700 }}>月間ランキング</div>
+        </div>
+        <button type="button" onClick={onClose} aria-label="閉じる">
+          <X size={22} style={{ color: COLORS.cream }} />
+        </button>
+      </div>
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3" style={{ paddingBottom: "calc(16px + env(safe-area-inset-bottom))" }}>
+        {content}
       </div>
     </div>
   );
@@ -4588,7 +4612,6 @@ export default function StrikeLog() {
   const [rankingName, setRankingName] = useState(""); // ランキング表示名 (separate from the nickname)
   const [ageGroup, setAgeGroup] = useState(""); // "10s"…"70s+" or "" — only for ranking filters
   const [gender, setGender] = useState(""); // "male" | "female" | "" — only for ranking filters
-  const [rankingOpen, setRankingOpen] = useState(false);
   const [rankingNeedNickname, setRankingNeedNickname] = useState(false);
   const [accountNotice, setAccountNotice] = useState(null); // { kind: "created" | "login", email } → completion popup
   const [centerBackfillOpen, setCenterBackfillOpen] = useState(false); // ask which center past games were at
@@ -6239,18 +6262,6 @@ function getNextRollCell(frameIdx, rollIdx, value) {
         );
       })()}
       {bellOpen && <BellPanel items={announcements} onClose={() => setBellOpen(false)} />}
-      {rankingOpen && (
-        <RankingPanel
-          authUser={authUser}
-          deviceId={deviceId}
-          onClose={() => setRankingOpen(false)}
-          onGoToSettings={() => {
-            setRankingOpen(false);
-            setTab("profile");
-            window.scrollTo(0, 0);
-          }}
-        />
-      )}
       {eventPopup && (
         <EventPopup
           a={eventPopup}
@@ -6293,22 +6304,24 @@ function getNextRollCell(frameIdx, rollIdx, value) {
               style={{ objectFit: "cover" }}
             />
             <div>
-              <div className="text-2xl tracking-wide" style={{ color: COLORS.cream, fontFamily: "'Oswald', sans-serif", fontWeight: 700 }}>
+              <div
+                className="tracking-wide"
+                style={{
+                  color: COLORS.cream,
+                  fontFamily: "'Oswald', sans-serif",
+                  fontWeight: 700,
+                  // 24px normally; a little smaller on narrow phones so it stays on one line
+                  fontSize: "clamp(20px, 6.4vw, 24px)",
+                  lineHeight: 1.25,
+                  whiteSpace: "nowrap",
+                }}
+              >
                 STRIKE LOG
               </div>
               <div className="text-xs mt-0.5" style={{ color: COLORS.strike }}>スコア分析 &amp; 記録</div>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setRankingOpen(true)}
-              className="rounded-full flex items-center justify-center"
-              style={{ width: 36, height: 36, background: COLORS.strike, color: COLORS.ink }}
-              aria-label="月間ランキング"
-            >
-              <Trophy size={18} />
-            </button>
             <button
               type="button"
               onClick={() => {
@@ -7748,6 +7761,18 @@ function getNextRollCell(frameIdx, rollIdx, value) {
           </div>
         )}
 
+        {tab === "ranking" && (
+          <RankingPanel
+            embedded
+            authUser={authUser}
+            deviceId={deviceId}
+            onGoToSettings={() => {
+              setTab("profile");
+              window.scrollTo(0, 0);
+            }}
+          />
+        )}
+
         {tab === "profile" && (
           <div className="space-y-4">
             <div className="text-sm" style={{ color: COLORS.strike }}>アカウント</div>
@@ -8446,6 +8471,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
             { key: "scan", label: "スコア分析", icon: Camera },
             { key: "history", label: "履歴", icon: History },
             { key: "stats", label: "記録", icon: BarChart3 },
+            { key: "ranking", label: "ランキング", icon: Trophy },
             { key: "profile", label: "設定", icon: Settings },
           ].map(({ key, label, icon: Icon }) => {
             const active = tab === key;
