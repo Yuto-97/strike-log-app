@@ -1,5 +1,7 @@
 // /api/announcements — お知らせ(アップデート情報・イベント広告)
 //
+// アップデート情報は api/_releaseNotes.js に書いて git push で反映(公開一覧に合流)。
+//
 // Public:
 //   GET  /api/announcements             → currently active announcements (no images)
 //   GET  /api/announcements?image=ID&v= → that announcement's image (long-cached)
@@ -16,6 +18,7 @@
 // If images ever need to be bigger or more numerous, move them to Cloud
 // Storage (requires switching Firebase to the Blaze plan).
 import { db } from "./_firebaseAdmin.js";
+import { activeReleaseNotes } from "./_releaseNotes.js";
 
 const TYPES = ["update", "event"];
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -67,6 +70,7 @@ export function createHandler({ db, adminPassword, now = () => Date.now() }) {
         const items = snap.docs
           .map((d) => ({ id: d.id, ...d.data() }))
           .filter((a) => isActive(a, today))
+          .concat(activeReleaseNotes(today)) // アップデート情報はコード側(_releaseNotes.js)から
           .sort(byNewest);
         res.setHeader("Cache-Control", "public, max-age=60");
         res.status(200).json({ items });
