@@ -1666,12 +1666,12 @@ function AnnouncementDetail({ a, imageSrc }) {
 }
 
 // ---------- 3ゲーム対決イベント ----------
-// 参加者(管理画面で登録番号を指定)だけに出る。履歴から連続3ゲームを選んで提出し、
+// 「参加する」を押した人が、履歴から同じ日の3ゲームを選んで提出する。
 // ベストの3ゲーム合計で順位が決まる。同点はハイとローの差が小さい方が上。
 const DUEL_ERRORS = {
   not_synced: "記録をクラウドに保存中です。少し待ってからもう一度お試しください",
   already_submitted: "この3ゲームはすでに提出済みです",
-  not_consecutive: "連続した3ゲームを選んでください",
+  not_participant: "先に「参加する」を押してください",
   not_same_day: "同じ日の3ゲームを選んでください",
   out_of_period: "イベント期間外のゲームです",
   ended: "イベントは終了しました",
@@ -1713,18 +1713,14 @@ function DuelPickSheet({ games, duel, mine, authUser, deviceId, onClose, onDone 
   const inPeriod = games.filter((g) => (!duel.startDate || g.date >= duel.startDate) && (!duel.endDate || g.date <= duel.endDate));
   const dates = Array.from(new Set(inPeriod.map((g) => g.date))).sort().reverse();
   const chosen = picked.map((id) => games.find((g) => g.id === id)).filter(Boolean);
-  const nums = chosen.map((g) => Number(g.gameNumber) || 0).sort((a, b) => a - b);
   const sameDay = chosen.length === 3 && chosen.every((g) => g.date === chosen[0].date);
-  const consecutive = chosen.length === 3 && nums[1] === nums[0] + 1 && nums[2] === nums[1] + 1;
-  const valid = chosen.length === 3 && sameDay && consecutive;
+  const valid = chosen.length === 3 && sameDay;
   const total = chosen.reduce((a, g) => a + (g.total || 0), 0);
   const hint =
     chosen.length < 3
       ? `3ゲームを選んでください(${chosen.length}/3)`
       : !sameDay
       ? "同じ日の3ゲームを選んでください"
-      : !consecutive
-      ? "連続した3ゲームを選んでください"
       : `合計 ${total} ・ アベレージ ${(total / 3).toFixed(1)}`;
 
   const toggle = (id) => {
@@ -1890,7 +1886,7 @@ function DuelPanel({ authUser, deviceId, games, data, reload }) {
           {formatMonthDay(data.startDate)}〜{formatMonthDay(data.endDate)}
           {phase === "live" && `(あと${daysBetween(data.today, data.endDate)}日)`}
         </div>
-        <div style={{ color: COLORS.strike, opacity: 0.85, fontSize: 13, marginTop: 2 }}>連続3ゲームの合計で競います</div>
+        <div style={{ color: COLORS.strike, opacity: 0.85, fontSize: 13, marginTop: 2 }}>3ゲームの合計で競います</div>
       </div>
 
       <div className="space-y-2">
@@ -2040,17 +2036,51 @@ function DuelPanel({ authUser, deviceId, games, data, reload }) {
   );
 }
 
-// ランキングタブ: 対決イベントの参加者には「対決 / 月間ランキング」の切り替えを出す。
-function RankingTab({ authUser, deviceId, games, onGoToSettings }) {
-  const [duel, setDuel] = useState(authUser ? undefined : null); // undefined = 確認中
+// 参加前の「3ゲーム対決」: 開催情報と参加ボタン
+function DuelJoinCard({ info, onJoin }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const ended = info.today > info.endDate;
+  const join = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      await onJoin();
+    } catch (e) {
+      setError(e.message);
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="glass-card rounded-xl space-y-3" style={{ padding: 16 }}>
+      <div className="flex items-center gap-2">
+        <Trophy size={18} style={{ color: COLORS.gold }} />
+        <div style={{ color: COLORS.cream, fontWeight: 700, fontSize: 16 }}>{info.title}</div>
+      </div>
+      <div style={{ color: COLORS.strike, fontSize: 14 }}>
+        {formatMonthDay(info.startDate)}〜{formatMonthDay(info.endDate)}
+      </div>
+      <div style={{ color: COLORS.cream, fontSize: 15, lineHeight: 1.7 }}>3ゲームの合計スコアで競います。参加すると、参加者の成績を見くらべられます。</div>
+      {!ended && (
+        <button type="button" onClick={join} disabled={busy} className="w-full rounded-lg py-3" style={primaryButtonStyle(!busy)}>
+          {busy ? "参加中..." : "3ゲーム対決に参加する"}
+        </button>
+      )}
+      {error && <div style={{ color: "#E8836A", fontSize: 13 }}>{error}</div>}
+    </div>
+  );
+}
+
+// ランキングタブ: アカウントがある人には「月間ランキング / 3ゲーム対決」の切り替えを出す。
+function RankingTab({ authUser, deviceId, games, nickname, onGoToSettings }) {
+  const [duel, setDuel] = useState(authUser ? undefined : null); // undefined = 確認中, null = 取得できない
   const [view, setView] = useState("monthly");
   const decidedRef = useRef(false);
 
   const load = useCallback(async () => {
     if (!authUser) return;
     try {
-      const d = await duelFetch(authUser, deviceId, null);
-      setDuel(d.participant ? d : null);
+      setDuel(await duelFetch(authUser, deviceId, null));
     } catch (e) {
       setDuel((prev) => (prev === undefined ? null : prev));
     }
@@ -2060,6 +2090,7 @@ function RankingTab({ authUser, deviceId, games, onGoToSettings }) {
     load();
   }, [load]);
 
+  // 参加している人は、最初から「3ゲーム対決」を開く
   useEffect(() => {
     if (duel === undefined || decidedRef.current) return;
     decidedRef.current = true;
@@ -2069,25 +2100,32 @@ function RankingTab({ authUser, deviceId, games, onGoToSettings }) {
   if (authUser && duel === undefined) {
     return <div className="text-center py-8" style={{ color: COLORS.strike, opacity: 0.8 }}>読み込み中...</div>;
   }
-  if (!duel) {
+  const showDuel = !!duel && (duel.participant || duel.today <= duel.endDate);
+  if (!showDuel) {
     return <RankingPanel embedded authUser={authUser} deviceId={deviceId} onGoToSettings={onGoToSettings} />;
   }
+  const join = async () => {
+    await duelFetch(authUser, deviceId, { action: "duelJoin", name: (nickname || "").trim() });
+    await load();
+  };
   return (
     <div className="space-y-3">
       <div className="flex gap-2">
         {[
-          { key: "duel", label: "3ゲーム対決" },
           { key: "monthly", label: "月間ランキング" },
+          { key: "duel", label: "3ゲーム対決" },
         ].map((o) => (
           <button key={o.key} type="button" onClick={() => setView(o.key)} className="flex-1 rounded-lg py-2 text-sm" style={toggleStyle(view === o.key)}>
             {o.label}
           </button>
         ))}
       </div>
-      {view === "duel" ? (
+      {view === "monthly" ? (
+        <RankingPanel embedded authUser={authUser} deviceId={deviceId} onGoToSettings={onGoToSettings} />
+      ) : duel.participant ? (
         <DuelPanel authUser={authUser} deviceId={deviceId} games={games} data={duel} reload={load} />
       ) : (
-        <RankingPanel embedded authUser={authUser} deviceId={deviceId} onGoToSettings={onGoToSettings} />
+        <DuelJoinCard info={duel} onJoin={join} />
       )}
     </div>
   );
@@ -4505,94 +4543,6 @@ function AdminRequestCard({ r, dateLabel, onToggleRanking, actions, children }) 
   );
 }
 
-// ---------- 3ゲーム対決イベントの設定 (admin) ----------
-// 参加者は登録番号で指定する(登録者の「No.」)。アカウントを作った人だけが参加できる。
-function DuelAdmin({ password, requests }) {
-  const [form, setForm] = useState({ title: "11/22社内大会 前哨戦", startDate: "2026-10-03", endDate: "2026-11-21", participants: "" });
-  const [loaded, setLoaded] = useState(false);
-  const [msg, setMsg] = useState("");
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch(`/api/admin/requests?password=${encodeURIComponent(password)}&view=duel`);
-        const d = await res.json();
-        if (res.ok && d.startDate) {
-          setForm({ title: d.title || "", startDate: d.startDate, endDate: d.endDate, participants: (d.participants || []).join("\n") });
-        }
-      } catch (e) {
-        // keep the defaults
-      } finally {
-        setLoaded(true);
-      }
-    })();
-  }, [password]);
-
-  const numbers = Array.from(new Set(form.participants.match(/\d+/g) || []));
-  const whoIs = (n) => {
-    const acc = (requests || []).find((r) => String(r.requestNumber) === n && r.isAccount);
-    if (acc) return { text: acc.name || "(名前なし)", ok: true };
-    const any = (requests || []).find((r) => String(r.requestNumber) === n);
-    return any ? { text: `${any.name || "(名前なし)"}(アカウント未作成)`, ok: false } : { text: "該当なし", ok: false };
-  };
-
-  const save = async () => {
-    setSaving(true);
-    setMsg("");
-    try {
-      const res = await fetch("/api/admin/requests", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password, action: "duelConfig", title: form.title, startDate: form.startDate, endDate: form.endDate, participants: numbers }),
-      });
-      const d = await res.json().catch(() => ({}));
-      setMsg(res.ok ? "保存しました" : d.error || "保存できませんでした");
-    } catch (e) {
-      setMsg("保存できませんでした");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const input = { borderColor: COLORS.oak, background: COLORS.cream, color: COLORS.ink, fontSize: 16 };
-  return (
-    <div className="rounded-xl glass-card space-y-3" style={{ border: `1px solid ${COLORS.oak}`, padding: 14 }}>
-      <div className="flex items-center gap-2" style={{ color: COLORS.cream, fontWeight: 700 }}>
-        <Trophy size={16} style={{ color: COLORS.gold }} /> 3ゲーム対決
-      </div>
-      {!loaded ? (
-        <div style={{ color: COLORS.strike, fontSize: 13 }}>読み込み中...</div>
-      ) : (
-        <>
-          <input type="text" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="イベント名" className="w-full px-3 py-2 rounded border" style={input} />
-          <div className="flex gap-2 items-center">
-            <input type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} className="flex-1 px-2 py-2 rounded border" style={{ ...input, minWidth: 0, width: 0, fontSize: 15 }} />
-            <span style={{ color: COLORS.strike }}>〜</span>
-            <input type="date" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} className="flex-1 px-2 py-2 rounded border" style={{ ...input, minWidth: 0, width: 0, fontSize: 15 }} />
-          </div>
-          <div>
-            <div style={{ color: COLORS.strike, fontSize: 13, marginBottom: 4 }}>参加者の登録番号(1行に1人)</div>
-            <textarea value={form.participants} onChange={(e) => setForm({ ...form, participants: e.target.value })} rows={3} className="w-full px-3 py-2 rounded border" style={input} />
-            {numbers.map((n) => {
-              const w = whoIs(n);
-              return (
-                <div key={n} style={{ color: w.ok ? COLORS.gold : "#E8836A", fontSize: 13, marginTop: 2 }}>
-                  {n} → {w.text}
-                </div>
-              );
-            })}
-          </div>
-          <button type="button" onClick={save} disabled={saving} className="w-full rounded-lg py-2" style={primaryButtonStyle(!saving)}>
-            {saving ? "保存中..." : "保存する"}
-          </button>
-          {msg && <div style={{ color: COLORS.strike, fontSize: 13 }}>{msg}</div>}
-        </>
-      )}
-    </div>
-  );
-}
-
 function AdminPanel() {
   const [password, setPassword] = useState("");
   const [authed, setAuthed] = useState(false);
@@ -5038,8 +4988,6 @@ function AdminPanel() {
         </div>
           )}
         </div>
-
-        <DuelAdmin password={password} requests={requests} />
 
         <AdminUsage password={password} />
 
@@ -8446,6 +8394,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
         {tab === "ranking" && (
           <RankingTab
             games={games}
+            nickname={nickname}
             authUser={authUser}
             deviceId={deviceId}
             onGoToSettings={() => {

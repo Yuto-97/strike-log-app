@@ -99,9 +99,9 @@ export function buildRanking(rows, valueOf, myUid) {
 
 
 // ---------- 3ゲーム対決イベント ----------
-// 参加者(登録番号で指定)が、履歴から選んだ連続3ゲームを提出する。順位は
+// 参加ボタンを押した人が、履歴から選んだ同じ日の3ゲームを提出する。順位は
 // 「提出した中で一番良い3ゲーム合計」で決め、同点ならハイとローの差が小さい方が上。
-// 設定は settings/duel(管理画面から保存)、提出は duelEntries/{eventId}/entries/{id}。
+// 参加者は duelParticipants/{eventId}/people/{uid}、提出は duelEntries/{eventId}/entries/{id}。
 // 参加者だけが読み書きできる。
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -143,56 +143,39 @@ const cleanCount = (v, max = 400) => {
   return Number.isFinite(n) && n >= 0 && n <= max ? n : 0;
 };
 
-async function loadDuel(db, caller, account) {
-  const snap = await db.collection("settings").doc("duel").get();
-  if (!snap.exists) return null;
-  const c = snap.data() || {};
-  const participants = (Array.isArray(c.participants) ? c.participants : []).map(String);
-  if (!participants.includes(String(account.requestNumber || ""))) return null;
-  return {
-    id: String(c.id || "duel"),
-    title: String(c.title || "3ゲーム対決"),
-    startDate: c.startDate || null,
-    endDate: c.endDate || null,
-    participants,
-  };
+// 開催情報(今回は固定)。期間を変えるときはここを直す。
+const DUEL = { id: "duel-2026-11", title: "11/22社内大会 前哨戦", startDate: "2026-10-03", endDate: "2026-11-21" };
+
+const duelPeople = (db) => db.collection("duelParticipants").doc(DUEL.id).collection("people");
+
+// 参加ボタンを押した人だけが「参加者」。参加者でなければ null。
+async function loadDuelMember(db, caller) {
+  const d = await duelPeople(db).doc(caller.uid).get();
+  return d.exists ? d.data() : null;
 }
 
-// 参加者の登録番号 → アカウントの uid と表示名
-async function resolveDuelPeople(db, numbers) {
-  const people = [];
-  for (const n of numbers) {
-    const q = await db.collection("accessRequests").where("requestNumber", "==", n).get();
-    const acc = q.docs.find((d) => d.data().isAccount) || null;
-    const raw = acc ? String(acc.data().name || "") : "";
-    people.push({
-      number: n,
-      uid: acc ? acc.id : null,
-      name: raw && !raw.includes("@") ? raw : `参加者${people.length + 1}`,
-    });
-  }
-  return people;
-}
-
-async function duelView(db, caller, duel) {
-  const people = await resolveDuelPeople(db, duel.participants);
-  const entriesSnap = await db.collection("duelEntries").doc(duel.id).collection("entries").get();
+async function duelView(db, caller, member) {
+  const today = todayJst();
+  const base = { title: DUEL.title, startDate: DUEL.startDate, endDate: DUEL.endDate, today };
+  if (!member) return { participant: false, ...base };
+  const [peopleSnap, entriesSnap] = await Promise.all([
+    duelPeople(db).get(),
+    db.collection("duelEntries").doc(DUEL.id).collection("entries").get(),
+  ]);
+  const people = peopleSnap.docs.map((d, i) => ({ uid: d.id, name: String(d.data().name || "") || `参加者${i + 1}`, joinedAt: d.data().joinedAt || "" }));
   const entries = entriesSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-  const present = people.filter((p) => p.uid);
-  const board = buildDuelBoard(present, entries).map((r) => ({
+  const board = buildDuelBoard(people, entries).map((r) => ({
     name: r.name,
     rank: r.rank,
     isMe: r.uid === caller.uid,
     best: r.best ? publicEntry(r.best) : null,
   }));
-  // アカウント未作成の参加者も、名前のない「未参加」枠として末尾に出す
-  for (const p of people.filter((x) => !x.uid)) board.push({ name: p.name, rank: null, isMe: false, best: null, noAccount: true });
   const bestMine = board.find((r) => r.isMe && r.best);
   const mine = entries
     .filter((e) => e.uid === caller.uid)
     .sort(duelOrder)
     .map((e) => ({ ...publicEntry(e), id: e.id, gameIds: e.gameIds || [], adopted: !!bestMine && bestMine.best.createdAt === e.createdAt }));
-  return { participant: true, title: duel.title, startDate: duel.startDate, endDate: duel.endDate, today: todayJst(), board, mine };
+  return { participant: true, ...base, board, mine };
 }
 
 function publicEntry(e) {
@@ -241,15 +224,11 @@ export function createHandler({ db, adminAuth, FieldValue }) {
 
     const userRef = db.collection("userData").doc(caller.uid);
 
-    // 3ゲーム対決: 参加者の順位表と自分の提出一覧
+    // 3ゲーム対決: 参加者の順位表と自分の提出一覧(参加していない人には開催情報だけ)
     if (req.method === "GET" && req.query && req.query.duel) {
       try {
-        const duel = await loadDuel(db, caller, account);
-        if (!duel) {
-          res.status(200).json({ participant: false });
-          return;
-        }
-        res.status(200).json(await duelView(db, caller, duel));
+        const member = await loadDuelMember(db, caller);
+        res.status(200).json(await duelView(db, caller, member));
       } catch (err) {
         res.status(500).json({ error: err.message || String(err) });
       }
@@ -332,23 +311,34 @@ export function createHandler({ db, adminAuth, FieldValue }) {
       return;
     }
 
-    // 3ゲーム対決: 提出 / 取り消し
-    if (req.method === "POST" && ["duelSubmit", "duelDelete"].includes((req.body || {}).action)) {
+    // 3ゲーム対決: 参加 / 提出 / 取り消し
+    if (req.method === "POST" && ["duelJoin", "duelSubmit", "duelDelete"].includes((req.body || {}).action)) {
       try {
-        const duel = await loadDuel(db, caller, account);
-        if (!duel) {
+        const body = req.body;
+        const today = todayJst();
+        if (today > DUEL.endDate) {
+          res.status(400).json({ error: "ended" });
+          return;
+        }
+
+        if (body.action === "duelJoin") {
+          const typed = String(body.name || "").trim().slice(0, 20);
+          const reg = String(account.name || "");
+          const name = typed || (reg && !reg.includes("@") ? reg.slice(0, 20) : "");
+          await duelPeople(db).doc(caller.uid).set({ name, joinedAt: new Date().toISOString() }, { merge: true });
+          res.status(200).json({ ok: true });
+          return;
+        }
+
+        const member = await loadDuelMember(db, caller);
+        if (!member) {
           res.status(403).json({ error: "not_participant" });
           return;
         }
+        const duel = DUEL;
         const entries = db.collection("duelEntries").doc(duel.id).collection("entries");
-        const body = req.body;
-        const today = todayJst();
-        if (duel.startDate && today < duel.startDate) {
+        if (today < duel.startDate && body.action === "duelSubmit") {
           res.status(400).json({ error: "not_started" });
-          return;
-        }
-        if (duel.endDate && today > duel.endDate) {
-          res.status(400).json({ error: "ended" });
           return;
         }
 
@@ -399,12 +389,6 @@ export function createHandler({ db, adminAuth, FieldValue }) {
           res.status(400).json({ error: "out_of_period" });
           return;
         }
-        const nums = games.map((g) => Number(g.gameNumber) || 0);
-        const sortedNums = [...nums].sort((a, b) => a - b);
-        if (!(sortedNums[1] === sortedNums[0] + 1 && sortedNums[2] === sortedNums[1] + 1)) {
-          res.status(400).json({ error: "not_consecutive" });
-          return;
-        }
         // 同じ3ゲームの二重提出は受け付けない
         const key = [...ids].sort().join("|");
         const dup = await entries.where("uid", "==", caller.uid).where("key", "==", key).limit(1).get();
@@ -412,7 +396,7 @@ export function createHandler({ db, adminAuth, FieldValue }) {
           res.status(409).json({ error: "already_submitted" });
           return;
         }
-        const ordered = games.map((g, i) => ({ g, n: nums[i] })).sort((a, b) => a.n - b.n).map((x) => x.g);
+        const ordered = [...games].sort((a, b) => (Number(a.gameNumber) || 0) - (Number(b.gameNumber) || 0));
         const scores = ordered.map((g) => g.total);
         const total = scores.reduce((a, b) => a + b, 0);
         const st = body.stats && typeof body.stats === "object" ? body.stats : {};
