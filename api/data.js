@@ -97,6 +97,122 @@ export function buildRanking(rows, valueOf, myUid) {
   return { top, me: me && !top.includes(me) ? me : null, total: ranked.length };
 }
 
+
+// ---------- 3ゲーム対決イベント ----------
+// 参加者(登録番号で指定)が、履歴から選んだ連続3ゲームを提出する。順位は
+// 「提出した中で一番良い3ゲーム合計」で決め、同点ならハイとローの差が小さい方が上。
+// 設定は settings/duel(管理画面から保存)、提出は duelEntries/{eventId}/entries/{id}。
+// 参加者だけが読み書きできる。
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function todayJst(now = Date.now()) {
+  return new Date(now + 9 * 3600 * 1000).toISOString().slice(0, 10);
+}
+
+// 良い順に並べるための比較(負なら a が上位)
+export function duelOrder(a, b) {
+  return (
+    b.total - a.total ||
+    a.spread - b.spread ||
+    String(a.createdAt || "").localeCompare(String(b.createdAt || ""))
+  );
+}
+
+// participants: [{ uid, name }], entries: [{ uid, total, spread, createdAt, ... }]
+// → 参加者ごとの「採用された提出(ベスト)」と順位。未提出の人は最後に rank: null で並ぶ。
+export function buildDuelBoard(participants, entries) {
+  const best = new Map();
+  for (const e of entries) {
+    const cur = best.get(e.uid);
+    if (!cur || duelOrder(e, cur) < 0) best.set(e.uid, e);
+  }
+  const rows = participants.map((p) => ({ uid: p.uid, name: p.name, best: best.get(p.uid) || null }));
+  const scored = rows.filter((r) => r.best).sort((a, b) => duelOrder(a.best, b.best));
+  let rank = 0;
+  let last = null;
+  scored.forEach((r, i) => {
+    if (!last || r.best.total !== last.total || r.best.spread !== last.spread) rank = i + 1;
+    last = r.best;
+    r.rank = rank;
+  });
+  return [...scored, ...rows.filter((r) => !r.best).map((r) => ({ ...r, rank: null }))];
+}
+
+const cleanCount = (v, max = 400) => {
+  const n = Math.round(Number(v));
+  return Number.isFinite(n) && n >= 0 && n <= max ? n : 0;
+};
+
+async function loadDuel(db, caller, account) {
+  const snap = await db.collection("settings").doc("duel").get();
+  if (!snap.exists) return null;
+  const c = snap.data() || {};
+  const participants = (Array.isArray(c.participants) ? c.participants : []).map(String);
+  if (!participants.includes(String(account.requestNumber || ""))) return null;
+  return {
+    id: String(c.id || "duel"),
+    title: String(c.title || "3ゲーム対決"),
+    startDate: c.startDate || null,
+    endDate: c.endDate || null,
+    participants,
+  };
+}
+
+// 参加者の登録番号 → アカウントの uid と表示名
+async function resolveDuelPeople(db, numbers) {
+  const people = [];
+  for (const n of numbers) {
+    const q = await db.collection("accessRequests").where("requestNumber", "==", n).get();
+    const acc = q.docs.find((d) => d.data().isAccount) || null;
+    const raw = acc ? String(acc.data().name || "") : "";
+    people.push({
+      number: n,
+      uid: acc ? acc.id : null,
+      name: raw && !raw.includes("@") ? raw : `参加者${people.length + 1}`,
+    });
+  }
+  return people;
+}
+
+async function duelView(db, caller, duel) {
+  const people = await resolveDuelPeople(db, duel.participants);
+  const entriesSnap = await db.collection("duelEntries").doc(duel.id).collection("entries").get();
+  const entries = entriesSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const present = people.filter((p) => p.uid);
+  const board = buildDuelBoard(present, entries).map((r) => ({
+    name: r.name,
+    rank: r.rank,
+    isMe: r.uid === caller.uid,
+    best: r.best ? publicEntry(r.best) : null,
+  }));
+  // アカウント未作成の参加者も、名前のない「未参加」枠として末尾に出す
+  for (const p of people.filter((x) => !x.uid)) board.push({ name: p.name, rank: null, isMe: false, best: null, noAccount: true });
+  const bestMine = board.find((r) => r.isMe && r.best);
+  const mine = entries
+    .filter((e) => e.uid === caller.uid)
+    .sort(duelOrder)
+    .map((e) => ({ ...publicEntry(e), id: e.id, gameIds: e.gameIds || [], adopted: !!bestMine && bestMine.best.createdAt === e.createdAt }));
+  return { participant: true, title: duel.title, startDate: duel.startDate, endDate: duel.endDate, today: todayJst(), board, mine };
+}
+
+function publicEntry(e) {
+  return {
+    date: e.date,
+    scores: e.scores,
+    total: e.total,
+    avg: e.avg,
+    spread: e.spread,
+    strikes: e.strikes,
+    spares: e.spares,
+    opens: e.opens,
+    splits: e.splits,
+    splitCovers: e.splitCovers,
+    splitChances: e.splitChances,
+    gutters: e.gutters,
+    createdAt: e.createdAt,
+  };
+}
+
 export function createHandler({ db, adminAuth, FieldValue }) {
   return async function handler(req, res) {
     const caller = await verifyCaller(req, adminAuth);
@@ -124,6 +240,21 @@ export function createHandler({ db, adminAuth, FieldValue }) {
     }
 
     const userRef = db.collection("userData").doc(caller.uid);
+
+    // 3ゲーム対決: 参加者の順位表と自分の提出一覧
+    if (req.method === "GET" && req.query && req.query.duel) {
+      try {
+        const duel = await loadDuel(db, caller, account);
+        if (!duel) {
+          res.status(200).json({ participant: false });
+          return;
+        }
+        res.status(200).json(await duelView(db, caller, duel));
+      } catch (err) {
+        res.status(500).json({ error: err.message || String(err) });
+      }
+      return;
+    }
 
     if (req.method === "GET" && req.query && req.query.ranking) {
       const month = String(req.query.ranking);
@@ -198,6 +329,116 @@ export function createHandler({ db, adminAuth, FieldValue }) {
 
     if (req.method !== "POST") {
       res.status(405).json({ error: "GET or POST only" });
+      return;
+    }
+
+    // 3ゲーム対決: 提出 / 取り消し
+    if (req.method === "POST" && ["duelSubmit", "duelDelete"].includes((req.body || {}).action)) {
+      try {
+        const duel = await loadDuel(db, caller, account);
+        if (!duel) {
+          res.status(403).json({ error: "not_participant" });
+          return;
+        }
+        const entries = db.collection("duelEntries").doc(duel.id).collection("entries");
+        const body = req.body;
+        const today = todayJst();
+        if (duel.startDate && today < duel.startDate) {
+          res.status(400).json({ error: "not_started" });
+          return;
+        }
+        if (duel.endDate && today > duel.endDate) {
+          res.status(400).json({ error: "ended" });
+          return;
+        }
+
+        if (body.action === "duelDelete") {
+          const id = String(body.id || "");
+          if (!ID_PATTERN.test(id)) {
+            res.status(400).json({ error: "invalid_id" });
+            return;
+          }
+          const d = await entries.doc(id).get();
+          if (!d.exists || d.data().uid !== caller.uid) {
+            res.status(404).json({ error: "not_found" });
+            return;
+          }
+          await entries.doc(id).delete();
+          res.status(200).json({ ok: true });
+          return;
+        }
+
+        // 提出: 同じ日の連続した3ゲーム。点数はクラウドに保存済みの記録から読む(手修正後の点数)
+        const ids = Array.isArray(body.gameIds) ? body.gameIds.map(String) : [];
+        if (ids.length !== 3 || new Set(ids).size !== 3 || !ids.every((x) => ID_PATTERN.test(x))) {
+          res.status(400).json({ error: "need_three_games" });
+          return;
+        }
+        const docs = await Promise.all(ids.map((id) => userRef.collection("games").doc(id).get()));
+        if (docs.some((d) => !d.exists)) {
+          res.status(409).json({ error: "not_synced" });
+          return;
+        }
+        const games = docs.map((d) => {
+          try {
+            return JSON.parse(d.data().json);
+          } catch (e) {
+            return null;
+          }
+        });
+        if (games.some((g) => !g || !Number.isFinite(g.total) || g.total < 0 || g.total > 300 || !DATE_RE.test(String(g.date)))) {
+          res.status(400).json({ error: "bad_game" });
+          return;
+        }
+        const date = games[0].date;
+        if (!games.every((g) => g.date === date)) {
+          res.status(400).json({ error: "not_same_day" });
+          return;
+        }
+        if ((duel.startDate && date < duel.startDate) || (duel.endDate && date > duel.endDate)) {
+          res.status(400).json({ error: "out_of_period" });
+          return;
+        }
+        const nums = games.map((g) => Number(g.gameNumber) || 0);
+        const sortedNums = [...nums].sort((a, b) => a - b);
+        if (!(sortedNums[1] === sortedNums[0] + 1 && sortedNums[2] === sortedNums[1] + 1)) {
+          res.status(400).json({ error: "not_consecutive" });
+          return;
+        }
+        // 同じ3ゲームの二重提出は受け付けない
+        const key = [...ids].sort().join("|");
+        const dup = await entries.where("uid", "==", caller.uid).where("key", "==", key).limit(1).get();
+        if (!dup.empty) {
+          res.status(409).json({ error: "already_submitted" });
+          return;
+        }
+        const ordered = games.map((g, i) => ({ g, n: nums[i] })).sort((a, b) => a.n - b.n).map((x) => x.g);
+        const scores = ordered.map((g) => g.total);
+        const total = scores.reduce((a, b) => a + b, 0);
+        const st = body.stats && typeof body.stats === "object" ? body.stats : {};
+        const entry = {
+          uid: caller.uid,
+          key,
+          date,
+          gameIds: ids,
+          scores,
+          total,
+          avg: Math.round((total / 3) * 10) / 10,
+          spread: Math.max(...scores) - Math.min(...scores),
+          strikes: cleanCount(st.strikes),
+          spares: cleanCount(st.spares),
+          opens: cleanCount(st.opens),
+          splits: cleanCount(st.splits),
+          splitCovers: cleanCount(st.splitCovers),
+          splitChances: cleanCount(st.splitChances),
+          gutters: cleanCount(st.gutters),
+          createdAt: new Date().toISOString(),
+        };
+        const ref = await entries.add(entry);
+        res.status(200).json({ ok: true, id: ref.id, total });
+      } catch (err) {
+        res.status(500).json({ error: err.message || String(err) });
+      }
       return;
     }
 

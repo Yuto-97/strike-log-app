@@ -3,6 +3,9 @@
 // DELETE /api/admin/requests { password, deviceId }          -> delete a request
 // GET    /api/admin/requests?password=xxx&view=usage&month=YYYY-MM
 //                                        -> AI usage & costs for a month (per user + totals)
+// GET    /api/admin/requests?password=xxx&view=duel  -> 3ゲーム対決イベントの設定
+// POST   /api/admin/requests { password, action: "duelConfig", title, startDate, endDate, participants: ["登録番号", ...] }
+//                                        -> 対決イベントの設定を保存(参加者は登録番号で指定)
 // POST   /api/admin/requests { password, action: "finance", month, fixedCosts, revenueJpy, usdJpy }
 //                                        -> save that month's fixed costs / revenue, and the USD→JPY rate
 // Fixed costs carry forward automatically: a month with nothing saved uses
@@ -145,6 +148,37 @@ export default async function handler(req, res) {
   }
 
   try {
+    if (req.method === "GET" && req.query.view === "duel") {
+      const snap = await db.collection("settings").doc("duel").get();
+      const c = snap.exists ? snap.data() : {};
+      res.status(200).json({
+        title: c.title || "",
+        startDate: c.startDate || "",
+        endDate: c.endDate || "",
+        participants: Array.isArray(c.participants) ? c.participants : [],
+      });
+      return;
+    }
+
+    if (req.method === "POST" && (req.body || {}).action === "duelConfig") {
+      const { title, startDate, endDate, participants } = req.body;
+      const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+      if (!DATE_RE.test(startDate || "") || !DATE_RE.test(endDate || "") || endDate < startDate) {
+        res.status(400).json({ error: "期間の日付が正しくありません" });
+        return;
+      }
+      const list = (Array.isArray(participants) ? participants : [])
+        .map((x) => String(x).replace(/\D/g, ""))
+        .filter(Boolean)
+        .slice(0, 20);
+      await db.collection("settings").doc("duel").set(
+        { id: "duel-2026-11", title: String(title || "3ゲーム対決").trim().slice(0, 40), startDate, endDate, participants: [...new Set(list)], updatedAt: new Date().toISOString() },
+        { merge: true }
+      );
+      res.status(200).json({ ok: true });
+      return;
+    }
+
     if (req.method === "GET" && req.query.view === "usage") {
       const month = MONTH_RE.test(req.query.month || "") ? req.query.month : monthJST();
       res.status(200).json(await usageView(month));
