@@ -1878,13 +1878,8 @@ function RankingPanel({ authUser, deviceId, onClose, onGoToSettings, embedded = 
                   </div>
                 )}
 
-                <div style={{ color: COLORS.strike, opacity: 0.6, fontSize: 11, lineHeight: 1.7 }}>
-                  ※写真から読み取った最終スコアで集計しています(手で修正した点数は反映されません)
-                  <br />※アベレージは、その月に{data.minGames}ゲーム以上記録した人が対象です
-                  <br />※同じ写真を複数回登録した場合は、1回分のみ集計します
-                  <br />※日本時間の毎月1日〜月末で集計します
-                  <br />※ボールの絞り込みは、各ゲームの1stボールの種類で集計しています
-                  <br />※年代・性別を設定していない参加者は、「すべて」の時のみ表示されます
+                <div className="text-center" style={{ color: COLORS.strike, opacity: 0.75, fontSize: 12.5 }}>
+                  アベレージは月{data.minGames}ゲーム以上が対象です
                 </div>
               </>
             )}
@@ -2227,7 +2222,7 @@ function CenterStats({ games }) {
     <div className="px-3 pb-3 space-y-2">
       {rows.length === 0 ? (
         <div style={{ color: COLORS.strike, opacity: 0.8, fontSize: 12.5, lineHeight: 1.7 }}>
-          ※この期間に3ゲーム以上記録したボウリング場はありません
+          この期間に3ゲーム以上記録したボウリング場はありません
         </div>
       ) : (
         rows.map((r, i) => (
@@ -2275,11 +2270,7 @@ function CenterStats({ games }) {
           </div>
         ))
       )}
-      <div style={{ color: COLORS.strike, opacity: 0.6, fontSize: 11, lineHeight: 1.6 }}>
-        ※アベレージの高い順に表示
-        <br />※3ゲーム未満のボウリング場は対象外
-        <br />※ボウリング場が未設定のゲームは対象外
-      </div>
+      <div style={{ color: COLORS.strike, opacity: 0.75, fontSize: 12.5 }}>3ゲーム以上記録したボウリング場が対象です</div>
     </div>
   );
 }
@@ -2326,8 +2317,8 @@ function AccountForm({ onLogin, onSignup, onReset, busy, errorMsg, infoMsg, intr
         />
       )}
       {mode === "signup" && (
-        <div className="text-left" style={{ color: COLORS.strike, opacity: 0.7, fontSize: 11, lineHeight: 1.6 }}>
-          ※携帯会社のメール(docomo・au・SoftBankなど)は、パスワード再設定のメールが届かない場合があります。Gmailなどのメールアドレスがおすすめです
+        <div className="text-left" style={{ color: COLORS.strike, opacity: 0.85, fontSize: 13, lineHeight: 1.6 }}>
+          Gmailなどのメールがおすすめです(携帯会社のメールは再設定メールが届かないことがあります)
         </div>
       )}
       {errorMsg && <div className="text-left" style={{ color: "#E8836A", fontSize: 13 }}>{errorMsg}</div>}
@@ -2636,11 +2627,9 @@ function BallRankings({ stats }) {
   if (!sets.length && !mains.length && !spares.length) {
     return (
       <div className="px-3 pb-4" style={{ color: COLORS.strike, fontSize: 13, lineHeight: 1.7, opacity: 0.85 }}>
-        ※この期間に3ゲーム以上使用したボール・組み合わせはありません
+        この期間に3ゲーム以上使ったボールはありません
         <br />
-        ※3ゲーム未満のボール・組み合わせは、統計的な信頼性が低いため、ランキングの対象外としています
-        <br />
-        ※期間を「月」「年」「期間指定」に広げると表示される場合があります
+        期間を広げると表示される場合があります
       </div>
     );
   }
@@ -2766,14 +2755,6 @@ function BallRankings({ stats }) {
           </div>
         );
       })}
-      <div style={{ color: COLORS.strike, opacity: 0.6, fontSize: 11, lineHeight: 1.6 }}>
-        ※点数:各ランキングの1位・2位・3位に3点・2点・1点(ワーストは良い順、ゲーム数は対象外)
-        <br />※同点時:アベレージ(1stボールはストライク率、スペアボールはスペア率)が高い方、次にゲーム数が多い方を表示
-        <br />※データがないランキング(例:スプリットが一度もない)は全ボール0点
-        <br />※ガター:1stボールの投球のみで集計
-        <br />※3ゲーム未満のボール・組み合わせは対象外
-        <br />※スペアボールを使用していないゲームは、1stボールをスペアボールとして集計
-      </div>
     </div>
   );
 }
@@ -6285,9 +6266,8 @@ function getNextRollCell(frameIdx, rollIdx, value) {
             <div style={{ marginTop: 10 }}>
               <CenterPicker value={centerBackfillDraft} onChange={setCenterBackfillDraft} known={knownCentersFrom(games, homeCenter)} />
             </div>
-            <div style={{ color: COLORS.strike, opacity: 0.65, fontSize: 11.5, marginTop: 8, lineHeight: 1.6 }}>
-              ※選んだボウリング場は、設定の「ホームセンター」にも登録されます
-              <br />※違うボウリング場の記録は、履歴の編集から個別に変更できます
+            <div style={{ color: COLORS.strike, opacity: 0.8, fontSize: 12.5, marginTop: 8 }}>
+              選んだボウリング場は「ホームセンター」にも登録されます
             </div>
           </AppModal>
         )}
@@ -6358,11 +6338,6 @@ function getNextRollCell(frameIdx, rollIdx, value) {
               </div>
             ))}
           </div>
-          {accountDone === "signup" && (
-            <div style={{ color: COLORS.strike, opacity: 0.65, fontSize: 11.5, marginTop: 10, lineHeight: 1.6 }}>
-              ※パスワードは忘れないよう控えておいてください
-            </div>
-          )}
         </AppModal>
       )}
 
@@ -6391,15 +6366,6 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                 <span style={{ color: COLORS.gold }}>●</span> {m}
               </div>
             ))}
-          </div>
-          <div style={{ color: COLORS.strike, opacity: 0.65, fontSize: 11.5, marginTop: 10, lineHeight: 1.6 }}>
-            ※ボール・シューズが選択肢にない場合は、「設定」タブで登録してください
-            {saveBlockItems.includes("ボウリング場") && (
-              <>
-                <br />
-                ※ボウリング場が選択肢にない場合は、「+ 新しいボウリング場を入力」から追加できます
-              </>
-            )}
           </div>
         </AppModal>
       )}
@@ -6798,10 +6764,6 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                     )}
                   </div>
                 ))}
-
-                <div className="text-xs" style={{ color: COLORS.strike }}>
-                  合計スコアは公式ルールに沿って自動計算されます
-                </div>
 
                 <div className="glass-card rounded-xl p-3 flex items-center justify-between">
                   <span className="text-sm flex items-center gap-2" style={{ color: COLORS.cream }}>
@@ -8030,7 +7992,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                     <div style={{ minWidth: 0 }}>
                       <div style={{ color: COLORS.strike, fontWeight: 700, fontSize: 13.5 }}>月間ランキングに参加する</div>
                       <div style={{ color: COLORS.strike, opacity: 0.6, fontSize: 11, lineHeight: 1.5 }}>
-                        ランキング表示名と成績が、他の利用者に表示されます
+                        表示名と成績が他の人に表示されます
                       </div>
                     </div>
                     <button
@@ -8074,7 +8036,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                   </div>
                   <div className="space-y-2 rounded-lg p-2.5" style={{ background: "rgba(10, 16, 34, 0.45)" }}>
                     <div>
-                      <div className="text-xs mb-1" style={{ color: COLORS.strike }}>ランキング表示名(必須・20文字まで)</div>
+                      <div className="text-xs mb-1" style={{ color: COLORS.strike }}>ランキング表示名</div>
                       <input
                         type="text"
                         value={rankingName}
@@ -8130,12 +8092,12 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                         </select>
                       </div>
                     </div>
-                    <div style={{ color: COLORS.strike, opacity: 0.6, fontSize: 11, lineHeight: 1.6 }}>
-                      ※年代・性別はランキングの絞り込みにのみ使い、他の利用者には表示しません。未設定の場合は「すべて」の時だけ表示されます
+                    <div style={{ color: COLORS.strike, opacity: 0.8, fontSize: 12.5 }}>
+                      年代・性別は絞り込み用です(他の人には見えません)
                     </div>
                   </div>
-                  <div style={{ color: COLORS.strike, opacity: 0.6, fontSize: 11.5, lineHeight: 1.6 }}>
-                    ※同時に使えるのは1台のみです。他の端末でログインすると、この端末は自動でログアウトされます
+                  <div style={{ color: COLORS.strike, opacity: 0.8, fontSize: 12.5 }}>
+                    同時に使えるのは1台のみです
                   </div>
                   <button
                     type="button"
