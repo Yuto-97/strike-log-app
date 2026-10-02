@@ -3,8 +3,6 @@
 // DELETE /api/admin/requests { password, deviceId }          -> delete a request
 // GET    /api/admin/requests?password=xxx&view=usage&month=YYYY-MM
 //                                        -> AI usage & costs for a month (per user + totals)
-// POST   /api/admin/requests { password, action: "duelAllow", uid, allowed }
-//                                        -> 3ゲーム対決に参加できる人かどうかを切り替える(アカウントの登録者に対して)
 // POST   /api/admin/requests { password, action: "finance", month, fixedCosts, revenueJpy, usdJpy }
 //                                        -> save that month's fixed costs / revenue, and the USD→JPY rate
 // Fixed costs carry forward automatically: a month with nothing saved uses
@@ -161,18 +159,6 @@ export default async function handler(req, res) {
         return;
       }
       await db.collection("rankingParticipants").doc(uid).set({ excluded: !!excluded, updatedAt: new Date().toISOString() }, { merge: true });
-      res.status(200).json({ ok: true });
-      return;
-    }
-
-    // 3ゲーム対決に参加できる人の切り替え
-    if (req.method === "POST" && (req.body || {}).action === "duelAllow") {
-      const { uid, allowed } = req.body;
-      if (!uid || typeof uid !== "string" || uid.includes("/")) {
-        res.status(400).json({ error: "uid is required" });
-        return;
-      }
-      await db.collection("accessRequests").doc(uid).set({ duelAllowed: !!allowed }, { merge: true });
       res.status(200).json({ ok: true });
       return;
     }

@@ -99,7 +99,7 @@ export function buildRanking(rows, valueOf, myUid) {
 
 
 // ---------- 3ゲーム対決イベント ----------
-// 参加を許可された人(管理画面で設定)が参加ボタンを押し、履歴から選んだ同じ日の3ゲームを提出する。順位は
+// 対象の3名が参加ボタンを押し、履歴から選んだ同じ日の3ゲームを提出する。順位は
 // 「提出した中で一番良い3ゲーム合計」で決め、同点ならハイとローの差が小さい方が上。
 // 参加者は duelParticipants/{eventId}/people/{uid}、提出は duelEntries/{eventId}/entries/{id}。
 // 参加者だけが読み書きできる。
@@ -148,10 +148,17 @@ const DUEL = { id: "duel-2026-11", title: "11/22社内大会 前哨戦", startDa
 
 const duelPeople = (db) => db.collection("duelParticipants").doc(DUEL.id).collection("people");
 
-// 管理画面で「参加を許可」された人(accessRequests の duelAllowed)が参加ボタンを押すと「参加者」になる。
-// 参加者でなければ null。
+// 参加できるのは下村優斗・たく・堀川弘人の3名だけ(承認などの操作は不要)。
+// 登録名(利用申請のときの名前。アカウントを作ると引き継がれる)で判定する。
+const DUEL_MEMBER_WORDS = ["下村", "優斗", "堀川", "弘人", "たく", "タク"];
+export function isDuelMember(account) {
+  const name = `${(account && account.name) || ""}${(account && account.deviceName) || ""}`.replace(/\s/g, "");
+  return DUEL_MEMBER_WORDS.some((w) => name.includes(w));
+}
+
+// 対象の人が参加ボタンを押すと「参加者」になる。参加者でなければ null。
 async function loadDuelMember(db, caller, account) {
-  if (!account || !account.duelAllowed) return null;
+  if (!isDuelMember(account)) return null;
   const d = await duelPeople(db).doc(caller.uid).get();
   return d.exists ? d.data() : null;
 }
@@ -159,7 +166,7 @@ async function loadDuelMember(db, caller, account) {
 async function duelView(db, caller, member, account) {
   const today = todayJst();
   const base = { title: DUEL.title, startDate: DUEL.startDate, endDate: DUEL.endDate, today };
-  if (!member) return { participant: false, canJoin: !!(account && account.duelAllowed), ...base };
+  if (!member) return { participant: false, canJoin: isDuelMember(account), ...base };
   const [peopleSnap, entriesSnap] = await Promise.all([
     duelPeople(db).get(),
     db.collection("duelEntries").doc(DUEL.id).collection("entries").get(),
@@ -324,7 +331,7 @@ export function createHandler({ db, adminAuth, FieldValue }) {
         }
 
         if (body.action === "duelJoin") {
-          if (!account.duelAllowed) {
+          if (!isDuelMember(account)) {
             res.status(403).json({ error: "not_allowed" });
             return;
           }
