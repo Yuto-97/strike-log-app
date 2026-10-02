@@ -149,11 +149,15 @@ const DUEL = { id: "duel-2026-11", title: "11/22社内大会 前哨戦", startDa
 const duelPeople = (db) => db.collection("duelParticipants").doc(DUEL.id).collection("people");
 
 // 参加できるのは下村優斗・たく・堀川弘人の3名だけ(承認などの操作は不要)。
-// 登録名(利用申請のときの名前。アカウントを作ると引き継がれる)で判定する。
-const DUEL_MEMBER_WORDS = ["下村", "優斗", "堀川", "弘人", "たく", "タク"];
+// 名前は自由に変えられるので、変わらない登録番号(管理画面の「No.」)で判定する。
+// 登録番号は、承認済みの端末でアカウントを作るとそのまま引き継がれる。
+const DUEL_MEMBER_NUMBERS = [
+  "1488689", // 下村優斗
+  "1524796", // たく
+  "3495316", // 堀川弘人
+];
 export function isDuelMember(account) {
-  const name = `${(account && account.name) || ""}${(account && account.deviceName) || ""}`.replace(/\s/g, "");
-  return DUEL_MEMBER_WORDS.some((w) => name.includes(w));
+  return DUEL_MEMBER_NUMBERS.includes(String((account && account.requestNumber) || ""));
 }
 
 // 対象の人が参加ボタンを押すと「参加者」になる。参加者でなければ null。
