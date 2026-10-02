@@ -2100,7 +2100,7 @@ function RankingTab({ authUser, deviceId, games, nickname, onGoToSettings }) {
   if (authUser && duel === undefined) {
     return <div className="text-center py-8" style={{ color: COLORS.strike, opacity: 0.8 }}>読み込み中...</div>;
   }
-  const showDuel = !!duel && (duel.participant || duel.today <= duel.endDate);
+  const showDuel = !!duel && (duel.participant || (duel.canJoin && duel.today <= duel.endDate));
   if (!showDuel) {
     return <RankingPanel embedded authUser={authUser} deviceId={deviceId} onGoToSettings={onGoToSettings} />;
   }
@@ -4479,7 +4479,7 @@ function AdminButton({ children, onClick, kind = "outline", ariaLabel }) {
 }
 
 // One registrant. Top: number + kind. Middle: name, email, ranking. Bottom: date and the buttons.
-function AdminRequestCard({ r, dateLabel, onToggleRanking, actions, children }) {
+function AdminRequestCard({ r, dateLabel, onToggleRanking, onToggleDuel, actions, children }) {
   const migrated = !!r.linkedAccountUid;
   const showEmail = r.email && r.email !== r.name;
   return (
@@ -4530,6 +4530,22 @@ function AdminRequestCard({ r, dateLabel, onToggleRanking, actions, children }) 
             style={{ padding: "6px 10px", fontSize: 12, fontWeight: 700, color: COLORS.strike, border: "1px solid rgba(255,255,255,0.25)", whiteSpace: "nowrap", flexShrink: 0 }}
           >
             {r.rankingExcluded ? "除外を解除" : "除外する"}
+          </button>
+        </div>
+      )}
+
+      {r.isAccount && !migrated && (
+        <div className="flex items-center justify-between gap-2 rounded-lg" style={{ marginTop: 8, padding: "8px 10px", background: "rgba(255,255,255,0.05)" }}>
+          <div style={{ color: r.duelAllowed ? COLORS.gold : COLORS.strike, fontSize: 13, fontWeight: 700 }}>
+            3ゲーム対決:{r.duelAllowed ? "参加できる" : "参加できない"}
+          </div>
+          <button
+            type="button"
+            onClick={onToggleDuel}
+            className="rounded-lg"
+            style={{ padding: "6px 10px", fontSize: 12, fontWeight: 700, color: COLORS.strike, border: "1px solid rgba(255,255,255,0.25)", whiteSpace: "nowrap", flexShrink: 0 }}
+          >
+            {r.duelAllowed ? "許可を外す" : "参加を許可"}
           </button>
         </div>
       )}
@@ -4585,6 +4601,16 @@ function AdminPanel() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ password, action: "rankingExclude", uid, excluded }),
+    });
+    load(password);
+  };
+
+  // 3ゲーム対決に参加できる人の切り替え
+  const toggleDuelAllow = async (uid, allowed) => {
+    await fetch("/api/admin/requests", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password, action: "duelAllow", uid, allowed }),
     });
     load(password);
   };
@@ -4749,6 +4775,7 @@ function AdminPanel() {
                 r={r}
                 dateLabel={`申請 ${formatAdminDateTime(r.requestedAt)}`}
                 onToggleRanking={() => toggleRankingExclude(r.id, !r.rankingExcluded)}
+                onToggleDuel={() => toggleDuelAllow(r.id, !r.duelAllowed)}
                 actions={
                   <>
                     <AdminButton kind="light" onClick={() => updateStatus(r.id, "rejected")}>却下</AdminButton>
@@ -4782,6 +4809,7 @@ function AdminPanel() {
                 r={r}
                 dateLabel={`承認 ${formatAdminDateTime(r.updatedAt)}`}
                 onToggleRanking={() => toggleRankingExclude(r.id, !r.rankingExcluded)}
+                onToggleDuel={() => toggleDuelAllow(r.id, !r.duelAllowed)}
                 actions={
                   r.linkedAccountUid ? (
                     <AdminButton onClick={() => deleteMigrated([r.id])}>削除</AdminButton>
@@ -4806,6 +4834,7 @@ function AdminPanel() {
                 r={r}
                 dateLabel={`却下 ${formatAdminDateTime(r.updatedAt)}`}
                 onToggleRanking={() => toggleRankingExclude(r.id, !r.rankingExcluded)}
+                onToggleDuel={() => toggleDuelAllow(r.id, !r.duelAllowed)}
                 actions={
                   <>
                     <AdminButton onClick={() => setConfirmDeleteRequestId(r.id)} ariaLabel="削除">

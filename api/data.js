@@ -99,7 +99,7 @@ export function buildRanking(rows, valueOf, myUid) {
 
 
 // ---------- 3ゲーム対決イベント ----------
-// 参加ボタンを押した人が、履歴から選んだ同じ日の3ゲームを提出する。順位は
+// 参加を許可された人(管理画面で設定)が参加ボタンを押し、履歴から選んだ同じ日の3ゲームを提出する。順位は
 // 「提出した中で一番良い3ゲーム合計」で決め、同点ならハイとローの差が小さい方が上。
 // 参加者は duelParticipants/{eventId}/people/{uid}、提出は duelEntries/{eventId}/entries/{id}。
 // 参加者だけが読み書きできる。
@@ -148,16 +148,18 @@ const DUEL = { id: "duel-2026-11", title: "11/22社内大会 前哨戦", startDa
 
 const duelPeople = (db) => db.collection("duelParticipants").doc(DUEL.id).collection("people");
 
-// 参加ボタンを押した人だけが「参加者」。参加者でなければ null。
-async function loadDuelMember(db, caller) {
+// 管理画面で「参加を許可」された人(accessRequests の duelAllowed)が参加ボタンを押すと「参加者」になる。
+// 参加者でなければ null。
+async function loadDuelMember(db, caller, account) {
+  if (!account || !account.duelAllowed) return null;
   const d = await duelPeople(db).doc(caller.uid).get();
   return d.exists ? d.data() : null;
 }
 
-async function duelView(db, caller, member) {
+async function duelView(db, caller, member, account) {
   const today = todayJst();
   const base = { title: DUEL.title, startDate: DUEL.startDate, endDate: DUEL.endDate, today };
-  if (!member) return { participant: false, ...base };
+  if (!member) return { participant: false, canJoin: !!(account && account.duelAllowed), ...base };
   const [peopleSnap, entriesSnap] = await Promise.all([
     duelPeople(db).get(),
     db.collection("duelEntries").doc(DUEL.id).collection("entries").get(),
@@ -227,8 +229,8 @@ export function createHandler({ db, adminAuth, FieldValue }) {
     // 3ゲーム対決: 参加者の順位表と自分の提出一覧(参加していない人には開催情報だけ)
     if (req.method === "GET" && req.query && req.query.duel) {
       try {
-        const member = await loadDuelMember(db, caller);
-        res.status(200).json(await duelView(db, caller, member));
+        const member = await loadDuelMember(db, caller, account);
+        res.status(200).json(await duelView(db, caller, member, account));
       } catch (err) {
         res.status(500).json({ error: err.message || String(err) });
       }
@@ -322,6 +324,10 @@ export function createHandler({ db, adminAuth, FieldValue }) {
         }
 
         if (body.action === "duelJoin") {
+          if (!account.duelAllowed) {
+            res.status(403).json({ error: "not_allowed" });
+            return;
+          }
           const typed = String(body.name || "").trim().slice(0, 20);
           const reg = String(account.name || "");
           const name = typed || (reg && !reg.includes("@") ? reg.slice(0, 20) : "");
@@ -330,7 +336,7 @@ export function createHandler({ db, adminAuth, FieldValue }) {
           return;
         }
 
-        const member = await loadDuelMember(db, caller);
+        const member = await loadDuelMember(db, caller, account);
         if (!member) {
           res.status(403).json({ error: "not_participant" });
           return;
