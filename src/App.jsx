@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { Camera, History, BarChart3, Loader2, Check, X, Pencil, Trophy, TrendingUp, Calendar, CircleDot, Hash, User, Target, Trash2, ShieldCheck, CircleCheck, MessageCircle, Send, Settings, Crop, ImageOff, UserX, Bell, ImagePlus, ChevronDown, ChevronLeft, ChevronRight, Download, MapPin } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { auth } from "./firebaseClient.js";
@@ -1659,6 +1660,472 @@ function AnnouncementDetail({ a, imageSrc }) {
         <div className="glass-card rounded-xl" style={{ padding: 16 }}>
           <AnnouncementBody text={a.body} />
         </div>
+      )}
+    </div>
+  );
+}
+
+// ---------- 3ゲーム対決イベント ----------
+// 「参加する」を押した人が、履歴から同じ日の3ゲームを選んで提出する。
+// ベストの3ゲーム合計で順位が決まる。同点はハイとローの差が小さい方が上。
+const DUEL_ERRORS = {
+  not_synced: "記録をクラウドに保存中です。少し待ってからもう一度お試しください",
+  already_submitted: "この3ゲームはすでに提出済みです",
+  not_participant: "先に「参加する」を押してください",
+  not_same_day: "同じ日の3ゲームを選んでください",
+  out_of_period: "イベント期間外のゲームです",
+  ended: "イベントは終了しました",
+  not_started: "イベントはまだ始まっていません",
+};
+
+async function duelFetch(authUser, deviceId, payload) {
+  const token = await authUser.getIdToken();
+  const res = await fetch(payload ? "/api/data" : "/api/data?duel=1", {
+    method: payload ? "POST" : "GET",
+    headers: { Authorization: `Bearer ${token}`, "X-Device-Id": deviceId, ...(payload ? { "Content-Type": "application/json" } : {}) },
+    body: payload ? JSON.stringify(payload) : undefined,
+  });
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(DUEL_ERRORS[d.error] || "うまくいきませんでした。時間をおいてお試しください");
+  return d;
+}
+
+function daysBetween(a, b) {
+  const t = (s) => Date.UTC(Number(s.slice(0, 4)), Number(s.slice(5, 7)) - 1, Number(s.slice(8, 10)));
+  return Math.round((t(b) - t(a)) / 86400000);
+}
+
+// [表示名, キー, 良い方向("high"=多いほど良い / "low"=少ないほど良い / null=比べない)]
+const DUEL_COMPARE_ROWS = [
+  ["ストライク", "strikes", "high"],
+  ["スペア", "spares", "high"],
+  ["オープン", "opens", "low"],
+  ["スプリット", "splits", null],
+  ["スプリットカバー", "splitCovers", "high"],
+  ["ガター", "gutters", "low"],
+];
+
+function DuelPickSheet({ games, duel, mine, authUser, deviceId, onClose, onDone }) {
+  const [picked, setPicked] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const submittedIds = new Set(mine.flatMap((e) => e.gameIds || []));
+  const inPeriod = games.filter((g) => (!duel.startDate || g.date >= duel.startDate) && (!duel.endDate || g.date <= duel.endDate));
+  const dates = Array.from(new Set(inPeriod.map((g) => g.date))).sort().reverse();
+  const chosen = picked.map((id) => games.find((g) => g.id === id)).filter(Boolean);
+  const sameDay = chosen.length === 3 && chosen.every((g) => g.date === chosen[0].date);
+  const valid = chosen.length === 3 && sameDay;
+  const total = chosen.reduce((a, g) => a + (g.total || 0), 0);
+  const hint =
+    chosen.length < 3
+      ? `3ゲームを選んでください(${chosen.length}/3)`
+      : !sameDay
+      ? "同じ日の3ゲームを選んでください"
+      : `合計 ${total} ・ アベレージ ${(total / 3).toFixed(1)}`;
+
+  const toggle = (id) => {
+    setError("");
+    setPicked((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : cur.length >= 3 ? cur : [...cur, id]));
+  };
+
+  const submit = async () => {
+    if (!valid || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      const st = computeGameSetStats(chosen);
+      await duelFetch(authUser, deviceId, {
+        action: "duelSubmit",
+        gameIds: chosen.map((g) => g.id),
+        stats: {
+          strikes: st.strikeCount,
+          spares: st.spareCount,
+          opens: st.openFrameCount,
+          splits: st.splitCount,
+          splitCovers: st.splitCoverCount,
+          splitChances: st.splitOpenCount,
+          gutters: st.gutterCount,
+        },
+      });
+      onDone();
+    } catch (e) {
+      setError(e.message);
+      setBusy(false);
+    }
+  };
+
+  // body 直下に出す(タブの中だと、画面のアニメーションの影響で位置がずれることがあるため)
+  return createPortal(
+    <div
+      className="fixed left-0 right-0 top-0 bottom-0 flex flex-col"
+      style={{ background: `linear-gradient(160deg, ${COLORS.navyLight} 0%, ${COLORS.navyBg} 55%, #161D38 100%)`, zIndex: 52 }}
+    >
+      <div
+        className="flex items-center justify-between px-4"
+        style={{ background: COLORS.ink, paddingTop: "calc(16px + max(env(safe-area-inset-top), 20px))", paddingBottom: 16 }}
+      >
+        <div style={{ color: COLORS.cream, fontWeight: 700 }}>提出する3ゲームを選ぶ</div>
+        <button type="button" onClick={onClose} aria-label="閉じる">
+          <X size={22} style={{ color: COLORS.cream }} />
+        </button>
+      </div>
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+        {dates.length === 0 && (
+          <div className="text-center py-10" style={{ color: COLORS.strike, opacity: 0.85, fontSize: 14 }}>
+            イベント期間の記録がまだありません
+          </div>
+        )}
+        {dates.map((d) => (
+          <div key={d} className="space-y-2">
+            <div style={{ color: COLORS.gold, fontWeight: 700, fontSize: 15 }}>{formatMonthDay(d)}</div>
+            {inPeriod
+              .filter((g) => g.date === d)
+              .sort((a, b) => (a.gameNumber || 0) - (b.gameNumber || 0) || (a.createdAt || 0) - (b.createdAt || 0))
+              .map((g) => {
+                const on = picked.includes(g.id);
+                return (
+                  <button
+                    key={g.id}
+                    type="button"
+                    onClick={() => toggle(g.id)}
+                    className="glass-card rounded-xl w-full flex items-center gap-3 text-left"
+                    style={{ padding: "12px 14px", border: on ? `1.5px solid ${COLORS.gold}` : undefined }}
+                  >
+                    <span
+                      className="flex items-center justify-center"
+                      style={{ width: 24, height: 24, borderRadius: 999, border: `1.5px solid ${on ? COLORS.gold : "rgba(255,255,255,0.4)"}`, background: on ? COLORS.gold : "transparent", flexShrink: 0 }}
+                    >
+                      {on && <Check size={15} style={{ color: COLORS.ink }} />}
+                    </span>
+                    <div className="flex-1" style={{ minWidth: 0 }}>
+                      <div style={{ color: COLORS.cream, fontSize: 15, fontWeight: 700 }}>{g.gameNumber || 1}ゲーム目</div>
+                      {submittedIds.has(g.id) && <div style={{ color: COLORS.gold, fontSize: 12.5 }}>提出済み</div>}
+                    </div>
+                    <div style={{ color: COLORS.cream, fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 22 }}>{g.total}</div>
+                  </button>
+                );
+              })}
+          </div>
+        ))}
+      </div>
+      <div
+        className="px-4 pt-3 space-y-2"
+        style={{ background: COLORS.ink, paddingBottom: "calc(14px + env(safe-area-inset-bottom))", borderTop: "1px solid rgba(224,168,0,0.3)" }}
+      >
+        <div style={{ color: valid ? COLORS.gold : COLORS.cream, fontWeight: 700, fontSize: 14.5, textAlign: "center" }}>{hint}</div>
+        {error && <div style={{ color: "#E8836A", fontSize: 13, textAlign: "center" }}>{error}</div>}
+        <button type="button" onClick={submit} disabled={!valid || busy} className="w-full rounded-lg py-3" style={primaryButtonStyle(valid && !busy)}>
+          {busy ? "提出中..." : "この3ゲームを提出する"}
+        </button>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+function DuelPanel({ authUser, deviceId, games, data, reload }) {
+  const [picking, setPicking] = useState(false);
+  const [confirmId, setConfirmId] = useState(null);
+  const [error, setError] = useState("");
+  const phase = data.today < data.startDate ? "before" : data.today > data.endDate ? "after" : "live";
+  const phaseLabel = { before: "開始前", live: "開催中", after: "終了" }[phase];
+  const board = data.board || [];
+  const medal = ["#E0A800", "#C8CDD6", "#C98A5A"];
+
+  const remove = async (id) => {
+    setError("");
+    try {
+      await duelFetch(authUser, deviceId, { action: "duelDelete", id });
+      setConfirmId(null);
+      reload();
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  const cmpValue = (b, key) => {
+    if (!b) return null;
+    if (key === "splitCovers") return b.splitChances ? b.splitCovers / b.splitChances : null;
+    return b[key];
+  };
+  const bestOf = (key, dir) => {
+    const vals = board.map((r) => cmpValue(r.best, key)).filter((v) => v !== null);
+    if (!dir || vals.length < 2) return null;
+    return dir === "high" ? Math.max(...vals) : Math.min(...vals);
+  };
+  const cell = (r, key, dir) => {
+    if (!r.best) return "ー";
+    const b = r.best;
+    return key === "splitCovers" ? `${b.splitCovers}/${b.splitChances}` : `${b[key]}`;
+  };
+  const colStyle = { width: `${Math.floor(62 / Math.max(board.length, 1))}%`, textAlign: "center", padding: "7px 2px" };
+
+  return (
+    <div className="space-y-4">
+      <div className="glass-card rounded-xl" style={{ padding: 14 }}>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2" style={{ minWidth: 0 }}>
+            <Trophy size={18} style={{ color: COLORS.gold, flexShrink: 0 }} />
+            <div style={{ color: COLORS.cream, fontWeight: 700, fontSize: 16, overflowWrap: "anywhere" }}>{data.title}</div>
+          </div>
+          <span
+            style={{
+              fontSize: 12,
+              fontWeight: 700,
+              padding: "2px 10px",
+              borderRadius: 999,
+              flexShrink: 0,
+              background: phase === "live" ? COLORS.gold : "rgba(255,255,255,0.14)",
+              color: phase === "live" ? COLORS.ink : COLORS.strike,
+            }}
+          >
+            {phaseLabel}
+          </span>
+        </div>
+        <div style={{ color: COLORS.strike, fontSize: 13.5, marginTop: 6 }}>
+          {formatMonthDay(data.startDate)}〜{formatMonthDay(data.endDate)}
+          {phase === "live" && `(あと${daysBetween(data.today, data.endDate)}日)`}
+        </div>
+        <div style={{ color: COLORS.strike, opacity: 0.85, fontSize: 13, marginTop: 2 }}>3ゲームの合計で競います</div>
+      </div>
+
+      <div className="space-y-2">
+        {board.map((r, i) => (
+          <div
+            key={i}
+            className="flex items-center gap-3 rounded-xl"
+            style={{
+              padding: "12px 14px",
+              background: r.isMe ? "rgba(224,168,0,0.12)" : "rgba(10, 16, 34, 0.55)",
+              border: r.isMe ? `1.5px solid ${COLORS.gold}` : "1px solid rgba(224,168,0,0.2)",
+            }}
+          >
+            <div style={{ width: 30, flexShrink: 0, textAlign: "center" }}>
+              {r.rank && r.rank <= 3 ? (
+                <Trophy size={22} style={{ color: medal[r.rank - 1], margin: "0 auto" }} />
+              ) : (
+                <span style={{ color: COLORS.strike, opacity: 0.6, fontSize: 16 }}>ー</span>
+              )}
+            </div>
+            <div className="flex-1" style={{ minWidth: 0 }}>
+              <div style={{ color: COLORS.cream, fontWeight: 700, fontSize: 16, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {r.name}
+                {r.isMe && <span style={{ color: COLORS.gold, fontSize: 12.5 }}> あなた</span>}
+              </div>
+              <div style={{ color: COLORS.strike, opacity: 0.85, fontSize: 13 }}>
+                {r.best ? r.best.scores.join(" / ") : r.noAccount ? "アカウント作成待ち" : "まだ提出なし"}
+              </div>
+            </div>
+            {r.best && (
+              <div style={{ textAlign: "right", flexShrink: 0 }}>
+                <div style={{ color: r.rank === 1 ? COLORS.gold : COLORS.cream, fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 26, lineHeight: 1.1 }}>
+                  {r.best.total}
+                </div>
+                <div style={{ color: COLORS.strike, opacity: 0.85, fontSize: 12.5 }}>平均 {Number(r.best.avg).toFixed(1)}</div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {board.some((r) => r.best) && (
+        <div className="glass-card rounded-xl" style={{ padding: "12px 10px" }}>
+          <div style={{ color: COLORS.gold, fontWeight: 700, fontSize: 15, padding: "0 4px 6px" }}>成績くらべ</div>
+          <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+            <thead>
+              <tr>
+                <th style={{ width: "38%" }} />
+                {board.map((r, i) => (
+                  <th key={i} style={{ ...colStyle, color: COLORS.cream, fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {r.name}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {[["トータル", "total", "high"], ["アベレージ", "avg", "high"], ...DUEL_COMPARE_ROWS].map(([label, key, dir]) => {
+                const top = bestOf(key, dir);
+                return (
+                  <tr key={key} style={{ borderTop: "1px solid rgba(255,255,255,0.1)" }}>
+                    <td style={{ color: COLORS.strike, fontSize: 13, padding: "7px 4px" }}>{label}</td>
+                    {board.map((r, i) => {
+                      const v = cmpValue(r.best, key);
+                      const isTop = top !== null && v !== null && v === top;
+                      return (
+                        <td
+                          key={i}
+                          style={{ ...colStyle, color: isTop ? COLORS.gold : COLORS.cream, fontWeight: isTop ? 700 : 500, fontSize: 15 }}
+                        >
+                          {key === "avg" && r.best ? Number(r.best.avg).toFixed(1) : cell(r, key, dir)}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {phase === "live" && (
+        <button type="button" onClick={() => setPicking(true)} className="w-full rounded-lg py-3" style={primaryButtonStyle()}>
+          3ゲームを提出する
+        </button>
+      )}
+      {phase === "before" && (
+        <div className="text-center" style={{ color: COLORS.strike, fontSize: 14 }}>
+          {formatMonthDay(data.startDate)}から提出できます
+        </div>
+      )}
+
+      {error && <div style={{ color: "#E8836A", fontSize: 13 }}>{error}</div>}
+
+      {data.mine.length > 0 && (
+        <div className="space-y-2">
+          <div style={{ color: COLORS.strike, fontWeight: 700, fontSize: 14 }}>あなたの提出</div>
+          {data.mine.map((e) => (
+            <div key={e.id} className="glass-card rounded-xl" style={{ padding: "10px 14px" }}>
+              <div className="flex items-center gap-3">
+                <div className="flex-1" style={{ minWidth: 0 }}>
+                  <div style={{ color: COLORS.cream, fontSize: 14.5, fontWeight: 700 }}>
+                    {formatMonthDay(e.date)} ・ {e.scores.join(" / ")}
+                    {e.adopted && <span style={{ color: COLORS.gold, fontSize: 12.5 }}> 採用中</span>}
+                  </div>
+                </div>
+                <div style={{ color: COLORS.cream, fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 20 }}>{e.total}</div>
+                {phase === "live" && (
+                  <button type="button" onClick={() => setConfirmId(confirmId === e.id ? null : e.id)} aria-label="取り消す" style={{ padding: 6 }}>
+                    <Trash2 size={17} style={{ color: COLORS.strike, opacity: 0.8 }} />
+                  </button>
+                )}
+              </div>
+              {confirmId === e.id && (
+                <div className="flex items-center justify-between rounded-lg" style={{ marginTop: 8, padding: "8px 10px", background: "#FBEAE5" }}>
+                  <span style={{ color: COLORS.danger, fontWeight: 700, fontSize: 13 }}>この提出を取り消しますか?</span>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => setConfirmId(null)} className="rounded px-2 py-1 border text-xs" style={{ borderColor: COLORS.oak, color: COLORS.ink }}>
+                      やめる
+                    </button>
+                    <button type="button" onClick={() => remove(e.id)} className="rounded px-2 py-1 text-xs" style={{ background: COLORS.danger, color: "white", fontWeight: 700 }}>
+                      取り消す
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {picking && (
+        <DuelPickSheet
+          games={games}
+          duel={data}
+          mine={data.mine}
+          authUser={authUser}
+          deviceId={deviceId}
+          onClose={() => setPicking(false)}
+          onDone={() => {
+            setPicking(false);
+            reload();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// 参加前の「3ゲーム対決」: 開催情報と参加ボタン
+function DuelJoinCard({ info, onJoin }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const ended = info.today > info.endDate;
+  const join = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      await onJoin();
+    } catch (e) {
+      setError(e.message);
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="glass-card rounded-xl space-y-3" style={{ padding: 16 }}>
+      <div className="flex items-center gap-2">
+        <Trophy size={18} style={{ color: COLORS.gold }} />
+        <div style={{ color: COLORS.cream, fontWeight: 700, fontSize: 16 }}>{info.title}</div>
+      </div>
+      <div style={{ color: COLORS.strike, fontSize: 14 }}>
+        {formatMonthDay(info.startDate)}〜{formatMonthDay(info.endDate)}
+      </div>
+      <div style={{ color: COLORS.cream, fontSize: 15, lineHeight: 1.7 }}>3ゲームの合計スコアで競います。参加すると、参加者の成績を見くらべられます。</div>
+      {!ended && (
+        <button type="button" onClick={join} disabled={busy} className="w-full rounded-lg py-3" style={primaryButtonStyle(!busy)}>
+          {busy ? "参加中..." : "3ゲーム対決に参加する"}
+        </button>
+      )}
+      {error && <div style={{ color: "#E8836A", fontSize: 13 }}>{error}</div>}
+    </div>
+  );
+}
+
+// ランキングタブ: アカウントがある人には「月間ランキング / 3ゲーム対決」の切り替えを出す。
+function RankingTab({ authUser, deviceId, games, nickname, onGoToSettings }) {
+  const [duel, setDuel] = useState(authUser ? undefined : null); // undefined = 確認中, null = 取得できない
+  const [view, setView] = useState("monthly");
+  const decidedRef = useRef(false);
+
+  const load = useCallback(async () => {
+    if (!authUser) return;
+    try {
+      setDuel(await duelFetch(authUser, deviceId, null));
+    } catch (e) {
+      setDuel((prev) => (prev === undefined ? null : prev));
+    }
+  }, [authUser, deviceId]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  // 参加している人は、最初から「3ゲーム対決」を開く
+  useEffect(() => {
+    if (duel === undefined || decidedRef.current) return;
+    decidedRef.current = true;
+    if (duel && duel.participant) setView("duel");
+  }, [duel]);
+
+  if (authUser && duel === undefined) {
+    return <div className="text-center py-8" style={{ color: COLORS.strike, opacity: 0.8 }}>読み込み中...</div>;
+  }
+  const showDuel = !!duel && (duel.participant || (duel.canJoin && duel.today <= duel.endDate));
+  if (!showDuel) {
+    return <RankingPanel embedded authUser={authUser} deviceId={deviceId} onGoToSettings={onGoToSettings} />;
+  }
+  const join = async () => {
+    await duelFetch(authUser, deviceId, { action: "duelJoin", name: (nickname || "").trim() });
+    await load();
+  };
+  return (
+    <div className="space-y-3">
+      <div className="flex gap-2">
+        {[
+          { key: "monthly", label: "月間ランキング" },
+          { key: "duel", label: "3ゲーム対決" },
+        ].map((o) => (
+          <button key={o.key} type="button" onClick={() => setView(o.key)} className="flex-1 rounded-lg py-2 text-sm" style={toggleStyle(view === o.key)}>
+            {o.label}
+          </button>
+        ))}
+      </div>
+      {view === "monthly" ? (
+        <RankingPanel embedded authUser={authUser} deviceId={deviceId} onGoToSettings={onGoToSettings} />
+      ) : duel.participant ? (
+        <DuelPanel authUser={authUser} deviceId={deviceId} games={games} data={duel} reload={load} />
+      ) : (
+        <DuelJoinCard info={duel} onJoin={join} />
       )}
     </div>
   );
@@ -7925,8 +8392,9 @@ function getNextRollCell(frameIdx, rollIdx, value) {
         )}
 
         {tab === "ranking" && (
-          <RankingPanel
-            embedded
+          <RankingTab
+            games={games}
+            nickname={nickname}
             authUser={authUser}
             deviceId={deviceId}
             onGoToSettings={() => {
