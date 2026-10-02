@@ -1,20 +1,25 @@
-// アップデートのお知らせ(ベルに表示)。
+// コードで管理するお知らせ(ベルに表示)。
 //
-// アプリの更新内容はここに書いて git push するだけでベルに反映される。
+// アプリの更新内容や、アプリ内で行うイベントはここに書いて git push するだけでベルに反映される。
 // (イベント広告など画像付きのお知らせは、これまでどおり管理画面から投稿)
 // 先頭が「_」のファイルなので、Vercelのサーバー機能数には数えられない。
 //
 // 1件の書き方:
+//   type      … 省略可。"update"(アップデート、既定)か "event"(イベント)
 //   id        … 一意の英数字(「rn-」で始める。既読管理に使うので後から変えない)
 //   date      … お知らせの日付(YYYY-MM-DD、日本時間)。この日からベルに表示される
 //   title     … 60文字まで
 //   body      … 1000文字まで。「## 見出し」「- 箇条書き」が使える(空行で区切る)
-//   endDate   … 省略可。この日を過ぎるとベルから消える
+//   eventStart … 省略可。イベントの開始日(ベルの「10/3〜11/21」の表示に使う。省略時は date)
+//   endDate   … 省略可。この日を過ぎるとベルから消える(イベントは終了日を入れる)
 export const RELEASE_NOTES = [
   {
     id: "rn-2026-10-02-duel",
+    type: "event",
     date: "2026-10-02",
-    title: "3ゲーム対決を始めます(10/3〜11/21)",
+    eventStart: "2026-10-03",
+    endDate: "2026-11-21",
+    title: "3ゲーム対決を開催します",
     body: [
       "11/22の社内大会に向けて、3ゲームの合計スコアで競う対決を始めます。参加者は、下村優斗さん・たくさん・堀川弘人さんの3名です。",
       "",
@@ -61,10 +66,10 @@ export const RELEASE_NOTES = [
 export function activeReleaseNotes(today) {
   return RELEASE_NOTES.filter((n) => n.date <= today && (!n.endDate || n.endDate >= today)).map((n) => ({
     id: n.id,
-    type: "update",
+    type: n.type === "event" ? "event" : "update",
     title: n.title,
     body: n.body,
-    startDate: n.date,
+    startDate: n.eventStart || n.date,
     endDate: n.endDate || null,
     hasImage: false,
     imageVersion: null,
