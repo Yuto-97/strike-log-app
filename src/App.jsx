@@ -1665,14 +1665,13 @@ function AnnouncementDetail({ a, imageSrc }) {
   );
 }
 
-// ---------- 3ゲーム対決イベント ----------
-// 「参加する」を押した人が、履歴から同じ日の3ゲームを選んで提出する。
+// ---------- SERIES BATTLE(3ゲーム合計で競うイベント) ----------
+// 「参加する」を押した人が、履歴から3ゲームを選んで提出する。
 // ベストの3ゲーム合計で順位が決まる。同点はハイとローの差が小さい方が上。
 const DUEL_ERRORS = {
   not_synced: "記録をクラウドに保存中です。少し待ってからもう一度お試しください",
   already_submitted: "この3ゲームはすでに提出済みです",
   not_participant: "先に「参加する」を押してください",
-  not_same_day: "同じ日の3ゲームを選んでください",
   out_of_period: "イベント期間外のゲームです",
   ended: "イベントは終了しました",
   not_started: "イベントはまだ始まっていません",
@@ -1713,14 +1712,11 @@ function DuelPickSheet({ games, duel, mine, authUser, deviceId, onClose, onDone 
   const inPeriod = games.filter((g) => (!duel.startDate || g.date >= duel.startDate) && (!duel.endDate || g.date <= duel.endDate));
   const dates = Array.from(new Set(inPeriod.map((g) => g.date))).sort().reverse();
   const chosen = picked.map((id) => games.find((g) => g.id === id)).filter(Boolean);
-  const sameDay = chosen.length === 3 && chosen.every((g) => g.date === chosen[0].date);
-  const valid = chosen.length === 3 && sameDay;
+  const valid = chosen.length === 3;
   const total = chosen.reduce((a, g) => a + (g.total || 0), 0);
   const hint =
     chosen.length < 3
       ? `3ゲームを選んでください(${chosen.length}/3)`
-      : !sameDay
-      ? "同じ日の3ゲームを選んでください"
       : `合計 ${total} ・ アベレージ ${(total / 3).toFixed(1)}`;
 
   const toggle = (id) => {
@@ -1864,10 +1860,7 @@ function DuelPanel({ authUser, deviceId, games, data, reload }) {
     <div className="space-y-4">
       <div className="glass-card rounded-xl" style={{ padding: 14 }}>
         <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2" style={{ minWidth: 0 }}>
-            <Trophy size={18} style={{ color: COLORS.gold, flexShrink: 0 }} />
-            <div style={{ color: COLORS.cream, fontWeight: 700, fontSize: 16, overflowWrap: "anywhere" }}>{data.title}</div>
-          </div>
+          <DuelTitle info={data} />
           <span
             style={{
               fontSize: 12,
@@ -1886,7 +1879,6 @@ function DuelPanel({ authUser, deviceId, games, data, reload }) {
           {formatMonthDay(data.startDate)}〜{formatMonthDay(data.endDate)}
           {phase === "live" && `(あと${daysBetween(data.today, data.endDate)}日)`}
         </div>
-        <div style={{ color: COLORS.strike, opacity: 0.85, fontSize: 13, marginTop: 2 }}>3ゲームの合計で競います</div>
       </div>
 
       <div className="space-y-2">
@@ -2032,11 +2024,50 @@ function DuelPanel({ authUser, deviceId, games, data, reload }) {
           }}
         />
       )}
+      <DuelRules />
     </div>
   );
 }
 
-// 参加前の「3ゲーム対決」: 開催情報と参加ボタン
+// イベント名(大きく)と大会名(小さく)
+function DuelTitle({ info, size = 18 }) {
+  return (
+    <div className="flex items-center gap-2" style={{ minWidth: 0 }}>
+      <Trophy size={size} style={{ color: COLORS.gold, flexShrink: 0 }} />
+      <div style={{ minWidth: 0 }}>
+        <div style={{ color: COLORS.gold, fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: size, letterSpacing: 1, lineHeight: 1.2 }}>
+          {info.name || "SERIES BATTLE"}
+        </div>
+        <div style={{ color: COLORS.cream, fontSize: 13, fontWeight: 600, overflowWrap: "anywhere" }}>{info.title}</div>
+      </div>
+    </div>
+  );
+}
+
+// イベントのルール(お知らせと同じ内容を短く)
+function DuelRules() {
+  const sections = [
+    ["すすめ方", ["提出する3ゲームは3人で決める", "決めた3ゲームを履歴から選んで提出", "提出は何回でもOK(ベストの1回で順位が決まる)", "提出の取り消しもできる"]],
+    ["順位", ["3ゲームの合計が高い順", "同点は、ハイとローの差が小さい方が上"]],
+  ];
+  return (
+    <div className="glass-card rounded-xl space-y-3" style={{ padding: 14 }}>
+      {sections.map(([h, items]) => (
+        <div key={h}>
+          <div style={{ color: COLORS.gold, fontWeight: 700, fontSize: 14.5, marginBottom: 4 }}>{h}</div>
+          {items.map((t) => (
+            <div key={t} className="flex gap-2" style={{ color: COLORS.cream, fontSize: 14, lineHeight: 1.7 }}>
+              <span style={{ color: COLORS.gold }}>•</span>
+              <span>{t}</span>
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// 参加前: 開催情報と参加ボタン
 function DuelJoinCard({ info, onJoin }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -2052,29 +2083,68 @@ function DuelJoinCard({ info, onJoin }) {
     }
   };
   return (
-    <div className="glass-card rounded-xl space-y-3" style={{ padding: 16 }}>
-      <div className="flex items-center gap-2">
-        <Trophy size={18} style={{ color: COLORS.gold }} />
-        <div style={{ color: COLORS.cream, fontWeight: 700, fontSize: 16 }}>{info.title}</div>
+    <div className="space-y-4">
+      <div className="glass-card rounded-xl space-y-3" style={{ padding: 16 }}>
+        <DuelTitle info={info} />
+        <div style={{ color: COLORS.strike, fontSize: 14 }}>
+          {formatMonthDay(info.startDate)}〜{formatMonthDay(info.endDate)}
+        </div>
+        <div style={{ color: COLORS.cream, fontSize: 15, lineHeight: 1.7 }}>3ゲームの合計スコアで競います。参加すると、参加者の成績を見くらべられます。</div>
+        {!ended && (
+          <button type="button" onClick={join} disabled={busy} className="w-full rounded-lg py-3" style={primaryButtonStyle(!busy)}>
+            {busy ? "参加中..." : "参加する"}
+          </button>
+        )}
+        {error && <div style={{ color: "#E8836A", fontSize: 13 }}>{error}</div>}
       </div>
-      <div style={{ color: COLORS.strike, fontSize: 14 }}>
-        {formatMonthDay(info.startDate)}〜{formatMonthDay(info.endDate)}
-      </div>
-      <div style={{ color: COLORS.cream, fontSize: 15, lineHeight: 1.7 }}>3ゲームの合計スコアで競います。参加すると、参加者の成績を見くらべられます。</div>
-      {!ended && (
-        <button type="button" onClick={join} disabled={busy} className="w-full rounded-lg py-3" style={primaryButtonStyle(!busy)}>
-          {busy ? "参加中..." : "3ゲーム対決に参加する"}
-        </button>
-      )}
-      {error && <div style={{ color: "#E8836A", fontSize: 13 }}>{error}</div>}
+      <DuelRules />
     </div>
   );
 }
 
-// ランキングタブ: アカウントがある人には「月間ランキング / 3ゲーム対決」の切り替えを出す。
+// イベント一覧の1行(押すと詳細)
+function EventListRow({ info, onOpen }) {
+  const phase = info.today < info.startDate ? "before" : info.today > info.endDate ? "after" : "live";
+  const phaseLabel = { before: "開始前", live: "開催中", after: "終了" }[phase];
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="w-full glass-card rounded-xl flex items-center gap-3 text-left"
+      style={{ padding: "14px 14px" }}
+    >
+      <div className="flex-1 space-y-1" style={{ minWidth: 0 }}>
+        <div className="flex items-center gap-2">
+          <span
+            style={{
+              fontSize: 12,
+              fontWeight: 700,
+              padding: "2px 9px",
+              borderRadius: 999,
+              background: phase === "live" ? COLORS.gold : "rgba(255,255,255,0.14)",
+              color: phase === "live" ? COLORS.ink : COLORS.strike,
+            }}
+          >
+            {phaseLabel}
+          </span>
+          <span style={{ color: COLORS.strike, fontSize: 13 }}>
+            {formatMonthDay(info.startDate)}〜{formatMonthDay(info.endDate)}
+          </span>
+          {info.participant && <span style={{ color: COLORS.gold, fontSize: 12.5, fontWeight: 700 }}>参加中</span>}
+        </div>
+        <DuelTitle info={info} size={17} />
+      </div>
+      <ChevronRight size={20} style={{ color: COLORS.strike, flexShrink: 0 }} />
+    </button>
+  );
+}
+
+// ランキングタブ: 対象の人には「月間ランキング / イベント」の切り替えを出す。
+// イベントは「一覧 → 押すと内容」の2階層。
 function RankingTab({ authUser, deviceId, games, nickname, onGoToSettings }) {
   const [duel, setDuel] = useState(authUser ? undefined : null); // undefined = 確認中, null = 取得できない
   const [view, setView] = useState("monthly");
+  const [openEvent, setOpenEvent] = useState(false);
   const decidedRef = useRef(false);
 
   const load = useCallback(async () => {
@@ -2090,11 +2160,11 @@ function RankingTab({ authUser, deviceId, games, nickname, onGoToSettings }) {
     load();
   }, [load]);
 
-  // 参加している人は、最初から「3ゲーム対決」を開く
+  // 参加している人は、最初から「イベント」を開く
   useEffect(() => {
     if (duel === undefined || decidedRef.current) return;
     decidedRef.current = true;
-    if (duel && duel.participant) setView("duel");
+    if (duel && duel.participant) setView("event");
   }, [duel]);
 
   if (authUser && duel === undefined) {
@@ -2113,19 +2183,45 @@ function RankingTab({ authUser, deviceId, games, nickname, onGoToSettings }) {
       <div className="flex gap-2">
         {[
           { key: "monthly", label: "月間ランキング" },
-          { key: "duel", label: "3ゲーム対決" },
+          { key: "event", label: "イベント" },
         ].map((o) => (
-          <button key={o.key} type="button" onClick={() => setView(o.key)} className="flex-1 rounded-lg py-2 text-sm" style={toggleStyle(view === o.key)}>
+          <button
+            key={o.key}
+            type="button"
+            onClick={() => {
+              setView(o.key);
+              setOpenEvent(false);
+            }}
+            className="flex-1 rounded-lg py-2 text-sm"
+            style={toggleStyle(view === o.key)}
+          >
             {o.label}
           </button>
         ))}
       </div>
       {view === "monthly" ? (
         <RankingPanel embedded authUser={authUser} deviceId={deviceId} onGoToSettings={onGoToSettings} />
-      ) : duel.participant ? (
-        <DuelPanel authUser={authUser} deviceId={deviceId} games={games} data={duel} reload={load} />
+      ) : !openEvent ? (
+        <div className="space-y-2">
+          <EventListRow info={duel} onOpen={() => setOpenEvent(true)} />
+        </div>
       ) : (
-        <DuelJoinCard info={duel} onJoin={join} />
+        <div className="space-y-3">
+          <button
+            type="button"
+            onClick={() => setOpenEvent(false)}
+            className="flex items-center gap-1"
+            style={{ color: COLORS.strike, fontSize: 14, fontWeight: 600, padding: "2px 0" }}
+          >
+            <ChevronLeft size={18} />
+            イベント一覧
+          </button>
+          {duel.participant ? (
+            <DuelPanel authUser={authUser} deviceId={deviceId} games={games} data={duel} reload={load} />
+          ) : (
+            <DuelJoinCard info={duel} onJoin={join} />
+          )}
+        </div>
       )}
     </div>
   );

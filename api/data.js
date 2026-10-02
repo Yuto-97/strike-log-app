@@ -98,8 +98,8 @@ export function buildRanking(rows, valueOf, myUid) {
 }
 
 
-// ---------- 3ゲーム対決イベント ----------
-// 対象の3名が参加ボタンを押し、履歴から選んだ同じ日の3ゲームを提出する。順位は
+// ---------- SERIES BATTLE(3ゲーム合計で競うイベント) ----------
+// 対象の3名が参加ボタンを押し、履歴から選んだ3ゲームを提出する。順位は
 // 「提出した中で一番良い3ゲーム合計」で決め、同点ならハイとローの差が小さい方が上。
 // 参加者は duelParticipants/{eventId}/people/{uid}、提出は duelEntries/{eventId}/entries/{id}。
 // 参加者だけが読み書きできる。
@@ -144,7 +144,7 @@ const cleanCount = (v, max = 400) => {
 };
 
 // 開催情報(今回は固定)。期間を変えるときはここを直す。
-const DUEL = { id: "duel-2026-11", title: "11/22社内大会 前哨戦", startDate: "2026-10-03", endDate: "2026-11-21" };
+const DUEL = { id: "duel-2026-11", name: "SERIES BATTLE", title: "11/22社内大会 前哨戦", startDate: "2026-10-03", endDate: "2026-11-21" };
 
 const duelPeople = (db) => db.collection("duelParticipants").doc(DUEL.id).collection("people");
 
@@ -169,7 +169,7 @@ async function loadDuelMember(db, caller, account) {
 
 async function duelView(db, caller, member, account) {
   const today = todayJst();
-  const base = { title: DUEL.title, startDate: DUEL.startDate, endDate: DUEL.endDate, today };
+  const base = { name: DUEL.name, title: DUEL.title, startDate: DUEL.startDate, endDate: DUEL.endDate, today };
   if (!member) return { participant: false, canJoin: isDuelMember(account), ...base };
   const [peopleSnap, entriesSnap] = await Promise.all([
     duelPeople(db).get(),
@@ -375,7 +375,7 @@ export function createHandler({ db, adminAuth, FieldValue }) {
           return;
         }
 
-        // 提出: 同じ日の連続した3ゲーム。点数はクラウドに保存済みの記録から読む(手修正後の点数)
+        // 提出: 選んだ3ゲーム(どの3ゲームにするかは参加者どうしで決める)。点数はクラウドに保存済みの記録から読む(手修正後の点数)
         const ids = Array.isArray(body.gameIds) ? body.gameIds.map(String) : [];
         if (ids.length !== 3 || new Set(ids).size !== 3 || !ids.every((x) => ID_PATTERN.test(x))) {
           res.status(400).json({ error: "need_three_games" });
@@ -397,12 +397,9 @@ export function createHandler({ db, adminAuth, FieldValue }) {
           res.status(400).json({ error: "bad_game" });
           return;
         }
-        const date = games[0].date;
-        if (!games.every((g) => g.date === date)) {
-          res.status(400).json({ error: "not_same_day" });
-          return;
-        }
-        if ((duel.startDate && date < duel.startDate) || (duel.endDate && date > duel.endDate)) {
+        // 日付は3ゲームのうち最後の日(別々の日のゲームでもよい)
+        const date = games.map((g) => g.date).sort().pop();
+        if (games.some((g) => (duel.startDate && g.date < duel.startDate) || (duel.endDate && g.date > duel.endDate))) {
           res.status(400).json({ error: "out_of_period" });
           return;
         }
@@ -413,7 +410,7 @@ export function createHandler({ db, adminAuth, FieldValue }) {
           res.status(409).json({ error: "already_submitted" });
           return;
         }
-        const ordered = [...games].sort((a, b) => (Number(a.gameNumber) || 0) - (Number(b.gameNumber) || 0));
+        const ordered = [...games].sort((a, b) => String(a.date).localeCompare(String(b.date)) || (Number(a.gameNumber) || 0) - (Number(b.gameNumber) || 0));
         const scores = ordered.map((g) => g.total);
         const total = scores.reduce((a, b) => a + b, 0);
         const st = body.stats && typeof body.stats === "object" ? body.stats : {};
