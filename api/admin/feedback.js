@@ -1,15 +1,12 @@
 // GET    /api/admin/feedback?password=xxx                 -> list all feedback
 // POST   /api/admin/feedback { password, id, status }      -> update handled status
 // DELETE /api/admin/feedback { password, id }               -> delete a feedback item
-import { db } from "../_firebaseAdmin.js";
+import { db, adminAuth } from "../_firebaseAdmin.js";
+import { isAdminRequest } from "../_adminAuth.js";
 
-function isAuthed(req) {
-  const password = req.method === "GET" ? req.query.password : (req.body || {}).password;
-  return !!process.env.ADMIN_PASSWORD && password === process.env.ADMIN_PASSWORD;
-}
 
 export default async function handler(req, res) {
-  if (!isAuthed(req)) {
+  if (!(await isAdminRequest(req, { db, adminAuth }))) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }

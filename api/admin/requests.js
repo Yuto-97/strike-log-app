@@ -12,7 +12,8 @@
 // ({ label, amountJpy }) are still read correctly.
 // (Usage/cost lives here rather than in a new function to stay within
 // Vercel's function-count limit on the free plan.)
-import { db } from "../_firebaseAdmin.js";
+import { db, adminAuth } from "../_firebaseAdmin.js";
+import { isAdminRequest } from "../_adminAuth.js";
 import { generateUniqueId } from "../_idGenerator.js";
 import { monthJST } from "../_usage.js";
 
@@ -133,13 +134,9 @@ async function usageView(month) {
   };
 }
 
-function isAuthed(req) {
-  const password = req.method === "GET" ? req.query.password : (req.body || {}).password;
-  return !!process.env.ADMIN_PASSWORD && password === process.env.ADMIN_PASSWORD;
-}
 
 export default async function handler(req, res) {
-  if (!isAuthed(req)) {
+  if (!(await isAdminRequest(req, { db, adminAuth }))) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }

@@ -6,6 +6,7 @@
 //   GET  /api/announcements             → currently active announcements (no images)
 //   GET  /api/announcements?image=ID&v= → that announcement's image (long-cached)
 // Admin (password required, same ADMIN_PASSWORD as the other admin APIs):
+//   (管理者アカウントでのログイン、または予備の管理者パスワードが必要。api/_adminAuth.js)
 //   POST { password, action: "list" }                 → every announcement, incl. scheduled/expired
 //   POST { password, action: "save", id?, type, title, body, startDate, endDate, image }
 //        image: undefined = keep as is, null = remove, { base64, mediaType } = replace
@@ -17,7 +18,8 @@
 // before upload to stay well under Firestore's 1MB-per-document limit.
 // If images ever need to be bigger or more numerous, move them to Cloud
 // Storage (requires switching Firebase to the Blaze plan).
-import { db } from "./_firebaseAdmin.js";
+import { db, adminAuth } from "./_firebaseAdmin.js";
+import { isAdminRequest } from "./_adminAuth.js";
 import { activeReleaseNotes } from "./_releaseNotes.js";
 
 const TYPES = ["update", "event"];
@@ -42,7 +44,7 @@ function bad(res, message) {
   res.status(400).json({ error: message });
 }
 
-export function createHandler({ db, adminPassword, now = () => Date.now() }) {
+export function createHandler({ db, adminAuth = null, adminPassword, now = () => Date.now() }) {
   const col = () => db.collection("announcements");
   const imgCol = () => db.collection("announcementImages");
 
@@ -83,7 +85,7 @@ export function createHandler({ db, adminPassword, now = () => Date.now() }) {
       }
 
       const body = req.body || {};
-      if (!adminPassword || body.password !== adminPassword) {
+      if (!(await isAdminRequest(req, { db, adminAuth, adminPassword }))) {
         res.status(401).json({ error: "Unauthorized" });
         return;
       }
@@ -171,4 +173,4 @@ export function createHandler({ db, adminPassword, now = () => Date.now() }) {
   };
 }
 
-export default createHandler({ db, adminPassword: process.env.ADMIN_PASSWORD });
+export default createHandler({ db, adminAuth, adminPassword: process.env.ADMIN_PASSWORD });

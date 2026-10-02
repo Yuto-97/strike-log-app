@@ -3744,6 +3744,21 @@ const shortDateJST = (iso) => {
 };
 const daysSince = (iso) => (iso ? Math.floor((Date.now() - new Date(iso).getTime()) / 86400000) : Infinity);
 
+// 管理画面のAPI呼び出し。アプリのアカウントでログインしていれば、そのIDトークンを付ける
+// (管理者アカウントならパスワードなしで通る。api/_adminAuth.js)
+async function adminFetch(url, opts = {}) {
+  const headers = { ...(opts.headers || {}) };
+  const user = auth && auth.currentUser;
+  if (user) {
+    try {
+      headers.Authorization = `Bearer ${await user.getIdToken()}`;
+    } catch (e) {
+      // トークンが取れなければパスワードだけで試す
+    }
+  }
+  return fetch(url, { ...opts, headers });
+}
+
 function AdminUsage({ password }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -3759,7 +3774,7 @@ function AdminUsage({ password }) {
     setError("");
     setSavedMsg("");
     try {
-      const res = await fetch(
+      const res = await adminFetch(
         `/api/admin/requests?password=${encodeURIComponent(password)}&view=usage${month ? `&month=${month}` : ""}`
       );
       const d = await res.json();
@@ -3795,7 +3810,7 @@ function AdminUsage({ password }) {
     setSaving(true);
     setSavedMsg("");
     try {
-      const res = await fetch("/api/admin/requests", {
+      const res = await adminFetch("/api/admin/requests", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ password, action: "finance", month: data.month, fixedCosts: fixed, revenueJpy: Number(revenue) || 0, usdJpy: Number(rate) }),
@@ -4195,7 +4210,7 @@ function AdminAnnouncements({ password }) {
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
 
   const call = async (payload) => {
-    const res = await fetch("/api/announcements", {
+    const res = await adminFetch("/api/announcements", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ password, ...payload }),
@@ -4653,13 +4668,42 @@ function AdminPanel() {
   const [confirmDeleteRequestId, setConfirmDeleteRequestId] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
 
-  const load = async (pw) => {
+  const [checking, setChecking] = useState(!!auth); // アカウントでの自動ログインを確認中
+  const [usePassword, setUsePassword] = useState(false); // 予備: 管理者パスワードで入る
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPw, setLoginPw] = useState("");
+
+  // 管理者のアカウントでログイン済みなら、そのまま開く
+  useEffect(() => {
+    if (!auth) return undefined;
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      if (user) await load("", true);
+      setChecking(false);
+    });
+    return () => unsub();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const loginWithAdminAccount = async () => {
+    if (!auth || !loginEmail.trim() || !loginPw) return;
+    setLoading(true);
+    setError("");
+    try {
+      await signInWithEmailAndPassword(auth, loginEmail.trim(), loginPw);
+      await load("");
+    } catch (e) {
+      setError("メールアドレスかパスワードが違います");
+      setLoading(false);
+    }
+  };
+
+  const load = async (pw, silent = false) => {
     setLoading(true);
     setError("");
     try {
       const [rReq, rFb] = await Promise.all([
-        fetch(`/api/admin/requests?password=${encodeURIComponent(pw)}`),
-        fetch(`/api/admin/feedback?password=${encodeURIComponent(pw)}`),
+        adminFetch(`/api/admin/requests?password=${encodeURIComponent(pw)}`),
+        adminFetch(`/api/admin/feedback?password=${encodeURIComponent(pw)}`),
       ]);
       if (!rReq.ok || !rFb.ok) throw new Error("auth failed");
       const reqData = await rReq.json();
@@ -4669,7 +4713,7 @@ function AdminPanel() {
       setFeedbackList(fbData.items || []);
       setAuthed(true);
     } catch (e) {
-      setError("パスワードが違うか、読み込みに失敗しました");
+      if (!silent) setError(pw ? "パスワードが違うか、読み込みに失敗しました" : "このアカウントには管理者の権限がありません");
     } finally {
       setLoading(false);
     }
@@ -4677,7 +4721,7 @@ function AdminPanel() {
 
   // Remove someone from the monthly ranking (or restore them).
   const toggleRankingExclude = async (uid, excluded) => {
-    await fetch("/api/admin/requests", {
+    await adminFetch("/api/admin/requests", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ password, action: "rankingExclude", uid, excluded }),
@@ -4686,7 +4730,7 @@ function AdminPanel() {
   };
 
   const updateStatus = async (deviceId, status) => {
-    await fetch("/api/admin/requests", {
+    await adminFetch("/api/admin/requests", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ password, deviceId, status }),
@@ -4700,7 +4744,7 @@ function AdminPanel() {
     if (!ids.length) return;
     if (!window.confirm(`アカウントに移行済みの記録を${ids.length}件削除します。よろしいですか?\n(アカウント側の承認・記録には影響しません)`)) return;
     for (const id of ids) {
-      await fetch("/api/admin/requests", {
+      await adminFetch("/api/admin/requests", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ password, deviceId: id }),
@@ -4710,7 +4754,7 @@ function AdminPanel() {
   };
 
   const deleteRequest = async (deviceId) => {
-    await fetch("/api/admin/requests", {
+    await adminFetch("/api/admin/requests", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ password, deviceId }),
@@ -4720,7 +4764,7 @@ function AdminPanel() {
   };
 
   const updateFeedbackStatus = async (id, status) => {
-    await fetch("/api/admin/feedback", {
+    await adminFetch("/api/admin/feedback", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ password, id, status }),
@@ -4729,7 +4773,7 @@ function AdminPanel() {
   };
 
   const deleteFeedback = async (id) => {
-    await fetch("/api/admin/feedback", {
+    await adminFetch("/api/admin/feedback", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ password, id }),
@@ -4746,23 +4790,84 @@ function AdminPanel() {
             <ShieldCheck size={22} style={{ color: COLORS.gold }} />
             <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 20, color: COLORS.cream }}>管理者ログイン</div>
           </div>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="管理者パスワード"
-            className="w-full px-3 py-2 rounded border text-sm"
-            style={{ borderColor: COLORS.oak, background: COLORS.cream, color: COLORS.ink }}
-          />
-          {error && <div style={{ color: "#E8836A", fontSize: 14 }}>{error}</div>}
-          <button
-            onClick={() => load(password)}
-            disabled={loading}
-            className="w-full rounded-lg py-2"
-            style={{ background: COLORS.gold, color: COLORS.cream, fontWeight: 700 }}
-          >
-            {loading ? "確認中..." : "ログイン"}
-          </button>
+          {checking ? (
+            <div style={{ color: COLORS.strike, fontSize: 14 }}>確認中...</div>
+          ) : !usePassword && auth ? (
+            <>
+              <div style={{ color: COLORS.strike, fontSize: 14 }}>アプリのアカウントでログインしてください。次回からは自動で開きます。</div>
+              <input
+                type="email"
+                value={loginEmail}
+                onChange={(e) => setLoginEmail(e.target.value)}
+                placeholder="メールアドレス"
+                autoComplete="username"
+                className="w-full px-3 py-2 rounded border"
+                style={{ borderColor: COLORS.oak, background: COLORS.cream, color: COLORS.ink, fontSize: 16 }}
+              />
+              <input
+                type="password"
+                value={loginPw}
+                onChange={(e) => setLoginPw(e.target.value)}
+                placeholder="パスワード"
+                autoComplete="current-password"
+                className="w-full px-3 py-2 rounded border"
+                style={{ borderColor: COLORS.oak, background: COLORS.cream, color: COLORS.ink, fontSize: 16 }}
+              />
+              {error && <div style={{ color: "#E8836A", fontSize: 14 }}>{error}</div>}
+              <button
+                onClick={loginWithAdminAccount}
+                disabled={loading}
+                className="w-full rounded-lg py-2"
+                style={{ background: COLORS.gold, color: COLORS.cream, fontWeight: 700 }}
+              >
+                {loading ? "確認中..." : "ログイン"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setUsePassword(true);
+                  setError("");
+                }}
+                className="w-full"
+                style={{ color: COLORS.strike, fontSize: 13, opacity: 0.8, padding: "4px 0" }}
+              >
+                管理者パスワードで入る
+              </button>
+            </>
+          ) : (
+            <>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="管理者パスワード"
+              className="w-full px-3 py-2 rounded border text-sm"
+              style={{ borderColor: COLORS.oak, background: COLORS.cream, color: COLORS.ink }}
+            />
+            {error && <div style={{ color: "#E8836A", fontSize: 14 }}>{error}</div>}
+            <button
+              onClick={() => load(password)}
+              disabled={loading}
+              className="w-full rounded-lg py-2"
+              style={{ background: COLORS.gold, color: COLORS.cream, fontWeight: 700 }}
+            >
+              {loading ? "確認中..." : "ログイン"}
+            </button>
+              {auth && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUsePassword(false);
+                    setError("");
+                  }}
+                  className="w-full"
+                  style={{ color: COLORS.strike, fontSize: 13, opacity: 0.8, padding: "4px 0" }}
+                >
+                  アカウントでログインする
+                </button>
+              )}
+            </>
+          )}
         </div>
       </div>
     );
@@ -4809,7 +4914,7 @@ function AdminPanel() {
             <button
               type="button"
               onClick={async () => {
-                await fetch("/api/admin/requests", {
+                await adminFetch("/api/admin/requests", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({ password, action: "ackAlerts" }),
