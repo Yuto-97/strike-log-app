@@ -5601,17 +5601,33 @@ export default function StrikeLog() {
     setGameNumber(sameDay + 1);
   }, [gameDate, games, gameNumberTouched]);
 
-  // For a 2nd+ game on the same day, default the shoe choice to match the
-  // first game recorded that day (people usually keep the same shoes for
-  // the whole visit) — but never override a manual change in this session.
+  // For a 2nd+ game on the same day, start with the same shoes as the most
+  // recent game recorded that day (same rule as the balls below). Runs again
+  // once everything is read from storage, so the saved "shoe-config" read at
+  // startup can't overwrite it. Never overrides a manual change in this session.
   useEffect(() => {
-    if (shoeTouched) return;
-    const sameDayGames = games.filter((g) => g.date === gameDate);
-    if (sameDayGames.length > 0 && sameDayGames[0].shoe) {
-      setShoeType(sameDayGames[0].shoe.type || "rental");
-      setSelectedShoeId(sameDayGames[0].shoe.shoeRegistryId || null);
+    if (shoeTouched || !storageLoaded) return;
+    const sameDay = games.filter((g) => g.date === gameDate && g.shoe);
+    if (sameDay.length === 0) return;
+    const last = sameDay.reduce((a, b) =>
+      (b.gameNumber || 0) > (a.gameNumber || 0) ||
+      ((b.gameNumber || 0) === (a.gameNumber || 0) && (b.createdAt || 0) > (a.createdAt || 0))
+        ? b
+        : a
+    );
+    const type = last.shoe.type || "rental";
+    setShoeType(type);
+    if (type !== "own") {
+      setSelectedShoeId(null);
+      return;
     }
-  }, [gameDate, games, shoeTouched]);
+    // Registered id first; if that shoe was re-registered, find it by name.
+    const id = last.shoe.shoeRegistryId;
+    const own = myShoes.filter((x) => (x.type || "own") === "own");
+    const found =
+      (id && own.find((x) => x.id === id)) || (last.shoe.label && own.find((x) => x.label === last.shoe.label)) || null;
+    setSelectedShoeId(found ? found.id : id || null);
+  }, [gameDate, games, myShoes, shoeTouched, storageLoaded]);
 
   // ボウリング場 default: the one used earlier the same day, else the
   // ホームセンター, else the most recent one. A manual choice always wins.
@@ -5630,7 +5646,7 @@ export default function StrikeLog() {
   // Reads from saved games, so it still works after closing and reopening the
   // app between games. Never overrides a manual change in this session.
   useEffect(() => {
-    if (ballTouched) return;
+    if (ballTouched || !storageLoaded) return;
     const sameDay = games.filter((g) => g.date === gameDate);
     if (sameDay.length === 0) return;
     const last = sameDay.reduce((a, b) =>
@@ -5663,7 +5679,7 @@ export default function StrikeLog() {
       setSelectedBallId2(null);
     }
     setExtraBalls((last.extraBalls || []).map((eb) => ({ type: eb.type || "house", id: idOf(eb) })));
-  }, [gameDate, games, myBalls, ballTouched]);
+  }, [gameDate, games, myBalls, ballTouched, storageLoaded]);
 
   // Device-based access (users without an account). Waits until Firebase has
   // said whether an account is signed in, and ignores a late answer if an
