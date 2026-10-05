@@ -3744,6 +3744,21 @@ const shortDateJST = (iso) => {
 };
 const daysSince = (iso) => (iso ? Math.floor((Date.now() - new Date(iso).getTime()) / 86400000) : Infinity);
 
+// 管理画面のAPI呼び出し。アプリのアカウントでログインしていれば、そのIDトークンを付ける
+// (管理者アカウントならパスワードなしで通る。api/_adminAuth.js)
+async function adminFetch(url, opts = {}) {
+  const headers = { ...(opts.headers || {}) };
+  const user = auth && auth.currentUser;
+  if (user) {
+    try {
+      headers.Authorization = `Bearer ${await user.getIdToken()}`;
+    } catch (e) {
+      // トークンが取れなければパスワードだけで試す
+    }
+  }
+  return fetch(url, { ...opts, headers });
+}
+
 function AdminUsage({ password }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -3759,7 +3774,7 @@ function AdminUsage({ password }) {
     setError("");
     setSavedMsg("");
     try {
-      const res = await fetch(
+      const res = await adminFetch(
         `/api/admin/requests?password=${encodeURIComponent(password)}&view=usage${month ? `&month=${month}` : ""}`
       );
       const d = await res.json();
@@ -3795,7 +3810,7 @@ function AdminUsage({ password }) {
     setSaving(true);
     setSavedMsg("");
     try {
-      const res = await fetch("/api/admin/requests", {
+      const res = await adminFetch("/api/admin/requests", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ password, action: "finance", month: data.month, fixedCosts: fixed, revenueJpy: Number(revenue) || 0, usdJpy: Number(rate) }),
@@ -4195,7 +4210,7 @@ function AdminAnnouncements({ password }) {
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
 
   const call = async (payload) => {
-    const res = await fetch("/api/announcements", {
+    const res = await adminFetch("/api/announcements", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ password, ...payload }),
@@ -4653,13 +4668,42 @@ function AdminPanel() {
   const [confirmDeleteRequestId, setConfirmDeleteRequestId] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
 
-  const load = async (pw) => {
+  const [checking, setChecking] = useState(!!auth); // アカウントでの自動ログインを確認中
+  const [usePassword, setUsePassword] = useState(false); // 予備: 管理者パスワードで入る
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPw, setLoginPw] = useState("");
+
+  // 管理者のアカウントでログイン済みなら、そのまま開く
+  useEffect(() => {
+    if (!auth) return undefined;
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      if (user) await load("", true);
+      setChecking(false);
+    });
+    return () => unsub();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const loginWithAdminAccount = async () => {
+    if (!auth || !loginEmail.trim() || !loginPw) return;
+    setLoading(true);
+    setError("");
+    try {
+      await signInWithEmailAndPassword(auth, loginEmail.trim(), loginPw);
+      await load("");
+    } catch (e) {
+      setError("メールアドレスかパスワードが違います");
+      setLoading(false);
+    }
+  };
+
+  const load = async (pw, silent = false) => {
     setLoading(true);
     setError("");
     try {
       const [rReq, rFb] = await Promise.all([
-        fetch(`/api/admin/requests?password=${encodeURIComponent(pw)}`),
-        fetch(`/api/admin/feedback?password=${encodeURIComponent(pw)}`),
+        adminFetch(`/api/admin/requests?password=${encodeURIComponent(pw)}`),
+        adminFetch(`/api/admin/feedback?password=${encodeURIComponent(pw)}`),
       ]);
       if (!rReq.ok || !rFb.ok) throw new Error("auth failed");
       const reqData = await rReq.json();
@@ -4669,7 +4713,7 @@ function AdminPanel() {
       setFeedbackList(fbData.items || []);
       setAuthed(true);
     } catch (e) {
-      setError("パスワードが違うか、読み込みに失敗しました");
+      if (!silent) setError(pw ? "パスワードが違うか、読み込みに失敗しました" : "このアカウントには管理者の権限がありません");
     } finally {
       setLoading(false);
     }
@@ -4677,7 +4721,7 @@ function AdminPanel() {
 
   // Remove someone from the monthly ranking (or restore them).
   const toggleRankingExclude = async (uid, excluded) => {
-    await fetch("/api/admin/requests", {
+    await adminFetch("/api/admin/requests", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ password, action: "rankingExclude", uid, excluded }),
@@ -4686,7 +4730,7 @@ function AdminPanel() {
   };
 
   const updateStatus = async (deviceId, status) => {
-    await fetch("/api/admin/requests", {
+    await adminFetch("/api/admin/requests", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ password, deviceId, status }),
@@ -4700,7 +4744,7 @@ function AdminPanel() {
     if (!ids.length) return;
     if (!window.confirm(`アカウントに移行済みの記録を${ids.length}件削除します。よろしいですか?\n(アカウント側の承認・記録には影響しません)`)) return;
     for (const id of ids) {
-      await fetch("/api/admin/requests", {
+      await adminFetch("/api/admin/requests", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ password, deviceId: id }),
@@ -4710,7 +4754,7 @@ function AdminPanel() {
   };
 
   const deleteRequest = async (deviceId) => {
-    await fetch("/api/admin/requests", {
+    await adminFetch("/api/admin/requests", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ password, deviceId }),
@@ -4720,7 +4764,7 @@ function AdminPanel() {
   };
 
   const updateFeedbackStatus = async (id, status) => {
-    await fetch("/api/admin/feedback", {
+    await adminFetch("/api/admin/feedback", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ password, id, status }),
@@ -4729,7 +4773,7 @@ function AdminPanel() {
   };
 
   const deleteFeedback = async (id) => {
-    await fetch("/api/admin/feedback", {
+    await adminFetch("/api/admin/feedback", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ password, id }),
@@ -4746,23 +4790,84 @@ function AdminPanel() {
             <ShieldCheck size={22} style={{ color: COLORS.gold }} />
             <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 20, color: COLORS.cream }}>管理者ログイン</div>
           </div>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="管理者パスワード"
-            className="w-full px-3 py-2 rounded border text-sm"
-            style={{ borderColor: COLORS.oak, background: COLORS.cream, color: COLORS.ink }}
-          />
-          {error && <div style={{ color: "#E8836A", fontSize: 14 }}>{error}</div>}
-          <button
-            onClick={() => load(password)}
-            disabled={loading}
-            className="w-full rounded-lg py-2"
-            style={{ background: COLORS.gold, color: COLORS.cream, fontWeight: 700 }}
-          >
-            {loading ? "確認中..." : "ログイン"}
-          </button>
+          {checking ? (
+            <div style={{ color: COLORS.strike, fontSize: 14 }}>確認中...</div>
+          ) : !usePassword && auth ? (
+            <>
+              <div style={{ color: COLORS.strike, fontSize: 14 }}>アプリのアカウントでログインしてください。次回からは自動で開きます。</div>
+              <input
+                type="email"
+                value={loginEmail}
+                onChange={(e) => setLoginEmail(e.target.value)}
+                placeholder="メールアドレス"
+                autoComplete="username"
+                className="w-full px-3 py-2 rounded border"
+                style={{ borderColor: COLORS.oak, background: COLORS.cream, color: COLORS.ink, fontSize: 16 }}
+              />
+              <input
+                type="password"
+                value={loginPw}
+                onChange={(e) => setLoginPw(e.target.value)}
+                placeholder="パスワード"
+                autoComplete="current-password"
+                className="w-full px-3 py-2 rounded border"
+                style={{ borderColor: COLORS.oak, background: COLORS.cream, color: COLORS.ink, fontSize: 16 }}
+              />
+              {error && <div style={{ color: "#E8836A", fontSize: 14 }}>{error}</div>}
+              <button
+                onClick={loginWithAdminAccount}
+                disabled={loading}
+                className="w-full rounded-lg py-2"
+                style={{ background: COLORS.gold, color: COLORS.cream, fontWeight: 700 }}
+              >
+                {loading ? "確認中..." : "ログイン"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setUsePassword(true);
+                  setError("");
+                }}
+                className="w-full"
+                style={{ color: COLORS.strike, fontSize: 13, opacity: 0.8, padding: "4px 0" }}
+              >
+                管理者パスワードで入る
+              </button>
+            </>
+          ) : (
+            <>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="管理者パスワード"
+              className="w-full px-3 py-2 rounded border text-sm"
+              style={{ borderColor: COLORS.oak, background: COLORS.cream, color: COLORS.ink }}
+            />
+            {error && <div style={{ color: "#E8836A", fontSize: 14 }}>{error}</div>}
+            <button
+              onClick={() => load(password)}
+              disabled={loading}
+              className="w-full rounded-lg py-2"
+              style={{ background: COLORS.gold, color: COLORS.cream, fontWeight: 700 }}
+            >
+              {loading ? "確認中..." : "ログイン"}
+            </button>
+              {auth && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUsePassword(false);
+                    setError("");
+                  }}
+                  className="w-full"
+                  style={{ color: COLORS.strike, fontSize: 13, opacity: 0.8, padding: "4px 0" }}
+                >
+                  アカウントでログインする
+                </button>
+              )}
+            </>
+          )}
         </div>
       </div>
     );
@@ -4809,7 +4914,7 @@ function AdminPanel() {
             <button
               type="button"
               onClick={async () => {
-                await fetch("/api/admin/requests", {
+                await adminFetch("/api/admin/requests", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({ password, action: "ackAlerts" }),
@@ -5496,17 +5601,33 @@ export default function StrikeLog() {
     setGameNumber(sameDay + 1);
   }, [gameDate, games, gameNumberTouched]);
 
-  // For a 2nd+ game on the same day, default the shoe choice to match the
-  // first game recorded that day (people usually keep the same shoes for
-  // the whole visit) — but never override a manual change in this session.
+  // For a 2nd+ game on the same day, start with the same shoes as the most
+  // recent game recorded that day (same rule as the balls below). Runs again
+  // once everything is read from storage, so the saved "shoe-config" read at
+  // startup can't overwrite it. Never overrides a manual change in this session.
   useEffect(() => {
-    if (shoeTouched) return;
-    const sameDayGames = games.filter((g) => g.date === gameDate);
-    if (sameDayGames.length > 0 && sameDayGames[0].shoe) {
-      setShoeType(sameDayGames[0].shoe.type || "rental");
-      setSelectedShoeId(sameDayGames[0].shoe.shoeRegistryId || null);
+    if (shoeTouched || !storageLoaded) return;
+    const sameDay = games.filter((g) => g.date === gameDate && g.shoe);
+    if (sameDay.length === 0) return;
+    const last = sameDay.reduce((a, b) =>
+      (b.gameNumber || 0) > (a.gameNumber || 0) ||
+      ((b.gameNumber || 0) === (a.gameNumber || 0) && (b.createdAt || 0) > (a.createdAt || 0))
+        ? b
+        : a
+    );
+    const type = last.shoe.type || "rental";
+    setShoeType(type);
+    if (type !== "own") {
+      setSelectedShoeId(null);
+      return;
     }
-  }, [gameDate, games, shoeTouched]);
+    // Registered id first; if that shoe was re-registered, find it by name.
+    const id = last.shoe.shoeRegistryId;
+    const own = myShoes.filter((x) => (x.type || "own") === "own");
+    const found =
+      (id && own.find((x) => x.id === id)) || (last.shoe.label && own.find((x) => x.label === last.shoe.label)) || null;
+    setSelectedShoeId(found ? found.id : id || null);
+  }, [gameDate, games, myShoes, shoeTouched, storageLoaded]);
 
   // ボウリング場 default: the one used earlier the same day, else the
   // ホームセンター, else the most recent one. A manual choice always wins.
@@ -5525,7 +5646,7 @@ export default function StrikeLog() {
   // Reads from saved games, so it still works after closing and reopening the
   // app between games. Never overrides a manual change in this session.
   useEffect(() => {
-    if (ballTouched) return;
+    if (ballTouched || !storageLoaded) return;
     const sameDay = games.filter((g) => g.date === gameDate);
     if (sameDay.length === 0) return;
     const last = sameDay.reduce((a, b) =>
@@ -5558,7 +5679,7 @@ export default function StrikeLog() {
       setSelectedBallId2(null);
     }
     setExtraBalls((last.extraBalls || []).map((eb) => ({ type: eb.type || "house", id: idOf(eb) })));
-  }, [gameDate, games, myBalls, ballTouched]);
+  }, [gameDate, games, myBalls, ballTouched, storageLoaded]);
 
   // Device-based access (users without an account). Waits until Firebase has
   // said whether an account is signed in, and ignores a late answer if an
