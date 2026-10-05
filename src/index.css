@@ -24,3 +24,14 @@ html, body, #root {
 .large-text :not(button):not(svg)[style*="opacity: 0.85"] {
   opacity: 1 !important;
 }
+
+/* 行末に1〜2文字だけ残る折り返しを避ける(対応していないブラウザでは今まで通り) */
+#root {
+  text-wrap: pretty;
+}
+
+/* 大きめ・特大では、画面下のタブの文字を少しだけ詰めて、横幅に収める */
+.large-text .nav-label {
+  font-size: 11px !important;
+  letter-spacing: -0.04em !important;
+}
