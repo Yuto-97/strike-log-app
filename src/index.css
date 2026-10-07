@@ -45,3 +45,24 @@ html, body, #root {
   padding-left: 14px !important;
   padding-right: 14px !important;
 }
+
+/* 大きめ・特大: 投球の入力パネル(数字・記号のボタン)は列を減らして、文字が切れないようにする */
+.large-text .roll-nums {
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+}
+.large-text .roll-special {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+}
+.large-text .roll-nums [style*="font-size: 8px"],
+.large-text .roll-special [style*="font-size: 8px"] {
+  font-size: 10px !important;
+}
+.large-text .roll-special [style*="font-size: 9.5px"] {
+  font-size: 11px !important;
+}
+
+/* 大きめ・特大: とても小さい補足の文字(10〜10.5px)は少しだけ大きくする(下の規約リンクは1行に収めるため除く) */
+.large-text :not(.legal-links) > [style*="font-size: 10px"],
+.large-text :not(.legal-links) > [style*="font-size: 10.5px"] {
+  font-size: 11px !important;
+}

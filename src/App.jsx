@@ -1333,7 +1333,7 @@ function FrameBox({ frame, index, isTenth, editable, activeCell, onCellTap }) {
 
 function ScoreSheet({ frames, editable, activeCell, onCellTap }) {
   return (
-    <div className="flex w-full overflow-x-auto pb-1" style={{ gap: 2 }}>
+    <div className="score-sheet flex w-full overflow-x-auto pb-1" style={{ gap: 2 }}>
       {Array.from({ length: 10 }).map((_, i) => (
         <FrameBox
           key={i}
@@ -1373,7 +1373,7 @@ function RollPicker({ frameIdx, rollIdx, splitEligible, onSelect, onSplitToggle,
         </button>
       </div>
 
-      <div className="grid grid-cols-6 gap-1">
+      <div className="roll-nums grid grid-cols-6 gap-1">
         {Array.from({ length: 11 }).map((_, n) => numberBtn(String(n), String(n)))}
         <button
           type="button"
@@ -1386,7 +1386,7 @@ function RollPicker({ frameIdx, rollIdx, splitEligible, onSelect, onSplitToggle,
         </button>
       </div>
 
-      <div className="grid grid-cols-5 gap-1">
+      <div className="roll-special grid grid-cols-5 gap-1">
         <button
           type="button"
           onClick={() => onSelect("/")}
@@ -1627,6 +1627,7 @@ function AnnouncementListRow({ a, unread, onOpen, imageSrc }) {
             WebkitLineClamp: 2,
             WebkitBoxOrient: "vertical",
             overflow: "hidden",
+            textWrap: "balance",
           }}
         >
           {a.title}
@@ -1652,7 +1653,7 @@ function AnnouncementDetail({ a, imageSrc }) {
     <div className="space-y-4">
       <div>
         <AnnouncementMeta a={a} />
-        <div style={{ color: COLORS.cream, fontWeight: 700, fontSize: 20, lineHeight: 1.45, marginTop: 8, overflowWrap: "anywhere" }}>
+        <div style={{ color: COLORS.cream, fontWeight: 700, fontSize: 20, lineHeight: 1.45, marginTop: 8, overflowWrap: "anywhere", textWrap: "balance" }}>
           {a.title}
         </div>
       </div>
@@ -2112,7 +2113,7 @@ function DuelJoinCard({ info, onJoin }) {
         <div style={{ color: COLORS.strike, fontSize: 14 }}>
           {formatMonthDay(info.startDate)}〜{formatMonthDay(info.endDate)}
         </div>
-        <div style={{ color: COLORS.cream, fontSize: 15, lineHeight: 1.7 }}>3ゲームの合計スコアで競います。参加すると、参加者の成績を見くらべられます。</div>
+        <div style={{ color: COLORS.cream, fontSize: 15, lineHeight: 1.7 }}><Phrases text="3ゲームの合計スコアで|競います。|参加すると、|参加者の成績を|見くらべられます。" /></div>
         {!ended && (
           <button type="button" onClick={join} disabled={busy} className="w-full rounded-lg py-3" style={primaryButtonStyle(!busy)}>
             {busy ? "参加中..." : "参加する"}
@@ -2840,7 +2841,7 @@ function CenterStats({ games }) {
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(5, 1fr)",
+                gridTemplateColumns: "1.15fr 0.9fr 0.9fr 1.25fr 1fr",
                 marginTop: 10,
                 paddingTop: 8,
                 borderTop: "1px solid rgba(224,168,0,0.18)",
@@ -3076,7 +3077,9 @@ function TextSizeWelcome({ value, onChange, onDone }) {
         <div className="rounded-lg" style={{ padding: "10px 12px", background: "rgba(10,16,34,0.55)" }}>
           <div style={{ color: COLORS.strike, fontSize: 13 }}>アベレージ</div>
           <div style={{ color: COLORS.cream, fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 28, lineHeight: 1.2 }}>168.5</div>
-          <div style={{ color: COLORS.strike, fontSize: 13 }}>ストライク率 32.4% ・ スペア率 41.0%</div>
+          <div style={{ color: COLORS.strike, fontSize: 13 }}>
+            <Phrases text="ストライク率 32.4% ・ |スペア率 41.0%" />
+          </div>
         </div>
       </div>
     </AppModal>
@@ -3798,7 +3801,7 @@ function GateScreen({
               onClick={submit}
               disabled={submitting}
               className="w-full rounded-lg py-3"
-              style={{ background: COLORS.gold, color: COLORS.cream, fontWeight: 700 }}
+              style={{ background: COLORS.gold, color: COLORS.ink, fontWeight: 700 }}
             >
               {submitting ? "送信中..." : "利用をリクエストする"}
             </button>
@@ -4961,7 +4964,7 @@ function AdminPanel() {
                 onClick={loginWithAdminAccount}
                 disabled={loading}
                 className="w-full rounded-lg py-2"
-                style={{ background: COLORS.gold, color: COLORS.cream, fontWeight: 700 }}
+                style={{ background: COLORS.gold, color: COLORS.ink, fontWeight: 700 }}
               >
                 {loading ? "確認中..." : "ログイン"}
               </button>
@@ -4992,7 +4995,7 @@ function AdminPanel() {
               onClick={() => load(password)}
               disabled={loading}
               className="w-full rounded-lg py-2"
-              style={{ background: COLORS.gold, color: COLORS.cream, fontWeight: 700 }}
+              style={{ background: COLORS.gold, color: COLORS.ink, fontWeight: 700 }}
             >
               {loading ? "確認中..." : "ログイン"}
             </button>
@@ -7676,7 +7679,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                   </div>
                   {pendingResult.games?.length > 1 && (
                     <div className="mt-1 text-xs" style={{ color: COLORS.strike }}>
-                      {pendingResult.games.length}ゲーム分を、{gameNumber}ゲーム目から連番で保存します
+                      <Phrases text={`${pendingResult.games.length}ゲーム分を、|${gameNumber}ゲーム目から|連番で保存します`} />
                     </div>
                   )}
                 </div>
@@ -9480,7 +9483,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
               </button>
             </div>
 
-            <div className="flex items-center justify-center gap-2 pt-2 flex-nowrap" style={{ fontSize: 10, color: COLORS.strike, whiteSpace: "nowrap" }}>
+            <div className="legal-links flex items-center justify-center gap-2 pt-2 flex-nowrap" style={{ fontSize: 10, color: COLORS.strike, whiteSpace: "nowrap" }}>
               <a href="/terms" style={{ textDecoration: "underline" }}>利用規約</a>
               <a href="/privacy" style={{ textDecoration: "underline" }}>プライバシーポリシー</a>
               <a href="/tokushoho" style={{ textDecoration: "underline" }}>特定商取引法に基づく表記</a>
