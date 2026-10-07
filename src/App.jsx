@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { Camera, History, BarChart3, Loader2, Check, X, Pencil, Trophy, TrendingUp, Calendar, CircleDot, Hash, User, Target, Trash2, ShieldCheck, CircleCheck, MessageCircle, Send, Settings, Crop, ImageOff, UserX, Bell, ImagePlus, ChevronDown, ChevronLeft, ChevronRight, Download, MapPin } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { auth } from "./firebaseClient.js";
+import { TEXT_SIZES, readTextSize, applyTextSize, saveTextSize } from "./textSize.js";
 import { noteLocalWrite, startSync, stopSync, scheduleFlush } from "./sync.js";
 import {
   onAuthStateChanged,
@@ -1750,7 +1751,8 @@ function DuelPickSheet({ games, duel, mine, authUser, deviceId, onClose, onDone 
     }
   };
 
-  // body 直下に出す(タブの中だと、画面のアニメーションの影響で位置がずれることがあるため)
+  // #root 直下に出す(タブの中だと、画面のアニメーションの影響で位置がずれることがあるため。
+  // body ではなく #root なのは、文字の大きさの拡大を効かせるため)
   return createPortal(
     <div
       className="fixed left-0 right-0 top-0 bottom-0 flex flex-col"
@@ -1815,7 +1817,7 @@ function DuelPickSheet({ games, duel, mine, authUser, deviceId, onClose, onDone 
         </button>
       </div>
     </div>,
-    document.body
+    document.getElementById("root") || document.body
   );
 }
 
@@ -1868,6 +1870,7 @@ function DuelPanel({ authUser, deviceId, games, data, reload }) {
               padding: "2px 10px",
               borderRadius: 999,
               flexShrink: 0,
+              whiteSpace: "nowrap",
               background: phase === "live" ? COLORS.gold : "rgba(255,255,255,0.14)",
               color: phase === "live" ? COLORS.ink : COLORS.strike,
             }}
@@ -1939,7 +1942,15 @@ function DuelPanel({ authUser, deviceId, games, data, reload }) {
                 const top = bestOf(key, dir);
                 return (
                   <tr key={key} style={{ borderTop: "1px solid rgba(255,255,255,0.1)" }}>
-                    <td style={{ color: COLORS.strike, fontSize: 13, padding: "7px 4px" }}>{label}</td>
+                    <td style={{ color: COLORS.strike, fontSize: 13, padding: "7px 4px", wordBreak: "keep-all", lineHeight: 1.3 }}>
+                      {label === "スプリットカバー" ? (
+                        <>
+                          スプリット<wbr />カバー
+                        </>
+                      ) : (
+                        label
+                      )}
+                    </td>
                     {board.map((r, i) => {
                       const v = cmpValue(r.best, key);
                       const isTop = top !== null && v !== null && v === top;
@@ -2029,13 +2040,23 @@ function DuelPanel({ authUser, deviceId, games, data, reload }) {
   );
 }
 
+// 文章を「|」の位置(文節の区切り)でだけ折り返す。文字が大きい時に、
+// 行末に1〜2文字だけ取り残される不自然な折り返しを防ぐ。
+function Phrases({ text }) {
+  return text.split("|").map((t, i) => (
+    <span key={i} style={{ display: "inline-block" }}>
+      {t}
+    </span>
+  ));
+}
+
 // イベント名(大きく)と大会名(小さく)
 function DuelTitle({ info, size = 18 }) {
   return (
     <div className="flex items-center gap-2" style={{ minWidth: 0 }}>
       <Trophy size={size} style={{ color: COLORS.gold, flexShrink: 0 }} />
       <div style={{ minWidth: 0 }}>
-        <div style={{ color: COLORS.gold, fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: size, letterSpacing: 1, lineHeight: 1.2 }}>
+        <div style={{ color: COLORS.gold, fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: size, letterSpacing: 1, lineHeight: 1.2, whiteSpace: "nowrap" }}>
           {info.name || "SERIES BATTLE"}
         </div>
         <div style={{ color: COLORS.cream, fontSize: 13, fontWeight: 600, overflowWrap: "anywhere" }}>{info.title}</div>
@@ -2047,8 +2068,8 @@ function DuelTitle({ info, size = 18 }) {
 // イベントのルール(お知らせと同じ内容を短く)
 function DuelRules() {
   const sections = [
-    ["すすめ方", ["提出する3ゲームは3人で決める", "決めた3ゲームを履歴から選んで提出", "提出は何回でもOK(ベストの1回で順位が決まる)", "提出の取り消しもできる"]],
-    ["順位", ["3ゲームの合計が高い順", "同点は、ハイとローの差が小さい方が上"]],
+    ["すすめ方", ["提出する3ゲームは|3人で決める", "決めた3ゲームを|履歴から選んで提出", "提出は何回でもOK|(ベストの1回で|順位が決まる)", "提出の取り消しも|できる"]],
+    ["順位", ["3ゲームの合計が|高い順", "同点は、|ハイとローの差が|小さい方が上"]],
   ];
   return (
     <div className="glass-card rounded-xl space-y-3" style={{ padding: 14 }}>
@@ -2058,7 +2079,9 @@ function DuelRules() {
           {items.map((t) => (
             <div key={t} className="flex gap-2" style={{ color: COLORS.cream, fontSize: 14, lineHeight: 1.7 }}>
               <span style={{ color: COLORS.gold }}>•</span>
-              <span>{t}</span>
+              <span>
+                <Phrases text={t} />
+              </span>
             </div>
           ))}
         </div>
@@ -2341,7 +2364,13 @@ function RankingPanel({ authUser, deviceId, onClose, onGoToSettings, embedded = 
                 { key: lastMonth, label: monthLabel(lastMonth) },
                 { key: thisMonth, label: `${monthLabel(thisMonth)}(今月)` },
               ].map((o) => (
-                <button key={o.key} type="button" onClick={() => setMonth(o.key)} className="flex-1 rounded-lg py-2 text-sm" style={toggleStyle(month === o.key)}>
+                <button
+                  key={o.key}
+                  type="button"
+                  onClick={() => setMonth(o.key)}
+                  className="flex-1 rounded-lg py-2 text-sm"
+                  style={{ ...toggleStyle(month === o.key), minWidth: 0, whiteSpace: "nowrap", padding: "8px 4px", letterSpacing: "-0.02em" }}
+                >
                   {o.label}
                 </button>
               ))}
@@ -2556,7 +2585,7 @@ function EventPopup({ a, imageSrc, hideChecked, onToggleHide, onClose }) {
         <img
           src={imageSrc || announcementImageUrl(a)}
           alt={a.title}
-          style={{ width: "100%", maxHeight: "58vh", objectFit: "contain", borderRadius: 10, display: "block", background: "rgba(0,0,0,0.25)" }}
+          style={{ width: "100%", maxHeight: "calc(58vh / var(--app-zoom, 1))", objectFit: "contain", borderRadius: 10, display: "block", background: "rgba(0,0,0,0.25)" }}
         />
         <div style={{ color: COLORS.strike, fontWeight: 700, fontSize: 16, marginTop: 12, overflowWrap: "anywhere" }}>{a.title}</div>
         {a.endDate && (
@@ -2689,7 +2718,7 @@ function Fireworks() {
   return (
     <canvas
       ref={canvasRef}
-      style={{ position: "fixed", inset: 0, width: "100vw", height: "100vh", pointerEvents: "none", zIndex: 61 }}
+      style={{ position: "fixed", inset: 0, width: "calc(100vw / var(--app-zoom, 1))", height: "calc(100vh / var(--app-zoom, 1))", pointerEvents: "none", zIndex: 61 }}
     />
   );
 }
@@ -2940,6 +2969,63 @@ function AccountForm({ onLogin, onSignup, onReset, busy, errorMsg, infoMsg, intr
 }
 
 // Centered popup used for prompts that need the user's attention.
+// 文字の大きさの選択(初回の案内と「設定」で共通)。押すとすぐ画面に反映される。
+function TextSizeChooser({ value, onChange }) {
+  const glyph = { normal: 18, large: 23, xlarge: 28 };
+  return (
+    <div className="flex gap-2">
+      {TEXT_SIZES.map((s) => {
+        const on = value === s.key;
+        return (
+          <button
+            key={s.key}
+            type="button"
+            onClick={() => onChange(s.key)}
+            aria-pressed={on}
+            className="flex-1 rounded-xl flex flex-col items-center justify-end"
+            style={{
+              padding: "10px 4px 8px",
+              minHeight: 74,
+              border: on ? `2px solid ${COLORS.gold}` : "1px solid rgba(245,241,228,0.25)",
+              background: on ? "rgba(224,168,0,0.14)" : "rgba(10,16,34,0.45)",
+              color: on ? COLORS.gold : COLORS.cream,
+            }}
+          >
+            <span style={{ fontSize: glyph[s.key], fontWeight: 700, lineHeight: 1.1 }}>あ</span>
+            <span style={{ fontSize: 13, fontWeight: 700, marginTop: 6 }}>{s.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// 初めて開いた時に1回だけ出す「文字の大きさ」の案内
+function TextSizeWelcome({ value, onChange, onDone }) {
+  return (
+    <AppModal
+      title="文字の大きさ"
+      footer={
+        <button type="button" onClick={onDone} className="w-full rounded-lg py-3" style={primaryButtonStyle()}>
+          この大きさにする
+        </button>
+      }
+    >
+      <div className="space-y-3">
+        <div style={{ color: COLORS.cream, fontSize: 15, lineHeight: 1.7 }}>
+          <Phrases text="見やすい大きさを|選んでください。|あとから「設定」でも|変えられます。" />
+        </div>
+        <TextSizeChooser value={value} onChange={onChange} />
+        <div className="rounded-lg" style={{ padding: "10px 12px", background: "rgba(10,16,34,0.55)" }}>
+          <div style={{ color: COLORS.strike, fontSize: 13 }}>アベレージ</div>
+          <div style={{ color: COLORS.cream, fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 28, lineHeight: 1.2 }}>168.5</div>
+          <div style={{ color: COLORS.strike, fontSize: 13 }}>ストライク率 32.4% ・ スペア率 41.0%</div>
+        </div>
+      </div>
+    </AppModal>
+  );
+}
+
 function AppModal({ title, children, footer }) {
   return (
     <div
@@ -2954,7 +3040,7 @@ function AppModal({ title, children, footer }) {
         padding: 20,
       }}
     >
-      <div className="glass-card rounded-2xl w-full" style={{ maxWidth: 360, padding: "20px 18px", maxHeight: "85vh", overflowY: "auto" }}>
+      <div className="glass-card rounded-2xl w-full" style={{ maxWidth: 360, padding: "20px 18px", maxHeight: "calc(85vh / var(--app-zoom, 1))", overflowY: "auto" }}>
         <div style={{ color: COLORS.gold, fontWeight: 700, fontSize: 16 }}>{title}</div>
         <div style={{ marginTop: 10 }}>{children}</div>
         {footer && <div style={{ marginTop: 16 }}>{footer}</div>}
@@ -3205,7 +3291,7 @@ function BallRankings({ stats }) {
               <Trophy size={16} /> 総合評価
             </div>
             <div style={{ color: COLORS.strike, opacity: 0.65, fontSize: 11.5, marginTop: 2 }}>
-              ランキング順位の合計点(1位3点・2位2点・3位1点)
+              順位の合計点(1位3点・2位2点・3位1点)
             </div>
           </div>
 
@@ -3557,7 +3643,7 @@ function CropPreview({ src, rect }) {
   return (
     <div className="flex justify-center">
       <div className="relative overflow-hidden rounded-xl border" style={{ borderColor: COLORS.oak }}>
-        <img src={src} alt="囲んだ範囲のプレビュー" style={{ display: "block", maxWidth: "100%", maxHeight: "45vh" }} />
+        <img src={src} alt="囲んだ範囲のプレビュー" style={{ display: "block", maxWidth: "100%", maxHeight: "calc(45vh / var(--app-zoom, 1))" }} />
         {rect && (
           <div
             style={{
@@ -3617,7 +3703,7 @@ function GateScreen({
 
   return (
     <div
-      style={{ minHeight: "100vh", background: `linear-gradient(160deg, ${COLORS.navyLight} 0%, ${COLORS.navyBg} 55%, #161D38 100%)`, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}
+      style={{ minHeight: "calc(100vh / var(--app-zoom, 1))", background: `linear-gradient(160deg, ${COLORS.navyLight} 0%, ${COLORS.navyBg} 55%, #161D38 100%)`, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}
     >
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Noto+Sans+JP:wght@400;500;700&display=swap');`}</style>
       <div style={{ maxWidth: 340, width: "100%", fontFamily: "'Noto Sans JP', sans-serif" }} className="text-center space-y-4">
@@ -4784,7 +4870,7 @@ function AdminPanel() {
 
   if (!authed) {
     return (
-      <div style={{ minHeight: "100vh", background: `linear-gradient(160deg, ${COLORS.navyLight} 0%, ${COLORS.navyBg} 55%, #161D38 100%)`, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <div style={{ minHeight: "calc(100vh / var(--app-zoom, 1))", background: `linear-gradient(160deg, ${COLORS.navyLight} 0%, ${COLORS.navyBg} 55%, #161D38 100%)`, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
         <div style={{ maxWidth: 320, width: "100%" }} className="space-y-3">
           <div className="flex items-center gap-2">
             <ShieldCheck size={22} style={{ color: COLORS.gold }} />
@@ -4891,7 +4977,7 @@ function AdminPanel() {
   const handledFeedback = feedbackList.filter((f) => f.status === "handled");
 
   return (
-    <div style={{ minHeight: "100vh", background: `linear-gradient(160deg, ${COLORS.navyLight} 0%, ${COLORS.navyBg} 55%, #161D38 100%)`, padding: 16 }}>
+    <div style={{ minHeight: "calc(100vh / var(--app-zoom, 1))", background: `linear-gradient(160deg, ${COLORS.navyLight} 0%, ${COLORS.navyBg} 55%, #161D38 100%)`, padding: 16 }}>
       <div className="max-w-2xl mx-auto space-y-6">
         <div className="flex items-center gap-2">
           <ShieldCheck size={24} style={{ color: COLORS.gold }} />
@@ -5316,7 +5402,7 @@ sy.bsk.1209@docomo.ne.jp
   const content = pages[page];
 
   return (
-    <div style={{ minHeight: "100vh", background: `linear-gradient(160deg, ${COLORS.navyLight} 0%, ${COLORS.navyBg} 55%, #161D38 100%)`, padding: 24 }}>
+    <div style={{ minHeight: "calc(100vh / var(--app-zoom, 1))", background: `linear-gradient(160deg, ${COLORS.navyLight} 0%, ${COLORS.navyBg} 55%, #161D38 100%)`, padding: 24 }}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Noto+Sans+JP:wght@400;500;700&display=swap');`}</style>
       <div className="max-w-xl mx-auto" style={{ fontFamily: "'Noto Sans JP', sans-serif" }}>
         <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 22, color: COLORS.strike, marginBottom: 4 }}>
@@ -5400,6 +5486,8 @@ export default function StrikeLog() {
   const [bellOpen, setBellOpen] = useState(false);
   const [annReadIds, setAnnReadIds] = useState(() => readIdList(ANN_READ_KEY));
   const [eventPopup, setEventPopup] = useState(null);
+  const [textSize, setTextSize] = useState(() => readTextSize() || "normal");
+  const [textSizeAsk, setTextSizeAsk] = useState(() => !readTextSize()); // まだ選んでいなければ、最初に1回だけ聞く
   const [hideEventChecked, setHideEventChecked] = useState(false);
   const announcementsLoadedRef = useRef(false);
   const eventPopupShownRef = useRef(false); // at most one pop-up per app launch
@@ -5974,7 +6062,7 @@ export default function StrikeLog() {
   // finished loading and the user is on the score screen, and never on top
   // of the celebration, chat, or bell screens.
   useEffect(() => {
-    if (eventPopupShownRef.current || eventPopup) return;
+    if (eventPopupShownRef.current || eventPopup || textSizeAsk) return;
     if (accessStatus !== "approved" || (authUser && syncState === "syncing")) return;
     if (tab !== "scan" || celebration || chatOpen || bellOpen) return;
     const hidden = readIdList(ANN_HIDDEN_KEY);
@@ -5993,7 +6081,13 @@ export default function StrikeLog() {
     localStorage.setItem(ANN_SHOWN_KEY, JSON.stringify(counts));
     setHideEventChecked(false);
     setEventPopup(next);
-  }, [announcements, accessStatus, authUser, syncState, tab, celebration, chatOpen, bellOpen, eventPopup]);
+  }, [announcements, accessStatus, authUser, syncState, tab, celebration, chatOpen, bellOpen, eventPopup, textSizeAsk]);
+
+  // 写真の「自分の行を囲む」画面は、指の位置と写真の位置を正確に合わせる必要があるので、
+  // 開いている間だけ拡大を外す(閉じたら選んだ文字の大きさに戻す)
+  useEffect(() => {
+    applyTextSize(cropEditorOpen ? "normal" : textSize);
+  }, [cropEditorOpen, textSize]);
 
   const markAnnouncementsRead = (ids) => {
     const next = Array.from(new Set([...readIdList(ANN_READ_KEY), ...ids]));
@@ -6910,7 +7004,22 @@ function getNextRollCell(frameIdx, rollIdx, value) {
     >
       {celebration && <Celebration items={celebration} onClose={() => setCelebration(null)} />}
 
-      {centerBackfillOpen &&
+      {textSizeAsk && !celebration && (
+        <TextSizeWelcome
+          value={textSize}
+          onChange={(k) => {
+            setTextSize(k);
+            applyTextSize(k);
+          }}
+          onDone={() => {
+            saveTextSize(textSize);
+            setTextSizeAsk(false);
+          }}
+        />
+      )}
+
+      {!textSizeAsk &&
+        centerBackfillOpen &&
         !centerBackfillDismissed &&
         !accountDone &&
         !celebration &&
@@ -7162,7 +7271,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                   fontFamily: "'Oswald', sans-serif",
                   fontWeight: 700,
                   // 24px normally; a little smaller on narrow phones so it stays on one line
-                  fontSize: "clamp(20px, 6.4vw, 24px)",
+                  fontSize: "clamp(19px, calc(6.4vw / var(--app-zoom, 1)), 24px)",
                   lineHeight: 1.25,
                   whiteSpace: "nowrap",
                 }}
@@ -7464,8 +7573,8 @@ function getNextRollCell(frameIdx, rollIdx, value) {
 
                 <div className="glass-card rounded-xl p-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm flex items-center gap-2" style={{ color: COLORS.cream }}>
-                      <Hash size={16} /> {pendingResult.games?.length > 1 ? "何ゲーム目から" : "何ゲーム目"}
+                    <span className="text-sm flex items-center gap-2" style={{ color: COLORS.cream, whiteSpace: "nowrap" }}>
+                      <Hash size={16} style={{ flexShrink: 0 }} /> {pendingResult.games?.length > 1 ? "何ゲーム目から" : "何ゲーム目"}
                     </span>
                     <div className="flex items-center gap-2">
                       <button
@@ -7821,9 +7930,9 @@ function getNextRollCell(frameIdx, rollIdx, value) {
             {[...games].reverse().map((g) =>
               editingGameId === g.id ? (
                 <div key={g.id} className="rounded-xl p-3 border glass-card space-y-3" style={{ borderColor: COLORS.gold }}>
-                  <div className="flex items-center justify-between">
-                    <div style={{ color: COLORS.strike, fontWeight: 700, fontSize: 15 }}>記録を編集中</div>
-                    <div className="flex gap-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div style={{ color: COLORS.strike, fontWeight: 700, fontSize: 15, whiteSpace: "nowrap" }}>記録を編集中</div>
+                    <div className="flex gap-2" style={{ flexShrink: 0, whiteSpace: "nowrap" }}>
                       <button
                         type="button"
                         onClick={cancelEditGame}
@@ -7849,17 +7958,17 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                       value={editDate}
                       onChange={(e) => setEditDate(e.target.value)}
                       className="flex-1 px-2 py-1 rounded border text-sm"
-                      style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                      style={{ borderColor: COLORS.oak, color: COLORS.ink, minWidth: 0 }}
                     />
                     <input
                       type="number"
                       min={1}
                       value={editGameNumber}
                       onChange={(e) => setEditGameNumber(Math.max(1, Number(e.target.value) || 1))}
-                      className="w-16 px-2 py-1 rounded border text-sm text-center"
-                      style={{ borderColor: COLORS.oak, color: COLORS.ink }}
+                      className="w-12 px-1 py-1 rounded border text-sm text-center"
+                      style={{ borderColor: COLORS.oak, color: COLORS.ink, flexShrink: 0 }}
                     />
-                    <span className="text-xs" style={{ color: COLORS.strike }}>ゲーム目</span>
+                    <span className="text-xs" style={{ color: COLORS.strike, whiteSpace: "nowrap", flexShrink: 0 }}>ゲーム目</span>
                   </div>
 
                   <div>
@@ -8130,7 +8239,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                   <div className="mb-2 flex items-center gap-1" style={{ color: COLORS.strike, fontSize: 13 }}>
                     <CircleDot size={11} />
                     {g.ball.label ? g.ball.label : g.ball.type === "own" ? "マイボール" : "ハウスボール"}
-                    {g.ball.weight ? ` ${g.ball.weight}lb` : ""}
+                    {g.ball.weight && !String(g.ball.label || "").includes(`${g.ball.weight}lb`) ? ` ${g.ball.weight}lb` : ""}
                     {g.ball.thumbless ? " ・ サムレス" : ""}
                   </div>
                 )}
@@ -8138,7 +8247,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                   <div className="mb-2 flex items-center gap-1" style={{ color: COLORS.strike, fontSize: 13 }}>
                     <CircleDot size={11} />
                     {g.ball2.label ? g.ball2.label : g.ball2.type === "own" ? "マイボール" : "ハウスボール"}
-                    {g.ball2.weight ? ` ${g.ball2.weight}lb` : ""}
+                    {g.ball2.weight && !String(g.ball2.label || "").includes(`${g.ball2.weight}lb`) ? ` ${g.ball2.weight}lb` : ""}
                     {g.ball2.thumbless ? " ・ サムレス" : ""}
                     <span style={{ color: COLORS.strike }}>(スペアボール)</span>
                   </div>
@@ -8196,7 +8305,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                       style={{
                         ...toggleStyle(periodMode === p.key),
                         // 「期間指定」 has 4 characters; the others have 1
-                        flex: p.key === "custom" ? 1.7 : 1,
+                        flex: p.key === "custom" ? 2.2 : 1,
                         minWidth: 0,
                         whiteSpace: "nowrap",
                         padding: "8px 4px",
@@ -8448,9 +8557,9 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                         {periodMode === "day" ? "本日のゲームごとのスコア" : periodMode === "year" ? "月ごとの平均スコア推移" : "日ごとの平均スコア推移"}
                       </div>
                       <ResponsiveContainer width="100%" height={240}>
-                        <LineChart data={chartData} margin={{ top: 20, right: 10, left: -20, bottom: 0 }}>
+                        <LineChart data={chartData} margin={{ top: 22, right: 16, left: -14, bottom: 0 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#E5DCC8" />
-                          <XAxis dataKey="label" tick={{ fontSize: 13, fill: COLORS.strike }} />
+                          <XAxis dataKey="label" tick={{ fontSize: 13, fill: COLORS.strike }} padding={{ left: 18, right: 18 }} />
                           <YAxis domain={[0, 300]} ticks={[0, 50, 100, 150, 200, 250, 300]} tick={{ fontSize: 13, fill: COLORS.strike }} />
                           <Tooltip contentStyle={{ fontSize: 14, borderColor: COLORS.oak }} />
                           <Line
@@ -8623,6 +8732,16 @@ function getNextRollCell(frameIdx, rollIdx, value) {
 
         {tab === "profile" && (
           <div className="space-y-4">
+            <div className="text-sm" style={{ color: COLORS.strike }}>文字の大きさ</div>
+            <div className="rounded-xl p-3 glass-card">
+              <TextSizeChooser
+                value={textSize}
+                onChange={(k) => {
+                  setTextSize(k);
+                  saveTextSize(k);
+                }}
+              />
+            </div>
             <div className="text-sm" style={{ color: COLORS.strike }}>アカウント</div>
             <div className="rounded-xl p-3 glass-card space-y-3" style={{ border: `1px solid ${COLORS.gold}` }}>
               <div className="flex items-center gap-3">
@@ -8677,7 +8796,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                     <div style={{ minWidth: 0 }}>
                       <div style={{ color: COLORS.strike, fontWeight: 700, fontSize: 13.5 }}>月間ランキングに参加する</div>
                       <div style={{ color: COLORS.strike, opacity: 0.6, fontSize: 11, lineHeight: 1.5 }}>
-                        表示名と成績が他の人に表示されます
+                        <Phrases text="表示名と成績が|他の人に|表示されます" />
                       </div>
                     </div>
                     <button
@@ -8778,7 +8897,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                       </div>
                     </div>
                     <div style={{ color: COLORS.strike, opacity: 0.8, fontSize: 12.5 }}>
-                      年代・性別は絞り込み用です(他の人には見えません)
+                      <Phrases text="年代・性別は|絞り込み用です|(他の人には|見えません)" />
                     </div>
                   </div>
                   <div style={{ color: COLORS.strike, opacity: 0.8, fontSize: 12.5 }}>
@@ -8964,7 +9083,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                       ) : (
                         <div className="text-sm" style={{ color: COLORS.cream, fontWeight: 700 }}>
                           {b.label}
-                          <span style={{ color: COLORS.strike, fontWeight: 400, fontSize: 13 }}>
+                          <span style={{ color: COLORS.strike, fontWeight: 400, fontSize: 13, whiteSpace: "nowrap" }}>
                             {" "}
                             ({b.type === "house" ? "ハウスボール" : "マイボール"})
                           </span>
@@ -9320,7 +9439,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                 style={{ color: active ? COLORS.gold : COLORS.strike }}
               >
                 <Icon size={20} />
-                <span style={{ fontSize: 12 }}>{label}</span>
+                <span className="nav-label" style={{ fontSize: 12, whiteSpace: "nowrap", letterSpacing: "-0.03em" }}>{label}</span>
               </button>
             );
           })}
@@ -9333,7 +9452,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
           className="fixed left-0 right-0 top-0 flex flex-col"
           style={{
             // Track the visible area so the input stays above the keyboard.
-            height: chatViewportHeight ? `${chatViewportHeight}px` : "100%",
+            height: chatViewportHeight ? `calc(${chatViewportHeight}px / var(--app-zoom, 1))` : "100%",
             background: `linear-gradient(160deg, ${COLORS.navyLight} 0%, ${COLORS.navyBg} 55%, #161D38 100%)`,
             zIndex: 50,
           }}

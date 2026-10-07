@@ -5,3 +5,33 @@
 html, body, #root {
   height: 100%;
 }
+
+/* 文字の大きさ(src/textSize.js)。#root を zoom で拡大するので、
+   画面の高さに合わせる所は拡大した分を割り戻す */
+:root {
+  --app-zoom: 1;
+}
+.min-h-screen {
+  min-height: calc(100vh / var(--app-zoom));
+}
+
+/* 大きめ・特大では、薄い補足の文字を濃くする(ボタンの無効表示などはそのまま) */
+.large-text :not(button):not(svg)[style*="opacity: 0.6"],
+.large-text :not(button):not(svg)[style*="opacity: 0.65"],
+.large-text :not(button):not(svg)[style*="opacity: 0.7"],
+.large-text :not(button):not(svg)[style*="opacity: 0.75"],
+.large-text :not(button):not(svg)[style*="opacity: 0.8"],
+.large-text :not(button):not(svg)[style*="opacity: 0.85"] {
+  opacity: 1 !important;
+}
+
+/* 行末に1〜2文字だけ残る折り返しを避ける(対応していないブラウザでは今まで通り) */
+#root {
+  text-wrap: pretty;
+}
+
+/* 大きめ・特大では、画面下のタブの文字を少しだけ詰めて、横幅に収める */
+.large-text .nav-label {
+  font-size: 11px !important;
+  letter-spacing: -0.04em !important;
+}
