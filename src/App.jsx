@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { Camera, History, BarChart3, Loader2, Check, X, Pencil, Trophy, TrendingUp, Calendar, CircleDot, Hash, User, Target, Trash2, ShieldCheck, CircleCheck, MessageCircle, Send, Settings, Crop, ImageOff, UserX, Bell, ImagePlus, ChevronDown, ChevronLeft, ChevronRight, Download, MapPin } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { auth } from "./firebaseClient.js";
-import { TEXT_SIZES, readTextSize, applyTextSize, saveTextSize } from "./textSize.js";
+import { TEXT_SIZES, readTextSize, applyTextSize, saveTextSize, usesCssZoom } from "./textSize.js";
 import { noteLocalWrite, startSync, stopSync, scheduleFlush } from "./sync.js";
 import {
   onAuthStateChanged,
@@ -6086,7 +6086,8 @@ export default function StrikeLog() {
   // 写真の「自分の行を囲む」画面は、指の位置と写真の位置を正確に合わせる必要があるので、
   // 開いている間だけ拡大を外す(閉じたら選んだ文字の大きさに戻す)
   useEffect(() => {
-    applyTextSize(cropEditorOpen ? "normal" : textSize);
+    // スマホは画面全体の拡大なので位置はずれない。パソコンの CSS zoom の時だけ外す
+    applyTextSize(cropEditorOpen && usesCssZoom(textSize) ? "normal" : textSize);
   }, [cropEditorOpen, textSize]);
 
   const markAnnouncementsRead = (ids) => {
