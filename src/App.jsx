@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { Camera, History, BarChart3, Loader2, Check, X, Pencil, Trophy, TrendingUp, Calendar, CircleDot, Hash, User, Target, Trash2, ShieldCheck, CircleCheck, MessageCircle, Send, Settings, Crop, ImageOff, UserX, Bell, ImagePlus, ChevronDown, ChevronLeft, ChevronRight, Download, MapPin } from "lucide-react";
+import { Camera, History, BarChart3, Loader2, Check, X, Pencil, Trophy, TrendingUp, Calendar, CircleDot, Hash, User, Target, Trash2, ShieldCheck, CircleCheck, MessageCircle, Send, Settings, Crop, ImageOff, UserX, Bell, ImagePlus, ChevronDown, ChevronLeft, ChevronRight, Download, MapPin, Plus } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { auth } from "./firebaseClient.js";
 import { TEXT_SIZES, readTextSize, applyTextSize, saveTextSize, usesCssZoom } from "./textSize.js";
@@ -2969,7 +2969,64 @@ function AccountForm({ onLogin, onSignup, onReset, busy, errorMsg, infoMsg, intr
 }
 
 // Centered popup used for prompts that need the user's attention.
-// 文字の大きさの選択(初回の案内と「設定」で共通)。押すとすぐ画面に反映される。
+// 設定の「文字の大きさ」: 1行に収まる小さな切り替え(押すとすぐ反映)
+function TextSizeSegment({ value, onChange }) {
+  return (
+    <div className="flex rounded-lg overflow-hidden" style={{ border: "1px solid rgba(245,241,228,0.25)", flexShrink: 0 }}>
+      {TEXT_SIZES.map((s, i) => {
+        const on = value === s.key;
+        return (
+          <button
+            key={s.key}
+            type="button"
+            onClick={() => onChange(s.key)}
+            aria-pressed={on}
+            style={{
+              padding: "6px 10px",
+              fontSize: 13,
+              fontWeight: 700,
+              whiteSpace: "nowrap",
+              borderLeft: i ? "1px solid rgba(245,241,228,0.2)" : "none",
+              background: on ? "rgba(224,168,0,0.18)" : "transparent",
+              color: on ? COLORS.gold : COLORS.strike,
+            }}
+          >
+            {s.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// 「+ ○○を登録」: 押すと登録フォームが開く(設定画面を短く保つため)
+function AddRowButton({ label, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full rounded-xl flex items-center justify-center gap-1"
+      style={{ padding: "10px 12px", border: `1px dashed ${COLORS.oak}`, color: COLORS.strike, fontSize: 14, fontWeight: 700 }}
+    >
+      <Plus size={16} />
+      {label}
+    </button>
+  );
+}
+
+// 開いた登録フォームの見出し(右上の × で閉じる)
+function FormHeader({ label, onClose }) {
+  return (
+    <div className="flex items-center justify-between">
+      <div style={{ color: COLORS.strike, fontSize: 13.5, fontWeight: 700 }}>{label}</div>
+      <button type="button" onClick={onClose} aria-label="閉じる" style={{ color: COLORS.strike, padding: 4 }}>
+        <X size={18} />
+      </button>
+    </div>
+  );
+}
+
+// 文字の大きさの選択(初回の案内で使う)。押すとすぐ画面に反映される。
 function TextSizeChooser({ value, onChange }) {
   const glyph = { normal: 18, large: 23, xlarge: 28 };
   return (
@@ -5555,6 +5612,8 @@ export default function StrikeLog() {
   const [editingShoeNameId, setEditingShoeNameId] = useState(null);
   const [shoeNameDraft, setShoeNameDraft] = useState("");
   const [newShoeName, setNewShoeName] = useState("");
+  const [newBallOpen, setNewBallOpen] = useState(false); // 設定の「新しいボールを登録」を開いているか
+  const [newShoeOpen, setNewShoeOpen] = useState(false); // 設定の「新しいマイシューズを登録」を開いているか
   const [periodMode, setPeriodMode] = useState("week"); // "day" | "week" | "month" | "year" | "custom"
   const [yearAnchor, setYearAnchor] = useState(() => new Date().getFullYear()); // 1/1〜12/31
   const [dayAnchor, setDayAnchor] = useState(() => toLocalISODate(new Date()));
@@ -6227,6 +6286,7 @@ export default function StrikeLog() {
     setNewBallCoverstock("");
     setNewBallMotion("");
     setNewBallLaneCondition("");
+    setNewBallOpen(false);
   };
 
   // Saves the ✎ editor: new name and role together, in one write. Past games
@@ -6336,6 +6396,7 @@ export default function StrikeLog() {
     };
     persistMyShoes([...myShoes, shoe]);
     setNewShoeName("");
+    setNewShoeOpen(false);
   };
 
   const deleteMyShoe = (id) => {
@@ -8733,16 +8794,6 @@ function getNextRollCell(frameIdx, rollIdx, value) {
 
         {tab === "profile" && (
           <div className="space-y-4">
-            <div className="text-sm" style={{ color: COLORS.strike }}>文字の大きさ</div>
-            <div className="rounded-xl p-3 glass-card">
-              <TextSizeChooser
-                value={textSize}
-                onChange={(k) => {
-                  setTextSize(k);
-                  saveTextSize(k);
-                }}
-              />
-            </div>
             <div className="text-sm" style={{ color: COLORS.strike }}>アカウント</div>
             <div className="rounded-xl p-3 glass-card space-y-3" style={{ border: `1px solid ${COLORS.gold}` }}>
               <div className="flex items-center gap-3">
@@ -9142,8 +9193,11 @@ function getNextRollCell(frameIdx, rollIdx, value) {
               )}
             </div>
 
+            {!newBallOpen ? (
+              <AddRowButton label="新しいボールを登録" onClick={() => setNewBallOpen(true)} />
+            ) : (
             <div className="rounded-xl p-3 border glass-card space-y-2" style={{ borderColor: COLORS.oak }}>
-              <div className="text-xs" style={{ color: COLORS.strike }}>新しいボールを登録</div>
+              <FormHeader label="新しいボールを登録" onClose={() => setNewBallOpen(false)} />
 
               <select
                 value={newBallType}
@@ -9284,6 +9338,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                 追加する
               </button>
             </div>
+            )}
 
             <div className="text-sm" style={{ color: COLORS.strike }}>登録済みのマイシューズ</div>
 
@@ -9357,8 +9412,11 @@ function getNextRollCell(frameIdx, rollIdx, value) {
               )}
             </div>
 
+            {!newShoeOpen ? (
+              <AddRowButton label="新しいマイシューズを登録" onClick={() => setNewShoeOpen(true)} />
+            ) : (
             <div className="rounded-xl p-3 border glass-card space-y-2" style={{ borderColor: COLORS.oak }}>
-              <div className="text-xs" style={{ color: COLORS.strike }}>新しいマイシューズを登録</div>
+              <FormHeader label="新しいマイシューズを登録" onClose={() => setNewShoeOpen(false)} />
 
               <div>
                 <div className="text-xs mb-1" style={{ color: COLORS.strike }}>登録名</div>
@@ -9381,6 +9439,19 @@ function getNextRollCell(frameIdx, rollIdx, value) {
               >
                 追加する
               </button>
+            </div>
+            )}
+
+            <div className="text-sm" style={{ color: COLORS.strike }}>表示</div>
+            <div className="rounded-xl glass-card flex items-center justify-between gap-3" style={{ padding: "10px 12px" }}>
+              <span style={{ color: COLORS.cream, fontSize: 14, whiteSpace: "nowrap" }}>文字の大きさ</span>
+              <TextSizeSegment
+                value={textSize}
+                onChange={(k) => {
+                  setTextSize(k);
+                  saveTextSize(k);
+                }}
+              />
             </div>
 
             <div className="text-sm" style={{ color: COLORS.strike }}>ご意見・要望</div>

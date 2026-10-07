@@ -35,3 +35,13 @@ html, body, #root {
   font-size: 11px !important;
   letter-spacing: -0.04em !important;
 }
+
+/* 大きめ・特大では、画面の左右の余白を少し詰めて、中身に使える幅を広げる */
+.large-text main {
+  padding-left: 12px !important;
+  padding-right: 12px !important;
+}
+.large-text header {
+  padding-left: 14px !important;
+  padding-right: 14px !important;
+}
