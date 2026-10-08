@@ -1825,6 +1825,9 @@ function DuelPickSheet({ games, duel, mine, authUser, deviceId, onClose, onDone 
   );
 }
 
+// 成績比較の2位の色(1位は金)。白い文字と見分けやすい、青みのある銀色
+const DUEL_SILVER = "#9DC3EA";
+
 function DuelPanel({ authUser, deviceId, games, data, reload }) {
   const [picking, setPicking] = useState(false);
   const [confirmId, setConfirmId] = useState(null);
@@ -1975,6 +1978,10 @@ function DuelPanel({ authUser, deviceId, games, data, reload }) {
           <div style={{ color: COLORS.gold, fontWeight: 700, fontSize: 15, padding: "0 4px 6px" }}>
             成績比較<span style={{ color: COLORS.strike, fontWeight: 500, fontSize: 12.5 }}> {round ? `第${rounds.length - rounds.indexOf(round)}回 ${formatMonthDay(round.date)}` : "通算"}</span>
           </div>
+          <div className="flex items-center gap-3" style={{ padding: "0 4px 6px", fontSize: 12 }}>
+            <span style={{ color: COLORS.gold, fontWeight: 700 }}>● 1位</span>
+            <span style={{ color: DUEL_SILVER, fontWeight: 700 }}>● 2位</span>
+          </div>
           <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
             <thead>
               <tr>
@@ -1989,8 +1996,10 @@ function DuelPanel({ authUser, deviceId, games, data, reload }) {
             <tbody>
               {cmpRows.map(([label, get, dir, fmt]) => {
                 const vals = rows.map((r) => (r.s ? get(r.s) : null));
+                const key = (v) => Math.round(v * 10);
                 const ok = vals.filter((v) => v !== null && Number.isFinite(v));
-                const top = ok.length >= 2 ? (dir === "high" ? Math.max(...ok) : Math.min(...ok)) : null;
+                // 良い順に並べた値(同じ値は同じ順位)。1位=金、2位=銀
+                const order = ok.length >= 2 ? [...new Set(ok.map(key))].sort((a, b) => (dir === "high" ? b - a : a - b)) : [];
                 return (
                   <tr key={label} style={{ borderTop: "1px solid rgba(255,255,255,0.1)" }}>
                     <td style={{ color: COLORS.strike, fontSize: 13, padding: "7px 4px", wordBreak: "keep-all", lineHeight: 1.3 }}>
@@ -2003,9 +2012,10 @@ function DuelPanel({ authUser, deviceId, games, data, reload }) {
                       )}
                     </td>
                     {vals.map((v, i) => {
-                      const isTop = top !== null && v !== null && Math.round(v * 10) === Math.round(top * 10);
+                      const place = v !== null && Number.isFinite(v) ? order.indexOf(key(v)) : -1;
+                      const color = place === 0 ? COLORS.gold : place === 1 ? DUEL_SILVER : COLORS.cream;
                       return (
-                        <td key={i} style={{ ...colStyle, color: isTop ? COLORS.gold : COLORS.cream, fontWeight: isTop ? 700 : 500, fontSize: 15 }}>
+                        <td key={i} style={{ ...colStyle, color, fontWeight: place === 0 || place === 1 ? 700 : 500, fontSize: 15 }}>
                           {v === null || !Number.isFinite(v) ? "ー" : (fmt || fmtPct)(v)}
                         </td>
                       );
