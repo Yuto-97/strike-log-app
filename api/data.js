@@ -99,8 +99,10 @@ export function buildRanking(rows, valueOf, myUid) {
 
 
 // ---------- SERIES BATTLE(3ゲーム合計で競うイベント) ----------
-// 対象の3名が参加ボタンを押し、履歴から選んだ3ゲームを提出する。順位は
-// 「提出した中で一番良い3ゲーム合計」で決め、同点ならハイとローの差が小さい方が上。
+// 対象の3名が参加ボタンを押し、3人で決めた日の3ゲームを履歴から選んで提出する。
+// 「回」= 提出の日付。1人1回につき1件(同じ日に出し直すと入れ替わる)。
+//   回ごとの順位: 3ゲーム合計が高い順。同点ならハイとローの差が小さい方が上
+//   通算の順位:   参加した回の3ゲーム合計の平均が高い順。同点なら差の平均が小さい方が上
 // 参加者は duelParticipants/{eventId}/people/{uid}、提出は duelEntries/{eventId}/entries/{id}。
 // 参加者だけが読み書きできる。
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -118,24 +120,67 @@ export function duelOrder(a, b) {
   );
 }
 
-// participants: [{ uid, name }], entries: [{ uid, total, spread, createdAt, ... }]
-// → 参加者ごとの「採用された提出(ベスト)」と順位。未提出の人は最後に rank: null で並ぶ。
-export function buildDuelBoard(participants, entries) {
-  const best = new Map();
+// 1人1回につき1件にそろえる(同じ日に複数あれば、後から出した方を使う)
+export function latestPerRound(entries) {
+  const m = new Map();
   for (const e of entries) {
-    const cur = best.get(e.uid);
-    if (!cur || duelOrder(e, cur) < 0) best.set(e.uid, e);
+    const k = `${e.uid}|${e.date}`;
+    const cur = m.get(k);
+    if (!cur || String(e.createdAt || "") > String(cur.createdAt || "")) m.set(k, e);
   }
-  const rows = participants.map((p) => ({ uid: p.uid, name: p.name, best: best.get(p.uid) || null }));
-  const scored = rows.filter((r) => r.best).sort((a, b) => duelOrder(a.best, b.best));
+  return [...m.values()];
+}
+
+// 同じ値なら同じ順位(1,1,3…)。未提出は最後に rank: null
+function assignRanks(rows, has, cmp, same) {
+  const scored = rows.filter(has).sort(cmp);
   let rank = 0;
   let last = null;
   scored.forEach((r, i) => {
-    if (!last || r.best.total !== last.total || r.best.spread !== last.spread) rank = i + 1;
-    last = r.best;
+    if (!last || !same(r, last)) rank = i + 1;
+    last = r;
     r.rank = rank;
   });
-  return [...scored, ...rows.filter((r) => !r.best).map((r) => ({ ...r, rank: null }))];
+  return [...scored, ...rows.filter((r) => !has(r)).map((r) => ({ ...r, rank: null }))];
+}
+
+// その回の順位。participants: [{ uid, name }], entries: その日の提出(1人1件)
+export function buildRoundBoard(participants, entries) {
+  const byUid = new Map(entries.map((e) => [e.uid, e]));
+  const rows = participants.map((p) => ({ uid: p.uid, name: p.name, entry: byUid.get(p.uid) || null }));
+  return assignRanks(
+    rows,
+    (r) => !!r.entry,
+    (a, b) => duelOrder(a.entry, b.entry),
+    (a, b) => a.entry.total === b.entry.total && a.entry.spread === b.entry.spread
+  );
+}
+
+// 成績の項目は合算(率は合計どうしで割る)
+const STAT_KEYS = ["strikes", "spares", "opens", "splits", "splitCovers", "splitChances", "gutters", "frames", "spareChances", "balls"];
+export function sumEntries(list) {
+  const out = { rounds: list.length, games: list.length * 3 };
+  for (const k of STAT_KEYS) out[k] = list.reduce((a, e) => a + (Number(e[k]) || 0), 0);
+  const totals = list.map((e) => e.total);
+  out.avgTotal = list.length ? Math.round((totals.reduce((a, b) => a + b, 0) / list.length) * 10) / 10 : 0;
+  out.avgSpread = list.length ? list.reduce((a, e) => a + e.spread, 0) / list.length : 0;
+  out.bestTotal = list.length ? Math.max(...totals) : 0;
+  out.avg = list.length ? Math.round((totals.reduce((a, b) => a + b, 0) / (list.length * 3)) * 10) / 10 : 0;
+  return out;
+}
+
+// 通算の順位(参加した回の平均)
+export function buildOverallBoard(participants, entries) {
+  const rows = participants.map((p) => {
+    const mine = entries.filter((e) => e.uid === p.uid);
+    return { uid: p.uid, name: p.name, sum: mine.length ? sumEntries(mine) : null };
+  });
+  return assignRanks(
+    rows,
+    (r) => !!r.sum,
+    (a, b) => b.sum.avgTotal - a.sum.avgTotal || a.sum.avgSpread - b.sum.avgSpread,
+    (a, b) => a.sum.avgTotal === b.sum.avgTotal && a.sum.avgSpread === b.sum.avgSpread
+  );
 }
 
 const cleanCount = (v, max = 400) => {
@@ -176,19 +221,21 @@ async function duelView(db, caller, member, account) {
     db.collection("duelEntries").doc(DUEL.id).collection("entries").get(),
   ]);
   const people = peopleSnap.docs.map((d, i) => ({ uid: d.id, name: String(d.data().name || "") || `参加者${i + 1}`, joinedAt: d.data().joinedAt || "" }));
-  const entries = entriesSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-  const board = buildDuelBoard(people, entries).map((r) => ({
-    name: r.name,
-    rank: r.rank,
-    isMe: r.uid === caller.uid,
-    best: r.best ? publicEntry(r.best) : null,
+  const entries = latestPerRound(entriesSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
+  const overall = buildOverallBoard(people, entries).map((r) => ({ name: r.name, rank: r.rank, isMe: r.uid === caller.uid, sum: r.sum }));
+  const dates = [...new Set(entries.map((e) => e.date))].sort().reverse(); // 新しい回が先
+  const rounds = dates.map((date) => ({
+    date,
+    board: buildRoundBoard(
+      people,
+      entries.filter((e) => e.date === date)
+    ).map((r) => ({ name: r.name, rank: r.rank, isMe: r.uid === caller.uid, entry: r.entry ? publicEntry(r.entry) : null })),
   }));
-  const bestMine = board.find((r) => r.isMe && r.best);
   const mine = entries
     .filter((e) => e.uid === caller.uid)
-    .sort(duelOrder)
-    .map((e) => ({ ...publicEntry(e), id: e.id, gameIds: e.gameIds || [], adopted: !!bestMine && bestMine.best.createdAt === e.createdAt }));
-  return { participant: true, ...base, board, mine };
+    .sort((a, b) => String(b.date).localeCompare(String(a.date)))
+    .map((e) => ({ ...publicEntry(e), id: e.id, gameIds: e.gameIds || [] }));
+  return { participant: true, ...base, overall, rounds, mine };
 }
 
 function publicEntry(e) {
@@ -205,6 +252,9 @@ function publicEntry(e) {
     splitCovers: e.splitCovers,
     splitChances: e.splitChances,
     gutters: e.gutters,
+    frames: e.frames || 30,
+    spareChances: e.spareChances || Math.max(0, 30 - (e.strikes || 0)),
+    balls: e.balls || 0,
     createdAt: e.createdAt,
   };
 }
@@ -403,13 +453,7 @@ export function createHandler({ db, adminAuth, FieldValue }) {
           res.status(400).json({ error: "out_of_period" });
           return;
         }
-        // 同じ3ゲームの二重提出は受け付けない
         const key = [...ids].sort().join("|");
-        const dup = await entries.where("uid", "==", caller.uid).where("key", "==", key).limit(1).get();
-        if (!dup.empty) {
-          res.status(409).json({ error: "already_submitted" });
-          return;
-        }
         const ordered = [...games].sort((a, b) => String(a.date).localeCompare(String(b.date)) || (Number(a.gameNumber) || 0) - (Number(b.gameNumber) || 0));
         const scores = ordered.map((g) => g.total);
         const total = scores.reduce((a, b) => a + b, 0);
@@ -430,9 +474,15 @@ export function createHandler({ db, adminAuth, FieldValue }) {
           splitCovers: cleanCount(st.splitCovers),
           splitChances: cleanCount(st.splitChances),
           gutters: cleanCount(st.gutters),
+          frames: cleanCount(st.frames) || 30,
+          spareChances: cleanCount(st.spareChances),
+          balls: cleanCount(st.balls),
           createdAt: new Date().toISOString(),
         };
+        // 同じ回(同じ日)に出し直したら、前の提出と入れ替える
+        const sameDay = await entries.where("uid", "==", caller.uid).where("date", "==", date).get();
         const ref = await entries.add(entry);
+        await Promise.all(sameDay.docs.map((d) => d.ref.delete()));
         res.status(200).json({ ok: true, id: ref.id, total });
       } catch (err) {
         res.status(500).json({ error: err.message || String(err) });

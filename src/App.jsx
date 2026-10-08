@@ -570,6 +570,7 @@ function computeGameSetStats(gamesList) {
     splitCoverCount: splitCovers, splitCoverRate: pct(splitCovers, splitOpenCount),
     gutterCount: gutters, gutterRate: pct(gutters, totalBalls),
     foulCount: fouls, foulRate: pct(fouls, totalBalls),
+    totalBalls,
   };
 }
 
@@ -1697,14 +1698,6 @@ function daysBetween(a, b) {
 }
 
 // [表示名, キー, 良い方向("high"=多いほど良い / "low"=少ないほど良い / null=比べない)]
-const DUEL_COMPARE_ROWS = [
-  ["ストライク", "strikes", "high"],
-  ["スペア", "spares", "high"],
-  ["オープン", "opens", "low"],
-  ["スプリット", "splits", null],
-  ["スプリットカバー", "splitCovers", "high"],
-  ["ガター", "gutters", "low"],
-];
 
 function DuelPickSheet({ games, duel, mine, authUser, deviceId, onClose, onDone }) {
   const [picked, setPicked] = useState([]);
@@ -1716,6 +1709,8 @@ function DuelPickSheet({ games, duel, mine, authUser, deviceId, onClose, onDone 
   const chosen = picked.map((id) => games.find((g) => g.id === id)).filter(Boolean);
   const valid = chosen.length === 3;
   const total = chosen.reduce((a, g) => a + (g.total || 0), 0);
+  const roundDate = valid ? chosen.map((g) => g.date).sort().pop() : null;
+  const replaces = !!roundDate && mine.some((e) => e.date === roundDate);
   const hint =
     chosen.length < 3
       ? `3ゲームを選んでください(${chosen.length}/3)`
@@ -1743,6 +1738,9 @@ function DuelPickSheet({ games, duel, mine, authUser, deviceId, onClose, onDone 
           splitCovers: st.splitCoverCount,
           splitChances: st.splitOpenCount,
           gutters: st.gutterCount,
+          frames: st.frameCount,
+          spareChances: st.spareChances,
+          balls: st.totalBalls,
         },
       });
       onDone();
@@ -1812,6 +1810,11 @@ function DuelPickSheet({ games, duel, mine, authUser, deviceId, onClose, onDone 
         style={{ background: COLORS.ink, paddingBottom: "calc(14px + env(safe-area-inset-bottom))", borderTop: "1px solid rgba(224,168,0,0.3)" }}
       >
         <div style={{ color: valid ? COLORS.gold : COLORS.cream, fontWeight: 700, fontSize: 14.5, textAlign: "center" }}>{hint}</div>
+        {replaces && (
+          <div style={{ color: COLORS.strike, fontSize: 13, textAlign: "center" }}>
+            <Phrases text={`${formatMonthDay(roundDate)}は提出済みです。|提出すると入れ替わります`} />
+          </div>
+        )}
         {error && <div style={{ color: "#E8836A", fontSize: 13, textAlign: "center" }}>{error}</div>}
         <button type="button" onClick={submit} disabled={!valid || busy} className="w-full rounded-lg py-3" style={primaryButtonStyle(valid && !busy)}>
           {busy ? "提出中..." : "この3ゲームを提出する"}
@@ -1822,14 +1825,23 @@ function DuelPickSheet({ games, duel, mine, authUser, deviceId, onClose, onDone 
   );
 }
 
+// 成績比較の2位の色(1位は金)。白い文字と見分けやすい、青みのある銀色
+const DUEL_SILVER = "#9DC3EA";
+
 function DuelPanel({ authUser, deviceId, games, data, reload }) {
   const [picking, setPicking] = useState(false);
   const [confirmId, setConfirmId] = useState(null);
   const [error, setError] = useState("");
+  const [view, setView] = useState("overall"); // "overall" | 回の日付
   const phase = data.today < data.startDate ? "before" : data.today > data.endDate ? "after" : "live";
   const phaseLabel = { before: "開始前", live: "開催中", after: "終了" }[phase];
-  const board = data.board || [];
+  const rounds = data.rounds || [];
+  const overall = data.overall || [];
   const medal = ["#E0A800", "#C8CDD6", "#C98A5A"];
+  const round = view === "overall" ? null : rounds.find((r) => r.date === view);
+  useEffect(() => {
+    if (view !== "overall" && !round) setView("overall");
+  }, [view, round]);
 
   const remove = async (id) => {
     setError("");
@@ -1842,22 +1854,44 @@ function DuelPanel({ authUser, deviceId, games, data, reload }) {
     }
   };
 
-  const cmpValue = (b, key) => {
-    if (!b) return null;
-    if (key === "splitCovers") return b.splitChances ? b.splitCovers / b.splitChances : null;
-    return b[key];
-  };
-  const bestOf = (key, dir) => {
-    const vals = board.map((r) => cmpValue(r.best, key)).filter((v) => v !== null);
-    if (!dir || vals.length < 2) return null;
-    return dir === "high" ? Math.max(...vals) : Math.min(...vals);
-  };
-  const cell = (r, key, dir) => {
-    if (!r.best) return "ー";
-    const b = r.best;
-    return key === "splitCovers" ? `${b.splitCovers}/${b.splitChances}` : `${b[key]}`;
-  };
-  const colStyle = { width: `${Math.floor(62 / Math.max(board.length, 1))}%`, textAlign: "center", padding: "7px 2px" };
+  // 比較に使う成績(通算は合算、回ごとはその回の提出)
+  const rows = round
+    ? round.board.map((r) => ({ name: r.name, rank: r.rank, isMe: r.isMe, s: r.entry }))
+    : overall.map((r) => ({ name: r.name, rank: r.rank, isMe: r.isMe, s: r.sum }));
+  const pctOf = (a, b) => (b > 0 ? (a / b) * 100 : null);
+  const cmpRows = [
+    [round ? "トータル" : "平均トータル", (s) => (round ? s.total : s.avgTotal), "high", (v) => (round ? `${v}` : Number(v).toFixed(1))],
+    ["アベレージ", (s) => s.avg, "high", (v) => Number(v).toFixed(1)],
+    ["ストライク率", (s) => pctOf(s.strikes, s.frames), "high"],
+    ["スペア率", (s) => pctOf(s.spares, s.spareChances), "high"],
+    ["オープン率", (s) => pctOf(s.opens, s.frames), "low"],
+    ["スプリット率", (s) => pctOf(s.splits, s.frames), "low"],
+    ["スプリットカバー率", (s) => pctOf(s.splitCovers, s.splitChances), "high"],
+    ["ガター率", (s) => pctOf(s.gutters, s.balls), "low"],
+  ];
+  const fmtPct = (v) => `${Math.round(v)}%`;
+  const colStyle = { width: `${Math.floor(60 / Math.max(rows.length, 1))}%`, textAlign: "center", padding: "7px 2px" };
+
+  const chip = (key, label) => (
+    <button
+      key={key}
+      type="button"
+      onClick={() => setView(key)}
+      className="rounded-full"
+      style={{
+        padding: "6px 14px",
+        fontSize: 13.5,
+        fontWeight: 700,
+        whiteSpace: "nowrap",
+        flexShrink: 0,
+        border: view === key ? `1.5px solid ${COLORS.gold}` : "1px solid rgba(245,241,228,0.25)",
+        background: view === key ? "rgba(224,168,0,0.15)" : "transparent",
+        color: view === key ? COLORS.gold : COLORS.strike,
+      }}
+    >
+      {label}
+    </button>
+  );
 
   return (
     <div className="space-y-4">
@@ -1882,11 +1916,18 @@ function DuelPanel({ authUser, deviceId, games, data, reload }) {
         <div style={{ color: COLORS.strike, fontSize: 13.5, marginTop: 6 }}>
           {formatMonthDay(data.startDate)}〜{formatMonthDay(data.endDate)}
           {phase === "live" && `(あと${daysBetween(data.today, data.endDate)}日)`}
+          {rounds.length > 0 && ` ・ ${rounds.length}回終了`}
         </div>
       </div>
 
+      {/* 通算 / 回ごと の切り替え */}
+      <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
+        {chip("overall", "通算")}
+        {rounds.map((r, i) => chip(r.date, `第${rounds.length - i}回 ${formatMonthDay(r.date)}`))}
+      </div>
+
       <div className="space-y-2">
-        {board.map((r, i) => (
+        {rows.map((r, i) => (
           <div
             key={i}
             className="flex items-center gap-3 rounded-xl"
@@ -1909,29 +1950,43 @@ function DuelPanel({ authUser, deviceId, games, data, reload }) {
                 {r.isMe && <span style={{ color: COLORS.gold, fontSize: 12.5 }}> あなた</span>}
               </div>
               <div style={{ color: COLORS.strike, opacity: 0.85, fontSize: 13 }}>
-                {r.best ? r.best.scores.join(" / ") : r.noAccount ? "アカウント作成待ち" : "まだ提出なし"}
+                {!r.s
+                  ? round
+                    ? "この回は未提出"
+                    : "まだ提出なし"
+                  : round
+                  ? r.s.scores.join(" / ")
+                  : <Phrases text={`${r.s.rounds}回参加 ・ |ベスト ${r.s.bestTotal}`} />}
               </div>
             </div>
-            {r.best && (
+            {r.s && (
               <div style={{ textAlign: "right", flexShrink: 0 }}>
                 <div style={{ color: r.rank === 1 ? COLORS.gold : COLORS.cream, fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 26, lineHeight: 1.1 }}>
-                  {r.best.total}
+                  {round ? r.s.total : Number(r.s.avgTotal).toFixed(1)}
                 </div>
-                <div style={{ color: COLORS.strike, opacity: 0.85, fontSize: 12.5 }}>平均 {Number(r.best.avg).toFixed(1)}</div>
+                <div style={{ color: COLORS.strike, opacity: 0.85, fontSize: 12.5 }}>
+                  {round ? `平均 ${Number(r.s.avg).toFixed(1)}` : "合計の平均"}
+                </div>
               </div>
             )}
           </div>
         ))}
       </div>
 
-      {board.some((r) => r.best) && (
+      {rows.some((r) => r.s) && (
         <div className="glass-card rounded-xl" style={{ padding: "12px 10px" }}>
-          <div style={{ color: COLORS.gold, fontWeight: 700, fontSize: 15, padding: "0 4px 6px" }}>成績くらべ</div>
+          <div style={{ color: COLORS.gold, fontWeight: 700, fontSize: 15, padding: "0 4px 6px" }}>
+            成績比較<span style={{ color: COLORS.strike, fontWeight: 500, fontSize: 12.5 }}> {round ? `第${rounds.length - rounds.indexOf(round)}回 ${formatMonthDay(round.date)}` : "通算"}</span>
+          </div>
+          <div className="flex items-center gap-3" style={{ padding: "0 4px 6px", fontSize: 12 }}>
+            <span style={{ color: COLORS.gold, fontWeight: 700 }}>● 1位</span>
+            <span style={{ color: DUEL_SILVER, fontWeight: 700 }}>● 2位</span>
+          </div>
           <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
             <thead>
               <tr>
-                <th style={{ width: "38%" }} />
-                {board.map((r, i) => (
+                <th style={{ width: "40%" }} />
+                {rows.map((r, i) => (
                   <th key={i} style={{ ...colStyle, color: COLORS.cream, fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {r.name}
                   </th>
@@ -1939,28 +1994,29 @@ function DuelPanel({ authUser, deviceId, games, data, reload }) {
               </tr>
             </thead>
             <tbody>
-              {[["トータル", "total", "high"], ["アベレージ", "avg", "high"], ...DUEL_COMPARE_ROWS].map(([label, key, dir]) => {
-                const top = bestOf(key, dir);
+              {cmpRows.map(([label, get, dir, fmt]) => {
+                const vals = rows.map((r) => (r.s ? get(r.s) : null));
+                const key = (v) => Math.round(v * 10);
+                const ok = vals.filter((v) => v !== null && Number.isFinite(v));
+                // 良い順に並べた値(同じ値は同じ順位)。1位=金、2位=銀
+                const order = ok.length >= 2 ? [...new Set(ok.map(key))].sort((a, b) => (dir === "high" ? b - a : a - b)) : [];
                 return (
-                  <tr key={key} style={{ borderTop: "1px solid rgba(255,255,255,0.1)" }}>
+                  <tr key={label} style={{ borderTop: "1px solid rgba(255,255,255,0.1)" }}>
                     <td style={{ color: COLORS.strike, fontSize: 13, padding: "7px 4px", wordBreak: "keep-all", lineHeight: 1.3 }}>
-                      {label === "スプリットカバー" ? (
+                      {label === "スプリットカバー率" ? (
                         <>
-                          スプリット<wbr />カバー
+                          スプリット<wbr />カバー率
                         </>
                       ) : (
                         label
                       )}
                     </td>
-                    {board.map((r, i) => {
-                      const v = cmpValue(r.best, key);
-                      const isTop = top !== null && v !== null && v === top;
+                    {vals.map((v, i) => {
+                      const place = v !== null && Number.isFinite(v) ? order.indexOf(key(v)) : -1;
+                      const color = place === 0 ? COLORS.gold : place === 1 ? DUEL_SILVER : COLORS.cream;
                       return (
-                        <td
-                          key={i}
-                          style={{ ...colStyle, color: isTop ? COLORS.gold : COLORS.cream, fontWeight: isTop ? 700 : 500, fontSize: 15 }}
-                        >
-                          {key === "avg" && r.best ? Number(r.best.avg).toFixed(1) : cell(r, key, dir)}
+                        <td key={i} style={{ ...colStyle, color, fontWeight: place === 0 || place === 1 ? 700 : 500, fontSize: 15 }}>
+                          {v === null || !Number.isFinite(v) ? "ー" : (fmt || fmtPct)(v)}
                         </td>
                       );
                     })}
@@ -1994,7 +2050,6 @@ function DuelPanel({ authUser, deviceId, games, data, reload }) {
                 <div className="flex-1" style={{ minWidth: 0 }}>
                   <div style={{ color: COLORS.cream, fontSize: 14.5, fontWeight: 700 }}>
                     {formatMonthDay(e.date)} ・ {e.scores.join(" / ")}
-                    {e.adopted && <span style={{ color: COLORS.gold, fontSize: 12.5 }}> 採用中</span>}
                   </div>
                 </div>
                 <div style={{ color: COLORS.cream, fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 20 }}>{e.total}</div>
@@ -2069,8 +2124,8 @@ function DuelTitle({ info, size = 18 }) {
 // イベントのルール(お知らせと同じ内容を短く)
 function DuelRules() {
   const sections = [
-    ["すすめ方", ["提出する3ゲームは|3人で決める", "決めた3ゲームを|履歴から選んで提出", "提出は何回でもOK|(ベストの1回で|順位が決まる)", "提出の取り消しも|できる"]],
-    ["順位", ["3ゲームの合計が|高い順", "同点は、|ハイとローの差が|小さい方が上"]],
+    ["ルール", ["提出する3ゲームは|3人で決める", "決めた3ゲームを|履歴から選んで提出", "同じ日に出し直すと、|前の提出と入れ替わる", "提出の取り消しも|できる"]],
+    ["順位", ["回ごと:|3ゲームの合計が|高い順", "通算:|参加した回の|合計の平均が高い順", "同点は、|ハイとローの差が|小さい方が上"]],
   ];
   return (
     <div className="glass-card rounded-xl space-y-3" style={{ padding: 14 }}>
