@@ -156,9 +156,19 @@ export function buildRoundBoard(participants, entries) {
   );
 }
 
+// 率の分母(フレーム数・スペアのチャンス数・投球数)は、この仕組みを入れる前の提出には
+// 保存されていないので、その場合は3ゲーム分の数字から見積もる。
+export function withDenominators(e) {
+  const frames = Number(e.frames) || 30;
+  const spareChances = Number(e.spareChances) || Math.max(Number(e.spares) || 0, frames - (Number(e.strikes) || 0));
+  const balls = Number(e.balls) || frames + spareChances;
+  return { ...e, frames, spareChances, balls };
+}
+
 // 成績の項目は合算(率は合計どうしで割る)
 const STAT_KEYS = ["strikes", "spares", "opens", "splits", "splitCovers", "splitChances", "gutters", "frames", "spareChances", "balls"];
-export function sumEntries(list) {
+export function sumEntries(rawList) {
+  const list = rawList.map(withDenominators);
   const out = { rounds: list.length, games: list.length * 3 };
   for (const k of STAT_KEYS) out[k] = list.reduce((a, e) => a + (Number(e[k]) || 0), 0);
   const totals = list.map((e) => e.total);
@@ -252,9 +262,9 @@ function publicEntry(e) {
     splitCovers: e.splitCovers,
     splitChances: e.splitChances,
     gutters: e.gutters,
-    frames: e.frames || 30,
-    spareChances: e.spareChances || Math.max(0, 30 - (e.strikes || 0)),
-    balls: e.balls || 0,
+    frames: withDenominators(e).frames,
+    spareChances: withDenominators(e).spareChances,
+    balls: withDenominators(e).balls,
     createdAt: e.createdAt,
   };
 }
