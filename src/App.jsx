@@ -7049,31 +7049,15 @@ function getNextRollCell(frameIdx, rollIdx, value) {
   } = computeGameSetStats(periodGames);
 
   // "day" compares individual games side by side (a line across a few hours
-  // isn't meaningful); longer periods show the daily average instead, since
-  // plotting every single game gets cluttered once there are multiple games
-  // per day within the window.
+  // isn't meaningful); longer periods (week / month / year / custom) show one
+  // point per day played, using that day's average, since plotting every
+  // single game gets cluttered once there are multiple games per day.
   const chartData =
     periodMode === "day"
       ? periodGames
           .slice()
           .sort((a, b) => (a.gameNumber || 1) - (b.gameNumber || 1))
           .map((g) => ({ label: `第${g.gameNumber || 1}G`, total: g.total }))
-      : periodMode === "year"
-      ? (() => {
-          // A whole year as one point per month (daily points would be too crowded).
-          const byMonth = {};
-          periodGames.forEach((g) => {
-            const m = g.date.slice(0, 7);
-            if (!byMonth[m]) byMonth[m] = [];
-            byMonth[m].push(g.total);
-          });
-          return Object.keys(byMonth)
-            .sort()
-            .map((m) => {
-              const vals = byMonth[m];
-              return { label: `${Number(m.slice(5))}月`, total: Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) };
-            });
-        })()
       : (() => {
           const byDate = {};
           periodGames.forEach((g) => {
@@ -8674,24 +8658,74 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                     <div className="rounded-xl p-3 border glass-card" style={{ borderColor: COLORS.oak }}>
                       <div className="text-xs mb-2 flex items-center gap-1" style={{ color: COLORS.strike }}>
                         <TrendingUp size={14} />
-                        {periodMode === "day" ? "本日のゲームごとのスコア" : periodMode === "year" ? "月ごとの平均スコア推移" : "日ごとの平均スコア推移"}
+                        {periodMode === "day" ? "本日のゲームごとのスコア" : "日ごとの平均スコア推移"}
                       </div>
-                      <ResponsiveContainer width="100%" height={240}>
-                        <LineChart data={chartData} margin={{ top: 22, right: 16, left: -14, bottom: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#E5DCC8" />
-                          <XAxis dataKey="label" tick={{ fontSize: 13, fill: COLORS.strike }} padding={{ left: 18, right: 18 }} />
-                          <YAxis domain={[0, 300]} ticks={[0, 50, 100, 150, 200, 250, 300]} tick={{ fontSize: 13, fill: COLORS.strike }} />
-                          <Tooltip contentStyle={{ fontSize: 14, borderColor: COLORS.oak }} />
-                          <Line
-                            type="monotone"
-                            dataKey="total"
-                            stroke={COLORS.strike}
-                            strokeWidth={2.5}
-                            dot={{ r: 3, fill: COLORS.strike }}
-                            label={{ position: "top", fontSize: 13, fontWeight: 700, fill: COLORS.strike }}
-                          />
-                        </LineChart>
-                      </ResponsiveContainer>
+                      {(() => {
+                        // 点が多い時(年・月など)は横にスクロールできるようにして、1日ずつのスコアを読めるようにする。
+                        // 縦軸は左に固定し、開いた時は一番新しい日(右端)が見える位置にする。
+                        const many = periodMode !== "day" && chartData.length > 8;
+                        const plotWidth = chartData.length * 46 + 36;
+                        const scrollKey = `${periodMode}-${chartData.length}-${chartData.length ? chartData[chartData.length - 1].label : ""}`;
+                        const yTicks = [0, 50, 100, 150, 200, 250, 300];
+                        const body = (
+                          <>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#E5DCC8" />
+                            <XAxis dataKey="label" tick={{ fontSize: 13, fill: COLORS.strike }} padding={{ left: 18, right: 18 }} interval={0} />
+                            <YAxis hide domain={[0, 300]} ticks={yTicks} />
+                            <Tooltip
+                              contentStyle={{ fontSize: 14, borderColor: COLORS.oak }}
+                              itemStyle={{ color: "#23262B" }}
+                              labelStyle={{ color: "#23262B" }}
+                              formatter={(v) => [v, periodMode === "day" ? "スコア" : "その日の平均"]}
+                            />
+                            <Line
+                              type="monotone"
+                              dataKey="total"
+                              stroke={COLORS.strike}
+                              strokeWidth={2.5}
+                              dot={{ r: 3, fill: COLORS.strike }}
+                              label={{ position: "top", fontSize: 13, fontWeight: 700, fill: COLORS.strike }}
+                            />
+                          </>
+                        );
+                        const margin = { top: 22, right: 8, left: 4, bottom: 0 };
+                        return (
+                          <div style={{ display: "flex" }}>
+                            <div style={{ width: 38, flex: "none" }}>
+                              <LineChart width={38} height={240} data={chartData} margin={{ top: 22, right: 0, left: 0, bottom: 0 }}>
+                                <XAxis dataKey="label" tick={false} axisLine={false} tickLine={false} />
+                                <YAxis width={38} domain={[0, 300]} ticks={yTicks} tick={{ fontSize: 13, fill: COLORS.strike }} />
+                              </LineChart>
+                            </div>
+                            {many ? (
+                              <div
+                                style={{ flex: 1, minWidth: 0, overflowX: "auto", WebkitOverflowScrolling: "touch" }}
+                                ref={(el) => {
+                                  if (el && el.dataset.k !== scrollKey) {
+                                    el.dataset.k = scrollKey;
+                                    el.scrollLeft = el.scrollWidth;
+                                  }
+                                }}
+                              >
+                                <LineChart width={plotWidth} height={240} data={chartData} margin={margin}>
+                                  {body}
+                                </LineChart>
+                              </div>
+                            ) : (
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <ResponsiveContainer width="100%" height={240}>
+                                  <LineChart data={chartData} margin={margin}>
+                                    {body}
+                                  </LineChart>
+                                </ResponsiveContainer>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+                      {periodMode !== "day" && chartData.length > 8 && (
+                        <div className="text-xs mt-1" style={{ color: COLORS.strike, opacity: 0.75 }}>← 横にスクロールすると前の日も見られます</div>
+                      )}
                     </div>
 
                     {periodMode === "day" && periodGames.length > 0 && (
