@@ -10,12 +10,17 @@
 // dollars ({ label, amount, currency: "JPY" | "USD" }); dollar items are
 // converted with the saved exchange rate. Older yen-only items
 // ({ label, amountJpy }) are still read correctly.
+// GET    /api/admin/requests?stats=1&key=STATS_KEY
+//                                        -> aggregate numbers only (no names, emails or scores),
+//                                           read with a separate read-only key (env STATS_KEY)
+//                                           so a monthly scheduled check can see usage.
 // (Usage/cost lives here rather than in a new function to stay within
 // Vercel's function-count limit on the free plan.)
 import { db, adminAuth } from "../_firebaseAdmin.js";
 import { isAdminRequest } from "../_adminAuth.js";
 import { generateUniqueId } from "../_idGenerator.js";
 import { monthJST } from "../_usage.js";
+import { timingSafeEqual } from "crypto";
 
 const MONTH_RE = /^\d{4}-\d{2}$/;
 const DEFAULT_USD_JPY = 150;
@@ -135,7 +140,62 @@ async function usageView(month) {
 }
 
 
+// Read-only key check for the aggregate stats endpoint. Compared in constant
+// time; a missing/short STATS_KEY disables the endpoint entirely.
+function statsKeyOk(given) {
+  const expected = process.env.STATS_KEY || "";
+  if (expected.length < 24 || typeof given !== "string") return false;
+  const a = Buffer.from(given);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+// Only counts and totals — nothing that identifies a person.
+async function statsView() {
+  const month = monthJST();
+  const [totalsDoc, usersSnap, reqSnap, finDoc, settingsDoc] = await Promise.all([
+    db.collection("usageMonths").doc(month).get(),
+    db.collection("usageMonths").doc(month).collection("users").get(),
+    db.collection("accessRequests").get(),
+    db.collection("financeMonths").doc(month).get(),
+    db.collection("settings").doc("finance").get(),
+  ]);
+  const t = totalsDoc.exists ? totalsDoc.data() : {};
+  const usdJpy = settingsDoc.exists ? Number(settingsDoc.data().usdJpy) || DEFAULT_USD_JPY : DEFAULT_USD_JPY;
+  const fixed = await effectiveFixedCosts(month, new Map());
+  const approved = reqSnap.docs.filter((d) => d.data().status === "approved").length;
+  const aiCostJpy = Math.round((t.costUsd || 0) * usdJpy * 10) / 10;
+  const analyzeCount = t.analyzeCount || 0;
+  return {
+    month,
+    approvedUsers: approved,
+    activeUsersThisMonth: usersSnap.size,
+    analyzeCount,
+    chatCount: t.chatCount || 0,
+    failCount: t.failCount || 0,
+    aiCostJpy,
+    fixedCostJpy: fixed.items.reduce((s, x) => s + fixedItemJpy(x, usdJpy), 0),
+    revenueJpy: finDoc.exists ? Number(finDoc.data().revenueJpy) || 0 : 0,
+    usdJpy,
+    thresholds: { approvedUsers: 100, analyzeCount: 500 },
+    reviewSuggested: approved >= 100 || analyzeCount >= 500,
+  };
+}
+
 export default async function handler(req, res) {
+  if (req.method === "GET" && req.query && req.query.stats) {
+    if (!statsKeyOk(String(req.query.key || ""))) {
+      res.status(403).json({ error: "forbidden" });
+      return;
+    }
+    try {
+      res.setHeader("Cache-Control", "no-store");
+      res.status(200).json(await statsView());
+    } catch (err) {
+      res.status(500).json({ error: "stats_failed" });
+    }
+    return;
+  }
   if (!(await isAdminRequest(req, { db, adminAuth }))) {
     res.status(401).json({ error: "Unauthorized" });
     return;
