@@ -1478,6 +1478,92 @@ function ScoreSheet({ frames, editable, activeCell, onCellTap }) {
   );
 }
 
+// ---------- compact score sheet (all 10 frames at once, read-only) ----------
+// Used in the 記録 tab's day view, where games are stacked one above another
+// like a bowling center's score printout: every frame fits the width, so
+// nothing needs sideways scrolling. Columns share the width (10th frame a
+// bit wider for its 3 rolls), so it also fits when the text size is large.
+function CompactScoreSheet({ frames }) {
+  const ink = COLORS.ink;
+  const line = `1px solid ${ink}`;
+  const cols = "repeat(9, minmax(0, 1fr)) minmax(0, 1.45fr)";
+  const mark = (val, split, key, last) => {
+    let content = null;
+    if (val === "X") {
+      content = (
+        <svg viewBox="0 0 17 17" style={{ width: "72%", maxWidth: 13, height: "auto", display: "block" }}>
+          <polygon points="2,2 2,15 8.5,8.5" fill={ink} />
+          <polygon points="15,2 15,15 8.5,8.5" fill={ink} />
+        </svg>
+      );
+    } else if (val === "/") {
+      content = (
+        <svg viewBox="0 0 17 17" style={{ width: "72%", maxWidth: 13, height: "auto", display: "block" }}>
+          <polygon points="2,15 15,15 15,2" fill={ink} />
+        </svg>
+      );
+    } else if (val !== undefined && val !== "") {
+      content = val === "0" ? "-" : val;
+    }
+    return (
+      <div
+        key={key}
+        className="flex items-center justify-center"
+        style={{ flex: 1, minWidth: 0, borderLeft: key > 0 ? line : "none", height: 22 }}
+      >
+        {split && content !== null ? (
+          <span
+            className="flex items-center justify-center"
+            style={{ width: "1.35em", height: "1.35em", borderRadius: "50%", border: `1.2px solid ${ink}`, fontSize: "0.85em", lineHeight: 1 }}
+          >
+            {content}
+          </span>
+        ) : (
+          content
+        )}
+      </div>
+    );
+  };
+  return (
+    <div
+      className="score-sheet"
+      style={{
+        display: "grid",
+        gridTemplateColumns: cols,
+        border: `1.5px solid ${ink}`,
+        background: COLORS.cream,
+        color: ink,
+        fontFamily: "'Oswald', sans-serif",
+        fontWeight: 700,
+        width: "100%",
+        // Text sizes follow the sheet's own width (cqi), so 3-digit scores
+        // never spill into the next frame, even with large text settings.
+        containerType: "inline-size",
+      }}
+    >
+      {Array.from({ length: 10 }).map((_, i) => {
+        const f = frames?.[i];
+        const rolls = f?.rolls || [];
+        const splitRolls = f?.splitRolls || [];
+        const slots = i === 9 ? 3 : 2;
+        return (
+          <div key={i} style={{ borderLeft: i > 0 ? line : "none", minWidth: 0, display: "flex", flexDirection: "column" }}>
+            <div className="text-center" style={{ fontSize: 11, lineHeight: "16px", background: "#E4DAC4", borderBottom: line }}>
+              {i + 1}
+            </div>
+            <div className="flex" style={{ fontSize: "min(13px, 3.9cqi)", borderBottom: line }}>
+              {Array.from({ length: slots }).map((_, k) => mark(rolls[k], !!splitRolls[k], k))}
+            </div>
+            <div className="text-center" style={{ fontSize: "min(15px, 4.1cqi)", lineHeight: "26px", whiteSpace: "nowrap" }}>
+              {f?.score ?? ""}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ---------- roll picker (on-screen "keyboard" for correcting a roll) ----------
 function RollPicker({ frameIdx, rollIdx, splitEligible, onSelect, onSplitToggle, splitActive, onClear, onClose }) {
   const numberBtn = (label, value) => (
@@ -9105,44 +9191,49 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                                     {g.total}
                                   </span>
                                 </div>
-                                <div className="px-3 pt-2 pb-3" style={{ borderBottom: `1px solid rgba(224, 168, 0, 0.35)` }}>
-                                  <ScoreSheet frames={g.frames} />
+                                <div className="px-2 pt-2 pb-2">
+                                  <CompactScoreSheet frames={g.frames} />
                                 </div>
-                                {[
-                                  { label: "ストライク", count: gs.strikeCount, rate: gs.strikeRate },
-                                  { label: "スペア", count: gs.spareCount, rate: gs.spareRate },
-                                  { label: "オープンフレーム", count: gs.openFrameCount, rate: gs.openFrameRate },
-                                  { label: "スプリット", count: gs.splitCount, rate: gs.splitRate },
-                                  { label: "スプリットカバー", count: gs.splitCoverCount, rate: gs.splitCoverRate },
-                                  { label: "ガター", count: gs.gutterCount, rate: gs.gutterRate },
-                                  { label: "ファール", count: gs.foulCount, rate: gs.foulRate },
-                                ].map((row) => (
-                                  <div
-                                    key={row.label}
-                                    className="flex items-center justify-between px-3 py-1.5"
-                                    style={{ borderTop: `1px solid rgba(224, 168, 0, 0.2)` }}
-                                  >
-                                    <span style={{ color: COLORS.cream, fontSize: 14 }}>{row.label}</span>
-                                    <span className="flex items-baseline gap-2">
-                                      <span style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 15, color: COLORS.cream }}>
-                                        {row.count}
+                                <details className="day-game-detail" style={{ borderTop: `1px solid rgba(224, 168, 0, 0.35)` }}>
+                                  <summary className="px-3 py-2 cursor-pointer text-sm" style={{ color: COLORS.strike }}>
+                                    ストライク・スペアなどの内訳
+                                  </summary>
+                                  {[
+                                    { label: "ストライク", count: gs.strikeCount, rate: gs.strikeRate },
+                                    { label: "スペア", count: gs.spareCount, rate: gs.spareRate },
+                                    { label: "オープンフレーム", count: gs.openFrameCount, rate: gs.openFrameRate },
+                                    { label: "スプリット", count: gs.splitCount, rate: gs.splitRate },
+                                    { label: "スプリットカバー", count: gs.splitCoverCount, rate: gs.splitCoverRate },
+                                    { label: "ガター", count: gs.gutterCount, rate: gs.gutterRate },
+                                    { label: "ファール", count: gs.foulCount, rate: gs.foulRate },
+                                  ].map((row) => (
+                                    <div
+                                      key={row.label}
+                                      className="flex items-center justify-between px-3 py-1.5"
+                                      style={{ borderTop: `1px solid rgba(224, 168, 0, 0.2)` }}
+                                    >
+                                      <span style={{ color: COLORS.cream, fontSize: 14 }}>{row.label}</span>
+                                      <span className="flex items-baseline gap-2">
+                                        <span style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 15, color: COLORS.cream }}>
+                                          {row.count}
+                                        </span>
+                                        <span style={{ color: COLORS.strike, fontSize: 12 }}>回</span>
+                                        <span
+                                          style={{
+                                            fontFamily: "'Oswald', sans-serif",
+                                            fontWeight: 700,
+                                            fontSize: 15,
+                                            color: COLORS.strike,
+                                            minWidth: 36,
+                                            textAlign: "right",
+                                          }}
+                                        >
+                                          {row.rate}%
+                                        </span>
                                       </span>
-                                      <span style={{ color: COLORS.strike, fontSize: 12 }}>回</span>
-                                      <span
-                                        style={{
-                                          fontFamily: "'Oswald', sans-serif",
-                                          fontWeight: 700,
-                                          fontSize: 15,
-                                          color: COLORS.strike,
-                                          minWidth: 36,
-                                          textAlign: "right",
-                                        }}
-                                      >
-                                        {row.rate}%
-                                      </span>
-                                    </span>
-                                  </div>
-                                ))}
+                                    </div>
+                                  ))}
+                                </details>
                               </div>
                             );
                           })}
@@ -9151,8 +9242,9 @@ function getNextRollCell(frameIdx, rollIdx, value) {
 
                     {periodGames.length > 0 && (
                       <details className="rounded-xl border glass-card overflow-hidden" style={{ borderColor: COLORS.oak }}>
-                        <summary className="px-3 py-2 cursor-pointer text-sm flex items-center gap-1" style={{ color: COLORS.strike }}>
-                          {!premiumStatsOk && <Lock size={13} />}ボール別の成績
+                        <summary className="px-3 py-2 cursor-pointer text-sm" style={{ color: COLORS.strike }}>
+                          {!premiumStatsOk && <Lock size={13} style={{ display: "inline", verticalAlign: "-2px", marginRight: 4 }} />}
+                          ボール別の成績
                         </summary>
                         {premiumStatsOk ? <BallRankings stats={ballStats} /> : <PlanLockNote text="ボール別の成績は、プレミアム以上のプランで見られます" inset />}
                       </details>
@@ -9160,8 +9252,9 @@ function getNextRollCell(frameIdx, rollIdx, value) {
 
                     {periodGames.length > 0 && (
                       <details className="rounded-xl border glass-card overflow-hidden" style={{ borderColor: COLORS.oak }}>
-                        <summary className="px-3 py-2 cursor-pointer text-sm flex items-center gap-1" style={{ color: COLORS.strike }}>
-                          {!premiumStatsOk && <Lock size={13} />}ボウリング場別の成績
+                        <summary className="px-3 py-2 cursor-pointer text-sm" style={{ color: COLORS.strike }}>
+                          {!premiumStatsOk && <Lock size={13} style={{ display: "inline", verticalAlign: "-2px", marginRight: 4 }} />}
+                          ボウリング場別の成績
                         </summary>
                         {premiumStatsOk ? <CenterStats games={periodGames} /> : <PlanLockNote text="ボウリング場別の成績は、プレミアム以上のプランで見られます" inset />}
                       </details>
