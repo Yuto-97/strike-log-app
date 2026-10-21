@@ -74,7 +74,11 @@ async function write(db, FieldValue, userKey, fields, nowDate) {
   await batch.commit();
 }
 
-// One AI call. feature: "analyze" | "chat". ok=false for failed calls.
+// One AI call. feature: "analyze" | "chat" | "locate" (the auto row-finding
+// step before an analysis). ok=false for failed calls. analyzeOk / chatOk
+// count successful calls only — they're what the plan limits are checked
+// against (see _plans.js); locate never counts toward a limit.
+const COUNT_FIELD = { analyze: "analyzeCount", chat: "chatCount", locate: "locateCount" };
 export async function recordAiCall({ db, FieldValue, caller, feature, model, usage, ok, now = new Date() }) {
   try {
     const cost = ok ? costUsd(model, usage) : 0;
@@ -84,7 +88,9 @@ export async function recordAiCall({ db, FieldValue, caller, feature, model, usa
         FieldValue,
         caller?.key || null,
         {
-          [feature === "chat" ? "chatCount" : "analyzeCount"]: 1,
+          [COUNT_FIELD[feature] || "analyzeCount"]: 1,
+          analyzeOk: ok && feature === "analyze" ? 1 : 0,
+          chatOk: ok && feature === "chat" ? 1 : 0,
           failCount: ok ? 0 : 1,
           inputTokens: (usage?.input_tokens || 0) + (usage?.cache_creation_input_tokens || 0) + (usage?.cache_read_input_tokens || 0),
           outputTokens: usage?.output_tokens || 0,

@@ -3,7 +3,9 @@
 // A general Q&A chatbot for customers: explains how to use STRIKE LOG and
 // bowling terminology. Uses the same server-side API key pattern as the
 // other endpoints — the key never reaches the browser.
+// Before each reply the caller's monthly plan limit is checked (_plans.js).
 import { identifyCaller, recordAiCall, classifyAiError, publicAiError, noteServiceAlert } from "./_usage.js";
+import { checkAllowance } from "./_plans.js";
 
 const MODEL = "claude-sonnet-4-6";
 
@@ -17,10 +19,8 @@ async function usageDeps() {
   }
 }
 
-async function record(req, { ok, usage }) {
-  const deps = await usageDeps();
+async function record(deps, caller, { ok, usage }) {
   if (!deps) return;
-  const caller = await identifyCaller(req, deps.adminAuth).catch(() => null);
   await recordAiCall({ db: deps.db, FieldValue: deps.FieldValue, caller, feature: "chat", model: MODEL, usage, ok });
 }
 
@@ -72,6 +72,22 @@ export default async function handler(req, res) {
 
 あなたが答えてよいのは、**このアプリの使い方・機能・ボウリング用語に関する質問だけ**です。それ以外の話題(世間話、他のアプリやサービスの話、時事ネタ、雑談、アプリと無関係な相談事など)を聞かれた場合は、内容には答えず「すみません、アプリの使い方やボウリング用語に関するご質問にお答えするチャットです」と丁寧に伝えてください。`;
 
+  const deps = await usageDeps();
+  let caller = null;
+  let allowance = null;
+  if (deps) {
+    caller = await identifyCaller(req, deps.adminAuth).catch(() => null);
+    try {
+      allowance = await checkAllowance({ db: deps.db, caller, feature: "chat" });
+    } catch (e) {
+      console.warn("plan check failed", e.message || e);
+    }
+    if (allowance && !allowance.ok) {
+      res.status(allowance.status).json(allowance.body);
+      return;
+    }
+  }
+
   try {
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -89,21 +105,21 @@ export default async function handler(req, res) {
     });
 
     const data = await response.json();
-    await record(req, { ok: response.ok, usage: data?.usage });
+    await record(deps, caller, { ok: response.ok, usage: data?.usage });
     if (!response.ok) {
       // Details stay in the server log; the app only gets a category it can
       // turn into a friendly Japanese message.
       const kind = classifyAiError(response.status, data);
       console.error(`Anthropic API error (${response.status}, ${kind}):`, JSON.stringify(data).slice(0, 500));
-      const deps = await usageDeps();
       if (deps) await noteServiceAlert({ db: deps.db, FieldValue: deps.FieldValue, kind, message: data?.error?.message });
       const pub = publicAiError(kind);
       res.status(pub.status).json(pub.body);
       return;
     }
-    res.status(200).json(data);
+    const out = allowance && allowance.used ? { ...data, _usage: { feature: "chat", used: (allowance.used.chat || 0) + 1, limit: allowance.limit } } : data;
+    res.status(200).json(out);
   } catch (err) {
-    await record(req, { ok: false, usage: null });
+    await record(deps, caller, { ok: false, usage: null });
     console.error("Upstream request failed:", err.message || err);
     res.status(502).json({ error: "network" });
   }

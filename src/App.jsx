@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { Camera, History, BarChart3, Loader2, Check, X, Pencil, Trophy, TrendingUp, Calendar, CircleDot, Hash, User, Target, Trash2, ShieldCheck, CircleCheck, MessageCircle, Send, Settings, Crop, ImageOff, UserX, Bell, ImagePlus, ChevronDown, ChevronLeft, ChevronRight, Download, MapPin, Plus } from "lucide-react";
+import { Camera, History, BarChart3, Loader2, Check, X, Pencil, Trophy, TrendingUp, Calendar, CircleDot, Hash, User, Target, Trash2, ShieldCheck, CircleCheck, MessageCircle, Send, Settings, Crop, ImageOff, UserX, Bell, ImagePlus, ChevronDown, ChevronLeft, ChevronRight, Download, MapPin, Plus, Lock } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { auth } from "./firebaseClient.js";
 import { TEXT_SIZES, readTextSize, applyTextSize, saveTextSize, usesCssZoom } from "./textSize.js";
@@ -1068,11 +1068,76 @@ function withPhotoTip(msg) {
   const m = String(msg || "解析中にエラーが発生しました。").trim();
   return m.includes(SAVE_PHOTO_TIP) ? m : `${m}\n${SAVE_PHOTO_TIP}`;
 }
-function friendlyAiError(code, what) {
+// Monthly plan limits (see api/_plans.js). The server answers
+// { error: "limit_reached", limit, resetsOn } once the month's count is used up.
+function friendlyAiError(code, what, body) {
+  if (code === "limit_reached") {
+    const n = body?.limit ? `(${body.limit}回)` : "";
+    return `今月の${what}の回数${n}を使い切りました。${body?.resetsOn || "来月1日"}に回数が戻ります。`;
+  }
   if (code === "service_paused") return `ただいま${what}を一時停止しています。時間をおいて、もう一度お試しください。`;
   if (code === "busy") return `AIが混み合っています。少し時間をおいて、もう一度お試しください。`;
   if (code === "network") return `通信に失敗しました。電波の良い場所で、もう一度お試しください。`;
   return `${what}に失敗しました。時間をおいて、もう一度お試しください。`;
+}
+
+// The app component registers here to hear this month's updated count after
+// each successful analysis / chat reply ({ feature, used, limit }).
+let usageListener = null;
+function setUsageListener(fn) {
+  usageListener = fn;
+}
+function reportUsage(u) {
+  if (u && usageListener) usageListener(u);
+}
+
+// プレミアム: finds the player's row on the full photo, so the analysis can
+// be run on that row (crop + zoom) without the user boxing it by finger.
+// Returns a crop rect in 0..1 photo coordinates, or null if not found / not
+// available on this plan / anything went wrong (the app then falls back to
+// boxing by finger). Never throws. Doesn't count toward the monthly limit.
+async function locatePlayerRow(img, playerName) {
+  if (!img || !playerName) return null;
+  try {
+    const { base64, mediaType } = renderImageForAI(img, null);
+    const scale = 1568 / Math.max(img.width, img.height);
+    const W = Math.max(1, Math.round(img.width * scale));
+    const H = Math.max(1, Math.round(img.height * scale));
+    const prompt = `これはボウリングのスコア画面(電光掲示板)またはスコアシートの写真です。画像の大きさは幅${W}px・高さ${H}pxで、左上が(0,0)、右下が(${W},${H})です。
+
+名前「${playerName}」のプレイヤーの行を探してください。表記ゆれ(ひらがな・カタカナ・ローマ字・大文字小文字・末尾に付く1文字の区分ラベルなど)も考慮して、最も一致する行を選んでください。
+
+見つかった場合、そのプレイヤーの「名前の欄」から「1〜10フレーム」と「合計(TOTAL)の欄」までをすべて含む長方形を、ピクセル座標で答えてください。投球記号の段と累計スコアの段が上下に分かれている場合は、両方の段を含めてください。同じプレイヤーのゲームが複数段・複数か所に分かれて表示されている場合は、それらすべてを含めてください。他のプレイヤーの行はできるだけ含めないでください。
+
+次のJSONだけを出力してください。前置きや説明は不要です。
+見つかった場合: {"found": true, "name_on_screen": "画面上の表記", "x1": 左端, "y1": 上端, "x2": 右端, "y2": 下端}
+見つからない、または候補が複数あってどれか判断できない場合: {"found": false}`;
+    const response = await fetch("/api/analyze", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(await usageHeaders()) },
+      body: JSON.stringify({ images: [{ base64, mediaType }], prompt, purpose: "locate" }),
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    const text = (data.content || []).find((b) => b.type === "text")?.text || "";
+    const r = extractJson(text);
+    if (!r || r.found !== true) return null;
+    const [x1, y1, x2, y2] = [r.x1, r.y1, r.x2, r.y2].map(Number);
+    if (![x1, y1, x2, y2].every(Number.isFinite) || x2 <= x1 || y2 <= y1) return null;
+    // A little extra room top and bottom: the box is never pixel-perfect,
+    // and the analysis itself still matches the row by name.
+    const padY = 0.02 * H;
+    const nx1 = Math.max(0, Math.min(W, x1)) / W;
+    const nx2 = Math.max(0, Math.min(W, x2)) / W;
+    const ny1 = Math.max(0, Math.min(H, y1 - padY)) / H;
+    const ny2 = Math.max(0, Math.min(H, y2 + padY)) / H;
+    const rect = { x: nx1, y: ny1, w: nx2 - nx1, h: ny2 - ny1 };
+    // Ignore boxes that are clearly not a score row (tiny, or most of the photo).
+    if (rect.w < 0.15 || rect.h < 0.02 || rect.w * rect.h > 0.85) return null;
+    return rect;
+  } catch (e) {
+    return null;
+  }
 }
 
 async function analyzeScoreImage(images, playerName, { cropped = false, zoomed = false } = {}) {
@@ -1177,13 +1242,13 @@ async function analyzeScoreImage(images, playerName, { cropped = false, zoomed =
   }
 
   if (!response.ok) {
-    let code = "";
+    let body = null;
     try {
-      code = (await response.json())?.error || "";
+      body = await response.json();
     } catch (_) {
       // body wasn't JSON — fall through to the generic message
     }
-    throw new Error(friendlyAiError(code, "スコア解析"));
+    throw new Error(friendlyAiError(body?.error || "", "スコア解析", body));
   }
 
   let data;
@@ -1200,6 +1265,7 @@ async function analyzeScoreImage(images, playerName, { cropped = false, zoomed =
     throw new Error(friendlyAiError("", "スコア解析"));
   }
 
+  reportUsage(data._usage);
   const textBlock = (data.content || []).find((b) => b.type === "text");
   if (!textBlock) {
     console.error("analyze: empty result:", JSON.stringify(data).slice(0, 300));
@@ -4791,7 +4857,16 @@ function AdminButton({ children, onClick, kind = "outline", ariaLabel }) {
 }
 
 // One registrant. Top: number + kind. Middle: name, email, ranking. Bottom: date and the buttons.
-function AdminRequestCard({ r, dateLabel, onToggleRanking, actions, children }) {
+// Plans the admin can set by hand until Stripe sets them (api/_plans.js).
+const ADMIN_PLAN_OPTIONS = [
+  { id: "", label: "未設定(今まで通り)" },
+  { id: "basic", label: "ベーシック 1,000円" },
+  { id: "premium", label: "プレミアム 2,000円" },
+  { id: "premium_plus", label: "プレミアム＋ 3,000円" },
+  { id: "free", label: "招待(無料・全機能)" },
+];
+
+function AdminRequestCard({ r, dateLabel, onToggleRanking, onSetPlan, actions, children }) {
   const migrated = !!r.linkedAccountUid;
   const showEmail = r.email && r.email !== r.name;
   return (
@@ -4843,6 +4918,24 @@ function AdminRequestCard({ r, dateLabel, onToggleRanking, actions, children }) 
           >
             {r.rankingExcluded ? "除外を解除" : "除外する"}
           </button>
+        </div>
+      )}
+
+      {onSetPlan && !migrated && (
+        <div className="flex items-center justify-between gap-2 rounded-lg" style={{ marginTop: 10, padding: "8px 10px", background: "rgba(255,255,255,0.05)" }}>
+          <span style={{ color: COLORS.cream, fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>プラン</span>
+          <select
+            value={r.plan || ""}
+            onChange={(e) => onSetPlan(e.target.value || null)}
+            className="rounded-lg"
+            style={{ fontSize: 13, padding: "6px 8px", color: COLORS.ink, background: COLORS.cream, minWidth: 0, maxWidth: "70%" }}
+          >
+            {ADMIN_PLAN_OPTIONS.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.label}
+              </option>
+            ))}
+          </select>
         </div>
       )}
 
@@ -4926,6 +5019,16 @@ function AdminPanel() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ password, action: "rankingExclude", uid, excluded }),
+    });
+    load(password);
+  };
+
+  // Set someone's plan by hand (null = 未設定).
+  const setPlan = async (id, plan) => {
+    await adminFetch("/api/admin/requests", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password, action: "setPlan", id, plan }),
     });
     load(password);
   };
@@ -5184,6 +5287,7 @@ function AdminPanel() {
                 r={r}
                 dateLabel={`承認 ${formatAdminDateTime(r.updatedAt)}`}
                 onToggleRanking={() => toggleRankingExclude(r.id, !r.rankingExcluded)}
+                onSetPlan={(plan) => setPlan(r.id, plan)}
                 actions={
                   r.linkedAccountUid ? (
                     <AdminButton onClick={() => deleteMigrated([r.id])}>削除</AdminButton>
@@ -5399,6 +5503,67 @@ function AdminPanel() {
   );
 }
 
+// 設定画面: the current plan and this month's counts.
+function PlanUsage({ plan }) {
+  const rows = [
+    { key: "analyze", label: "スコアの読み取り" },
+    { key: "chat", label: "AIチャット相談" },
+  ];
+  return (
+    <div className="space-y-2" style={{ borderTop: "1px solid rgba(224,168,0,0.18)", paddingTop: 10 }}>
+      <div className="flex items-center justify-between gap-2">
+        <span style={{ color: COLORS.strike, opacity: 0.7, fontSize: 12 }}>ご利用中のプラン</span>
+        <span style={{ color: COLORS.gold, fontWeight: 700, fontSize: 15 }}>
+          {plan.id === "premium_plus" ? (
+            <>
+              プレミアム<ruby>＋<rt style={{ fontSize: 8 }}>プラス</rt></ruby>
+            </>
+          ) : (
+            plan.label
+          )}
+        </span>
+      </div>
+      {rows.map((r) => {
+        const limit = plan.limits?.[r.key];
+        const used = plan.used?.[r.key];
+        const full = limit != null && used != null && used >= limit;
+        return (
+          <div key={r.key} className="flex items-center justify-between gap-2">
+            <span style={{ color: COLORS.strike, fontSize: 13 }}>今月の{r.label}</span>
+            <span style={{ color: full ? "#E8836A" : COLORS.strike, fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>
+              {limit == null ? "回数無制限" : `${used ?? "ー"} / ${limit}回`}
+            </span>
+          </div>
+        );
+      })}
+      {(plan.limits?.analyze != null || plan.limits?.chat != null) && (
+        <div style={{ color: COLORS.strike, opacity: 0.6, fontSize: 11 }}>回数は{plan.resetsOn || "毎月1日"}に戻ります</div>
+      )}
+    </div>
+  );
+}
+
+// A short "this is in プレミアム" line for features the current plan doesn't include.
+function PlanLockNote({ text, inset = false }) {
+  return (
+    <div
+      className="flex items-center gap-2"
+      style={{
+        color: COLORS.strike,
+        fontSize: 13,
+        lineHeight: 1.6,
+        padding: inset ? "4px 12px 12px" : "8px 12px",
+        borderRadius: inset ? 0 : 10,
+        background: inset ? "transparent" : "rgba(224, 168, 0, 0.12)",
+        border: inset ? "none" : "1px solid rgba(224, 168, 0, 0.4)",
+      }}
+    >
+      {!inset && <Lock size={14} style={{ color: COLORS.gold, flexShrink: 0 }} />}
+      <span>{text}</span>
+    </div>
+  );
+}
+
 // ---------- legal pages (terms / privacy / tokushoho) ----------
 // Publicly viewable (no login/approval needed) so people can read these
 // before subscribing. Fill in the bracketed placeholders with real info.
@@ -5592,6 +5757,11 @@ export default function StrikeLog() {
     return id;
   });
   const [accessStatus, setAccessStatus] = useState("checking");
+  // The person's plan and this month's counts (api/_plans.js). null until
+  // the server has answered; then { id, label, premiumStats, autoLocate,
+  // limits: { analyze, chat }, used: { analyze, chat } | null, resetsOn }.
+  const [planInfo, setPlanInfo] = useState(null);
+  const [planNotice, setPlanNotice] = useState(""); // "プレミアムで使えます" etc.
   const [authUser, setAuthUser] = useState(null);
   const [authBusy, setAuthBusy] = useState(false);
   const [authErrorMsg, setAuthErrorMsg] = useState("");
@@ -5636,6 +5806,9 @@ export default function StrikeLog() {
   const [imageMeta, setImageMeta] = useState(null); // {base64, mediaType}
   const [cropRect, setCropRect] = useState(null); // user's selection, 0..1 coords
   const [cropEditorOpen, setCropEditorOpen] = useState(false); // full-screen boxing editor
+  const [locating, setLocating] = useState(false); // プレミアム: finding the player's row automatically
+  const [locateMissed, setLocateMissed] = useState(false); // auto-find failed → asked to box by finger
+  const [autoCropped, setAutoCropped] = useState(false); // the current box came from auto-find
   const [celebration, setCelebration] = useState(null); // achievements to celebrate, or null
   const [saveBlockItems, setSaveBlockItems] = useState(null); // what's still unselected when 記録を保存 is pressed
   const [rolePromptDismissed, setRolePromptDismissed] = useState(false); // 「あとで」 for this session
@@ -5937,10 +6110,11 @@ export default function StrikeLog() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`/api/access/status?deviceId=${encodeURIComponent(deviceId)}`);
+        const res = await fetch(`/api/access/status?deviceId=${encodeURIComponent(deviceId)}&usage=1`);
         const data = await res.json();
         if (cancelled) return;
         setAccessStatus(data.status || "not_found");
+        if (data.plan) setPlanInfo(data.plan);
         if (data.requestNumber) setMyRequestNumber(data.requestNumber);
       } catch (e) {
         if (!cancelled) setAccessStatus("error");
@@ -6061,10 +6235,13 @@ export default function StrikeLog() {
   useEffect(() => {
     if (isAdminRoute || !authUser || !deviceId) return;
     let cancelled = false;
+    let firstCheck = true; // this month's counts only on the first check, not every poll
     const check = async () => {
       try {
         const token = await authUser.getIdToken();
-        const res = await fetch(`/api/account/device-check?deviceId=${encodeURIComponent(deviceId)}`, {
+        const withUsage = firstCheck ? "&usage=1" : "";
+        firstCheck = false;
+        const res = await fetch(`/api/account/device-check?deviceId=${encodeURIComponent(deviceId)}${withUsage}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         const data = await res.json();
@@ -6073,6 +6250,9 @@ export default function StrikeLog() {
         } else if (!cancelled) {
           setAccessStatus(data.status || "pending");
           if (data.requestNumber) setMyRequestNumber(data.requestNumber);
+          // Polls carry the plan but not the counts — keep the counts we have
+          // (unless the plan itself changed, e.g. after an upgrade).
+          if (data.plan) setPlanInfo((prev) => (data.plan.used || !prev || prev.id !== data.plan.id ? data.plan : { ...data.plan, used: prev.used }));
         }
       } catch (e) {
         // Network hiccup — leave current state alone and try again later.
@@ -6095,6 +6275,22 @@ export default function StrikeLog() {
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [isAdminRoute, authUser, deviceId, handleKickedOut, runSync]);
+
+  // 年・期間指定のグラフ、ボール別・ボウリング場別の成績 (プレミアム以上).
+  // Until the server has answered, nothing is locked.
+  const premiumStatsOk = !planInfo || planInfo.premiumStats !== false;
+  useEffect(() => {
+    if (!premiumStatsOk && (periodMode === "year" || periodMode === "custom")) setPeriodMode("month");
+  }, [premiumStatsOk, periodMode]);
+
+  // After each analysis / chat reply the server reports this month's count.
+  useEffect(() => {
+    setUsageListener((u) => {
+      if (!u || !u.feature) return;
+      setPlanInfo((prev) => (prev && prev.used ? { ...prev, used: { ...prev.used, [u.feature]: u.used } } : prev));
+    });
+    return () => setUsageListener(null);
+  }, []);
 
   const loginWithAccount = async (email, password) => {
     if (!auth) {
@@ -6298,7 +6494,8 @@ export default function StrikeLog() {
         body: JSON.stringify({ messages: nextMessages }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(friendlyAiError(data?.error, "チャット相談"));
+      if (!response.ok) throw new Error(friendlyAiError(data?.error, "チャット相談", data));
+      reportUsage(data._usage);
       const textBlock = (data.content || []).find((b) => b.type === "text");
       const reply = textBlock?.text?.trim() || "うまく答えられませんでした。もう一度試してください。";
       setChatMessages([...nextMessages, { role: "assistant", content: reply }]);
@@ -6604,6 +6801,8 @@ export default function StrikeLog() {
     setCropRect(null);
     setActiveCell(null);
     setSplitPending(false);
+    setLocateMissed(false);
+    setAutoCropped(false);
     try {
       const rawUrl = await readFileAsDataUrl(file);
       setImagePreview(rawUrl);
@@ -6629,19 +6828,39 @@ export default function StrikeLog() {
       setImageMeta({ base64, mediaType });
       setImagePreview(`data:${mediaType};base64,${base64}`);
       setCropRect(null);
+      // プレミアム: find the player's row automatically and analyze it straight
+      // away. If it can't be found (or no name is set), fall back to boxing
+      // the row by finger, exactly like ベーシック.
+      const name = playerName.trim();
+      if (planInfo?.autoLocate && name) {
+        setLocating(true);
+        const rect = await locatePlayerRow(img, name);
+        setLocating(false);
+        if (sourceImgRef.current !== img) return; // another photo was picked meanwhile
+        if (rect) {
+          setCropRect(rect);
+          setAutoCropped(true);
+          runAnalysis(rect);
+          return;
+        }
+        setLocateMissed(true);
+      }
       setCropEditorOpen(true); // go straight to boxing the row, full screen
     } catch (e) {
+      setLocating(false);
       setAnalyzeError(withPhotoTip(e.message));
     }
   };
 
-  const runAnalysis = async () => {
-    if (!imageMeta) return;
+  // rectOverride: a crop decided just now (auto-find), before state updates land.
+  const runAnalysis = async (rectOverride) => {
+    if (!imageMeta && !sourceImgRef.current) return;
+    const rect = rectOverride && typeof rectOverride.w === "number" ? rectOverride : cropRect;
     setAnalyzing(true);
     setAnalyzeError("");
     try {
       const built = sourceImgRef.current
-        ? buildAnalysisImages(sourceImgRef.current, cropRect)
+        ? buildAnalysisImages(sourceImgRef.current, rect)
         : { images: [imageMeta], cropped: false, zoomed: false };
       const result = await analyzeScoreImage(built.images, playerName.trim(), built);
       const noScoreFound =
@@ -7519,14 +7738,30 @@ function getNextRollCell(frameIdx, rollIdx, value) {
               </div>
             )}
 
-            {imagePreview && !pendingResult && (
+            {imagePreview && !pendingResult && locating && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Loader2 className="animate-spin" size={18} style={{ color: COLORS.gold, flexShrink: 0 }} />
+                  <div style={{ color: COLORS.strike, fontWeight: 700, fontSize: 15 }}>「{playerName.trim()}」の行を探しています…</div>
+                </div>
+                <CropPreview src={imagePreview} rect={null} />
+              </div>
+            )}
+
+            {imagePreview && !pendingResult && !locating && (
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   <Crop size={18} style={{ color: COLORS.gold, flexShrink: 0 }} />
-                  <div style={{ color: COLORS.strike, fontWeight: 700, fontSize: 15 }}>自分の行を指で囲む</div>
+                  <div style={{ color: COLORS.strike, fontWeight: 700, fontSize: 15 }}>
+                    {autoCropped && cropRect ? "自分の行を自動で囲みました" : "自分の行を指で囲む"}
+                  </div>
                 </div>
                 <div style={{ color: COLORS.strike, opacity: 0.75, fontSize: 12 }}>
-                  名前〜合計まで囲むと精度アップ(省略OK)
+                  {autoCropped && cropRect
+                    ? "違っていたら「囲み直す」で直せます"
+                    : locateMissed
+                    ? "自動で見つけられなかったので、指で囲んでください"
+                    : "名前〜合計まで囲むと精度アップ(省略OK)"}
                 </div>
                 <CropPreview src={imagePreview} rect={cropRect} />
                 <div className="flex items-center gap-4">
@@ -7555,6 +7790,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                     initialRect={cropRect}
                     onDone={(r) => {
                       setCropRect(r);
+                      setAutoCropped(false);
                       setCropEditorOpen(false);
                     }}
                     onSkip={() => setCropEditorOpen(false)}
@@ -7563,10 +7799,10 @@ function getNextRollCell(frameIdx, rollIdx, value) {
               </div>
             )}
 
-            {imagePreview && !pendingResult && (
+            {imagePreview && !pendingResult && !locating && (
               <div className="flex gap-2">
                 <button
-                  onClick={runAnalysis}
+                  onClick={() => runAnalysis()}
                   disabled={analyzing}
                   className="flex-1 rounded-lg py-3 flex items-center justify-center gap-2"
                   style={{ background: COLORS.strike, color: COLORS.ink, fontWeight: 700 }}
@@ -8442,25 +8678,38 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                     { key: "month", label: "月" },
                     { key: "year", label: "年" },
                     { key: "custom", label: "期間指定" },
-                  ].map((p) => (
-                    <button
-                      key={p.key}
-                      type="button"
-                      onClick={() => setPeriodMode(p.key)}
-                      className="rounded-lg py-2 text-sm"
-                      style={{
-                        ...toggleStyle(periodMode === p.key),
-                        // 「期間指定」 has 4 characters; the others have 1
-                        flex: p.key === "custom" ? 2.2 : 1,
-                        minWidth: 0,
-                        whiteSpace: "nowrap",
-                        padding: "8px 4px",
-                      }}
-                    >
-                      {p.label}
-                    </button>
-                  ))}
+                  ].map((p) => {
+                    const locked = !premiumStatsOk && (p.key === "year" || p.key === "custom");
+                    return (
+                      <button
+                        key={p.key}
+                        type="button"
+                        onClick={() => {
+                          if (locked) {
+                            setPlanNotice("年・期間指定のグラフは、プレミアム以上のプランで使えます");
+                            return;
+                          }
+                          setPlanNotice("");
+                          setPeriodMode(p.key);
+                        }}
+                        className="rounded-lg py-2 text-sm flex items-center justify-center gap-1"
+                        style={{
+                          ...toggleStyle(periodMode === p.key),
+                          // 「期間指定」 has 4 characters; the others have 1
+                          flex: p.key === "custom" ? 2.2 : 1,
+                          minWidth: 0,
+                          whiteSpace: "nowrap",
+                          padding: "8px 4px",
+                          opacity: locked ? 0.55 : 1,
+                        }}
+                      >
+                        {locked && <Lock size={12} />}
+                        {p.label}
+                      </button>
+                    );
+                  })}
                 </div>
+                {planNotice && <PlanLockNote text={planNotice} />}
 
                 <div className="rounded-xl p-3 border glass-card" style={{ borderColor: COLORS.oak }}>
                   {periodMode === "day" && (
@@ -8840,19 +9089,19 @@ function getNextRollCell(frameIdx, rollIdx, value) {
 
                     {periodGames.length > 0 && (
                       <details className="rounded-xl border glass-card overflow-hidden" style={{ borderColor: COLORS.oak }}>
-                        <summary className="px-3 py-2 cursor-pointer text-sm" style={{ color: COLORS.strike }}>
-                          ボール別の成績
+                        <summary className="px-3 py-2 cursor-pointer text-sm flex items-center gap-1" style={{ color: COLORS.strike }}>
+                          {!premiumStatsOk && <Lock size={13} />}ボール別の成績
                         </summary>
-                        <BallRankings stats={ballStats} />
+                        {premiumStatsOk ? <BallRankings stats={ballStats} /> : <PlanLockNote text="ボール別の成績は、プレミアム以上のプランで見られます" inset />}
                       </details>
                     )}
 
                     {periodGames.length > 0 && (
                       <details className="rounded-xl border glass-card overflow-hidden" style={{ borderColor: COLORS.oak }}>
-                        <summary className="px-3 py-2 cursor-pointer text-sm" style={{ color: COLORS.strike }}>
-                          ボウリング場別の成績
+                        <summary className="px-3 py-2 cursor-pointer text-sm flex items-center gap-1" style={{ color: COLORS.strike }}>
+                          {!premiumStatsOk && <Lock size={13} />}ボウリング場別の成績
                         </summary>
-                        <CenterStats games={periodGames} />
+                        {premiumStatsOk ? <CenterStats games={periodGames} /> : <PlanLockNote text="ボウリング場別の成績は、プレミアム以上のプランで見られます" inset />}
                       </details>
                     )}
 
@@ -8969,6 +9218,8 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                   style={{ borderColor: COLORS.oak, color: COLORS.ink, fontSize: 16 }}
                 />
               </div>
+
+              {planInfo && planInfo.id !== "legacy" && <PlanUsage plan={planInfo} />}
 
               {authUser ? (
                 <div className="space-y-2" style={{ borderTop: "1px solid rgba(224,168,0,0.18)", paddingTop: 10 }}>

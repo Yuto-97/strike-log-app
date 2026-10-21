@@ -5,6 +5,8 @@
 //                                        -> AI usage & costs for a month (per user + totals)
 // POST   /api/admin/requests { password, action: "finance", month, fixedCosts, revenueJpy, usdJpy }
 //                                        -> save that month's fixed costs / revenue, and the USD→JPY rate
+// POST   /api/admin/requests { password, action: "setPlan", id, plan }
+//                                        -> set someone's plan by hand (plan: basic|premium|premium_plus|free, or null to clear)
 // Fixed costs carry forward automatically: a month with nothing saved uses
 // the most recent earlier month that has them. Items may be in yen or in
 // dollars ({ label, amount, currency: "JPY" | "USD" }); dollar items are
@@ -16,10 +18,11 @@
 //                                           so a monthly scheduled check can see usage.
 // (Usage/cost lives here rather than in a new function to stay within
 // Vercel's function-count limit on the free plan.)
-import { db, adminAuth } from "../_firebaseAdmin.js";
+import { db, adminAuth, FieldValue } from "../_firebaseAdmin.js";
 import { isAdminRequest } from "../_adminAuth.js";
 import { generateUniqueId } from "../_idGenerator.js";
 import { monthJST } from "../_usage.js";
+import { ASSIGNABLE_PLANS } from "../_plans.js";
 import { timingSafeEqual } from "crypto";
 
 const MONTH_RE = /^\d{4}-\d{2}$/;
@@ -216,6 +219,28 @@ export default async function handler(req, res) {
         return;
       }
       await db.collection("rankingParticipants").doc(uid).set({ excluded: !!excluded, updatedAt: new Date().toISOString() }, { merge: true });
+      res.status(200).json({ ok: true });
+      return;
+    }
+
+    // Set someone's plan by hand (until Stripe sets it). plan: one of
+    // ASSIGNABLE_PLANS, or null to clear it (= 未設定).
+    if (req.method === "POST" && (req.body || {}).action === "setPlan") {
+      const { id, plan } = req.body;
+      if (!id || typeof id !== "string" || id.includes("/")) {
+        res.status(400).json({ error: "id is required" });
+        return;
+      }
+      if (plan !== null && !ASSIGNABLE_PLANS.includes(plan)) {
+        res.status(400).json({ error: "invalid plan" });
+        return;
+      }
+      const ref = db.collection("accessRequests").doc(id);
+      if (!(await ref.get()).exists) {
+        res.status(404).json({ error: "not found" });
+        return;
+      }
+      await ref.set({ plan: plan === null ? FieldValue.delete() : plan, planUpdatedAt: new Date().toISOString() }, { merge: true });
       res.status(200).json({ ok: true });
       return;
     }
