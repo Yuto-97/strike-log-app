@@ -1183,16 +1183,19 @@ B. 名前「${playerName}」の文字の位置
     // A pinpoint box from the AI is too unreliable (it cut off the scores
     // and the total in testing), so we only rely on two things it finds
     // well: the whole score display, and roughly where the name is. The
-    // crop is the full width of the display (so the total is never cut) and
-    // a tall band around the name: a little above it, and well below it so
-    // the marks and cumulative scores underneath are always inside. If the
-    // band also catches the next player's row, the analysis still picks the
-    // right row by name.
+    // crop is the full width of the display (so the total is never cut),
+    // from the top of the display down to well below the name, so the marks
+    // and cumulative scores underneath are always inside. If it also catches
+    // other players' rows, the analysis still picks the right row by name.
     const boardH = bBottom - bTop;
     const x1 = Math.max(0, bLeft - 0.02);
     const x2 = Math.min(1, bRight + 0.02);
-    const y1 = Math.max(0, Math.max(bTop - 0.01, nameY - Math.max(0.03, boardH * 0.12)));
-    const y2 = Math.min(1, Math.min(bBottom + 0.01, nameY + Math.max(0.06, boardH * 0.24)));
+    // Top: always the top of the display. When the display is small in the
+    // photo, the name's position can be off by a whole row, so starting from
+    // the top edge means our row is never cut off above. Bottom: well below
+    // the name (about two players' worth).
+    const y1 = Math.max(0, bTop - 0.01);
+    const y2 = Math.min(1, Math.min(bBottom + 0.01, nameY + Math.max(0.08, boardH * 0.3)));
     const rect = { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
     // Ignore boxes that are clearly not a score row (tiny, or most of the photo).
     if (rect.w < 0.15 || rect.h < 0.02 || rect.w * rect.h > 0.85) return null;
@@ -6035,6 +6038,7 @@ export default function StrikeLog() {
   const [newShoeName, setNewShoeName] = useState("");
   const [newBallOpen, setNewBallOpen] = useState(false); // 設定の「新しいボールを登録」を開いているか
   const [newShoeOpen, setNewShoeOpen] = useState(false); // 設定の「新しいマイシューズを登録」を開いているか
+  const [openDayGames, setOpenDayGames] = useState(() => new Set()); // 記録タブ「日」: games whose breakdown is open
   const [periodMode, setPeriodMode] = useState("week"); // "day" | "week" | "month" | "year" | "custom"
   const [yearAnchor, setYearAnchor] = useState(() => new Date().getFullYear()); // 1/1〜12/31
   const [dayAnchor, setDayAnchor] = useState(() => toLocalISODate(new Date()));
@@ -9170,73 +9174,91 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                     {periodMode === "day" && periodGames.length > 0 && (
                       <div className="space-y-2">
                         <div className="text-xs flex items-center gap-1" style={{ color: COLORS.strike }}>
-                          <Hash size={12} /> ゲームごとの内訳
+                          <Hash size={12} /> スコア表
                         </div>
-                        {[...periodGames]
-                          .sort((a, b) => (a.gameNumber || 1) - (b.gameNumber || 1))
-                          .map((g) => {
-                            const gs = computeGameSetStats([g]);
-                            return (
-                              <div key={g.id} className="rounded-xl border glass-card overflow-hidden" style={{ borderColor: COLORS.oak }}>
-                                <div
-                                  className="flex items-center justify-between px-3 py-2"
-                                  style={{ borderBottom: `1px solid rgba(224, 168, 0, 0.35)` }}
-                                >
-                                  <span className="text-sm" style={{ color: COLORS.strike, fontWeight: 700 }}>
-                                    {g.gameNumber ? `第${g.gameNumber}ゲーム` : "ゲーム"}
-                                  </span>
-                                  <span
-                                    style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 18, color: COLORS.gold }}
+                        {/* All of the day's games in one card, stacked like a center's
+                            score printout, so as many as possible fit on one screen.
+                            Tap a game's bar to open its strike/spare breakdown. */}
+                        <div className="rounded-xl border glass-card overflow-hidden" style={{ borderColor: COLORS.oak, padding: "6px 8px 8px" }}>
+                          {[...periodGames]
+                            .sort((a, b) => (a.gameNumber || 1) - (b.gameNumber || 1))
+                            .map((g, gi) => {
+                              const gs = computeGameSetStats([g]);
+                              return (
+                                <div key={g.id} style={{ marginTop: gi ? 8 : 0 }}>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setOpenDayGames((prev) => {
+                                        const next = new Set(prev);
+                                        if (next.has(g.id)) next.delete(g.id);
+                                        else next.add(g.id);
+                                        return next;
+                                      })
+                                    }
+                                    aria-expanded={openDayGames.has(g.id)}
+                                    className="w-full flex items-center justify-between"
+                                    style={{ padding: "2px 2px 4px", color: COLORS.strike }}
                                   >
-                                    {g.total}
-                                  </span>
-                                </div>
-                                <div className="px-2 pt-2 pb-2">
+                                    <span className="flex items-center gap-1" style={{ fontSize: 13, fontWeight: 700 }}>
+                                      {openDayGames.has(g.id) ? (
+                                        <ChevronDown size={14} style={{ color: COLORS.gold }} />
+                                      ) : (
+                                        <ChevronRight size={14} style={{ color: COLORS.gold }} />
+                                      )}
+                                      {g.gameNumber ? `${g.gameNumber}ゲーム目` : "ゲーム"}
+                                    </span>
+                                    <span style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 17, color: COLORS.gold, lineHeight: 1 }}>
+                                      {g.total}
+                                    </span>
+                                  </button>
                                   <CompactScoreSheet frames={g.frames} />
+                                  {openDayGames.has(g.id) && (
+                                  <div style={{ marginTop: 4 }}>
+                                    {[
+                                      { label: "ストライク", count: gs.strikeCount, rate: gs.strikeRate },
+                                      { label: "スペア", count: gs.spareCount, rate: gs.spareRate },
+                                      { label: "オープンフレーム", count: gs.openFrameCount, rate: gs.openFrameRate },
+                                      { label: "スプリット", count: gs.splitCount, rate: gs.splitRate },
+                                      { label: "スプリットカバー", count: gs.splitCoverCount, rate: gs.splitCoverRate },
+                                      { label: "ガター", count: gs.gutterCount, rate: gs.gutterRate },
+                                      { label: "ファール", count: gs.foulCount, rate: gs.foulRate },
+                                    ].map((row) => (
+                                      <div
+                                        key={row.label}
+                                        className="flex items-center justify-between px-2 py-1"
+                                        style={{ borderTop: `1px solid rgba(224, 168, 0, 0.2)` }}
+                                      >
+                                        <span style={{ color: COLORS.cream, fontSize: 14 }}>{row.label}</span>
+                                        <span className="flex items-baseline gap-2">
+                                          <span style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 15, color: COLORS.cream }}>
+                                            {row.count}
+                                          </span>
+                                          <span style={{ color: COLORS.strike, fontSize: 12 }}>回</span>
+                                          <span
+                                            style={{
+                                              fontFamily: "'Oswald', sans-serif",
+                                              fontWeight: 700,
+                                              fontSize: 15,
+                                              color: COLORS.strike,
+                                              minWidth: 36,
+                                              textAlign: "right",
+                                            }}
+                                          >
+                                            {row.rate}%
+                                          </span>
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                  )}
                                 </div>
-                                <details className="day-game-detail" style={{ borderTop: `1px solid rgba(224, 168, 0, 0.35)` }}>
-                                  <summary className="px-3 py-2 cursor-pointer text-sm" style={{ color: COLORS.strike }}>
-                                    ストライク・スペアなどの内訳
-                                  </summary>
-                                  {[
-                                    { label: "ストライク", count: gs.strikeCount, rate: gs.strikeRate },
-                                    { label: "スペア", count: gs.spareCount, rate: gs.spareRate },
-                                    { label: "オープンフレーム", count: gs.openFrameCount, rate: gs.openFrameRate },
-                                    { label: "スプリット", count: gs.splitCount, rate: gs.splitRate },
-                                    { label: "スプリットカバー", count: gs.splitCoverCount, rate: gs.splitCoverRate },
-                                    { label: "ガター", count: gs.gutterCount, rate: gs.gutterRate },
-                                    { label: "ファール", count: gs.foulCount, rate: gs.foulRate },
-                                  ].map((row) => (
-                                    <div
-                                      key={row.label}
-                                      className="flex items-center justify-between px-3 py-1.5"
-                                      style={{ borderTop: `1px solid rgba(224, 168, 0, 0.2)` }}
-                                    >
-                                      <span style={{ color: COLORS.cream, fontSize: 14 }}>{row.label}</span>
-                                      <span className="flex items-baseline gap-2">
-                                        <span style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 15, color: COLORS.cream }}>
-                                          {row.count}
-                                        </span>
-                                        <span style={{ color: COLORS.strike, fontSize: 12 }}>回</span>
-                                        <span
-                                          style={{
-                                            fontFamily: "'Oswald', sans-serif",
-                                            fontWeight: 700,
-                                            fontSize: 15,
-                                            color: COLORS.strike,
-                                            minWidth: 36,
-                                            textAlign: "right",
-                                          }}
-                                        >
-                                          {row.rate}%
-                                        </span>
-                                      </span>
-                                    </div>
-                                  ))}
-                                </details>
-                              </div>
-                            );
-                          })}
+                              );
+                            })}
+                          <div style={{ color: COLORS.strike, opacity: 0.7, fontSize: 12, marginTop: 6 }}>
+                            ゲーム名を押すと、ストライク・スペアなどの内訳が見られます
+                          </div>
+                        </div>
                       </div>
                     )}
 
