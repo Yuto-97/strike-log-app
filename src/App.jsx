@@ -1099,10 +1099,7 @@ function reportUsage(u) {
 //
 // AI models are poor at guessing raw pixel coordinates, so the photo is sent
 // with a numbered grid drawn over it (0〜100 down the side and across the
-// top) and the AI answers by reading the grid numbers. The box is then made
-// generously larger — the analysis itself still picks the row by name, so a
-// box that also catches a neighbouring row is fine, but one that cuts off
-// the scores or the total is not.
+// top) and the AI answers by reading the grid numbers.
 function renderLocateGrid(img) {
   const longSide = 1568;
   const scale = longSide / Math.max(img.width, img.height);
@@ -1149,19 +1146,17 @@ async function locatePlayerRow(img, playerName) {
     const { base64, mediaType } = renderLocateGrid(img);
     const prompt = `これはボウリングのスコア画面(電光掲示板)またはスコアシートの写真です。位置を答えやすいように、ピンク色の目盛り線を重ねてあります。左端の数字が縦の位置(上端0〜下端100)、上端の数字が横の位置(左端0〜右端100)で、細い線は5刻みです。
 
-名前「${playerName}」のプレイヤーを探してください。表記ゆれ(ひらがな・カタカナ・ローマ字・大文字小文字・末尾に付く1文字の区分ラベルなど)も考慮して、最も一致する名前を選んでください。
+次の2つを、目盛りの数字(0〜100)で答えてください。
 
-次の順に、目盛りの数字を見て位置を確かめてください。
-1. 名前「${playerName}」の文字が、縦・横どの位置にあるか
-2. そのプレイヤーのスコアの範囲。電光掲示板では、名前・フレーム番号・投球の記号(ストライク・スペアなど)・各フレームの累計スコアの数字が、上下2〜3段に分かれて表示されることが多い。名前の段から、その下の「累計スコアの数字の段」の下端までを、そのプレイヤーの範囲とする。次のプレイヤーの名前が出てくる手前までが目安
-3. 右端の合計(TOTAL)の数字の位置。合計は10フレーム目のさらに右にあり、範囲の右端は必ずこの数字の右側にする
-4. 同じプレイヤーのゲームが複数段・複数か所に分かれていれば、それらもすべて含める
+A. スコア表示の枠全体の位置
+電光掲示板なら画面(モニター)全体、紙なら記入欄の表全体の、上端・下端・左端・右端。隣に別のレーンの画面が写っている場合は、名前「${playerName}」がある方の画面だけ。
 
-答えは目盛りの数字(0〜100)で、少し余裕を持たせて答えてください。範囲が狭すぎて累計スコアや合計が切れるのが一番困ります。
+B. 名前「${playerName}」の文字の位置
+表記ゆれ(ひらがな・カタカナ・ローマ字・大文字小文字・末尾に付く1文字の区分ラベルなど)も考慮して、最も一致する名前の文字の中心の縦・横の位置。
 
 次のJSONだけを出力してください。
-見つかった場合: {"found": true, "name_on_screen": "画面上の表記", "name_y": 名前の縦位置, "top": 範囲の上端, "bottom": 範囲の下端, "left": 範囲の左端, "right": 範囲の右端}
-見つからない、または候補が複数あってどれか判断できない場合: {"found": false}`;
+見つかった場合: {"found": true, "name_on_screen": "画面上の表記", "board_top": 数字, "board_bottom": 数字, "board_left": 数字, "board_right": 数字, "name_x": 数字, "name_y": 数字}
+名前が見つからない、または候補が複数あってどれか判断できない場合: {"found": false}`;
     const response = await fetch("/api/analyze", {
       method: "POST",
       headers: { "Content-Type": "application/json", ...(await usageHeaders()) },
@@ -1172,18 +1167,32 @@ async function locatePlayerRow(img, playerName) {
     const text = (data.content || []).find((b) => b.type === "text")?.text || "";
     const r = extractJson(text);
     if (!r || r.found !== true) return null;
-    let [top, bottom, left, right] = [r.top, r.bottom, r.left, r.right].map((v) => Number(v) / 100);
-    if (![top, bottom, left, right].every(Number.isFinite) || bottom <= top || right <= left) return null;
-    const nameY = Number(r.name_y) / 100;
-    if (Number.isFinite(nameY)) top = Math.min(top, nameY - 0.01);
-    // Generous margins: half the row's height again below (the cumulative
-    // scores are the part most often cut off), a quarter above, and a bit
-    // more on the right so the total is never cut.
-    const rowH = bottom - top;
-    const x1 = Math.max(0, left - 0.03);
-    const x2 = Math.min(1, right + 0.05);
-    const y1 = Math.max(0, top - Math.max(0.015, rowH * 0.25));
-    const y2 = Math.min(1, bottom + Math.max(0.03, rowH * 0.5));
+    const pct = (v) => Number(v) / 100;
+    const nameY = pct(r.name_y);
+    if (!Number.isFinite(nameY) || nameY < 0 || nameY > 1) return null;
+    let bTop = pct(r.board_top);
+    let bBottom = pct(r.board_bottom);
+    let bLeft = pct(r.board_left);
+    let bRight = pct(r.board_right);
+    if (![bTop, bBottom, bLeft, bRight].every(Number.isFinite) || bBottom <= bTop || bRight <= bLeft) {
+      bTop = 0;
+      bBottom = 1;
+      bLeft = 0;
+      bRight = 1;
+    }
+    // A pinpoint box from the AI is too unreliable (it cut off the scores
+    // and the total in testing), so we only rely on two things it finds
+    // well: the whole score display, and roughly where the name is. The
+    // crop is the full width of the display (so the total is never cut) and
+    // a tall band around the name: a little above it, and well below it so
+    // the marks and cumulative scores underneath are always inside. If the
+    // band also catches the next player's row, the analysis still picks the
+    // right row by name.
+    const boardH = bBottom - bTop;
+    const x1 = Math.max(0, bLeft - 0.02);
+    const x2 = Math.min(1, bRight + 0.02);
+    const y1 = Math.max(0, Math.max(bTop - 0.01, nameY - Math.max(0.03, boardH * 0.12)));
+    const y2 = Math.min(1, Math.min(bBottom + 0.01, nameY + Math.max(0.06, boardH * 0.24)));
     const rect = { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
     // Ignore boxes that are clearly not a score row (tiny, or most of the photo).
     if (rect.w < 0.15 || rect.h < 0.02 || rect.w * rect.h > 0.85) return null;
