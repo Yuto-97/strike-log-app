@@ -91,7 +91,7 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model: MODEL,
-        max_tokens: feature === "locate" ? 400 : 8000,
+        max_tokens: feature === "locate" ? 600 : 8000,
         messages: [
           {
             role: "user",

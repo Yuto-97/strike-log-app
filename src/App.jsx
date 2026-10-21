@@ -1096,21 +1096,71 @@ function reportUsage(u) {
 // Returns a crop rect in 0..1 photo coordinates, or null if not found / not
 // available on this plan / anything went wrong (the app then falls back to
 // boxing by finger). Never throws. Doesn't count toward the monthly limit.
+//
+// AI models are poor at guessing raw pixel coordinates, so the photo is sent
+// with a numbered grid drawn over it (0〜100 down the side and across the
+// top) and the AI answers by reading the grid numbers. The box is then made
+// generously larger — the analysis itself still picks the row by name, so a
+// box that also catches a neighbouring row is fine, but one that cuts off
+// the scores or the total is not.
+function renderLocateGrid(img) {
+  const longSide = 1568;
+  const scale = longSide / Math.max(img.width, img.height);
+  const w = Math.max(1, Math.round(img.width * scale));
+  const h = Math.max(1, Math.round(img.height * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(img, 0, 0, w, h);
+  const fs = Math.round(Math.max(w, h) / 70);
+  ctx.font = `bold ${fs}px sans-serif`;
+  ctx.textBaseline = "middle";
+  for (let i = 0; i <= 20; i++) {
+    const major = i % 2 === 0; // labelled every 10, thin line every 5
+    const y = Math.round((i / 20) * (h - 1));
+    const x = Math.round((i / 20) * (w - 1));
+    ctx.strokeStyle = major ? "rgba(255, 0, 255, 0.75)" : "rgba(255, 0, 255, 0.4)";
+    ctx.lineWidth = major ? 2 : 1;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(w, y);
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, h);
+    ctx.stroke();
+    if (!major || i === 0 || i === 20) continue;
+    const label = String(i * 5);
+    const tw = ctx.measureText(label).width;
+    ctx.fillStyle = "rgba(255, 0, 255, 0.9)";
+    ctx.fillRect(0, y - fs * 0.6, tw + 8, fs * 1.2); // left edge: Y
+    ctx.fillRect(x - tw / 2 - 4, 0, tw + 8, fs * 1.2); // top edge: X
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText(label, 4, y);
+    ctx.fillText(label, x - tw / 2, fs * 0.6);
+  }
+  const url = canvas.toDataURL("image/jpeg", 0.92);
+  return { base64: url.split(",")[1], mediaType: "image/jpeg" };
+}
+
 async function locatePlayerRow(img, playerName) {
   if (!img || !playerName) return null;
   try {
-    const { base64, mediaType } = renderImageForAI(img, null);
-    const scale = 1568 / Math.max(img.width, img.height);
-    const W = Math.max(1, Math.round(img.width * scale));
-    const H = Math.max(1, Math.round(img.height * scale));
-    const prompt = `これはボウリングのスコア画面(電光掲示板)またはスコアシートの写真です。画像の大きさは幅${W}px・高さ${H}pxで、左上が(0,0)、右下が(${W},${H})です。
+    const { base64, mediaType } = renderLocateGrid(img);
+    const prompt = `これはボウリングのスコア画面(電光掲示板)またはスコアシートの写真です。位置を答えやすいように、ピンク色の目盛り線を重ねてあります。左端の数字が縦の位置(上端0〜下端100)、上端の数字が横の位置(左端0〜右端100)で、細い線は5刻みです。
 
-名前「${playerName}」のプレイヤーの行を探してください。表記ゆれ(ひらがな・カタカナ・ローマ字・大文字小文字・末尾に付く1文字の区分ラベルなど)も考慮して、最も一致する行を選んでください。
+名前「${playerName}」のプレイヤーを探してください。表記ゆれ(ひらがな・カタカナ・ローマ字・大文字小文字・末尾に付く1文字の区分ラベルなど)も考慮して、最も一致する名前を選んでください。
 
-見つかった場合、そのプレイヤーの「名前の欄」から「1〜10フレーム」と「合計(TOTAL)の欄」までをすべて含む長方形を、ピクセル座標で答えてください。投球記号の段と累計スコアの段が上下に分かれている場合は、両方の段を含めてください。同じプレイヤーのゲームが複数段・複数か所に分かれて表示されている場合は、それらすべてを含めてください。他のプレイヤーの行はできるだけ含めないでください。
+次の順に、目盛りの数字を見て位置を確かめてください。
+1. 名前「${playerName}」の文字が、縦・横どの位置にあるか
+2. そのプレイヤーのスコアの範囲。電光掲示板では、名前・フレーム番号・投球の記号(ストライク・スペアなど)・各フレームの累計スコアの数字が、上下2〜3段に分かれて表示されることが多い。名前の段から、その下の「累計スコアの数字の段」の下端までを、そのプレイヤーの範囲とする。次のプレイヤーの名前が出てくる手前までが目安
+3. 右端の合計(TOTAL)の数字の位置。合計は10フレーム目のさらに右にあり、範囲の右端は必ずこの数字の右側にする
+4. 同じプレイヤーのゲームが複数段・複数か所に分かれていれば、それらもすべて含める
 
-次のJSONだけを出力してください。前置きや説明は不要です。
-見つかった場合: {"found": true, "name_on_screen": "画面上の表記", "x1": 左端, "y1": 上端, "x2": 右端, "y2": 下端}
+答えは目盛りの数字(0〜100)で、少し余裕を持たせて答えてください。範囲が狭すぎて累計スコアや合計が切れるのが一番困ります。
+
+次のJSONだけを出力してください。
+見つかった場合: {"found": true, "name_on_screen": "画面上の表記", "name_y": 名前の縦位置, "top": 範囲の上端, "bottom": 範囲の下端, "left": 範囲の左端, "right": 範囲の右端}
 見つからない、または候補が複数あってどれか判断できない場合: {"found": false}`;
     const response = await fetch("/api/analyze", {
       method: "POST",
@@ -1122,16 +1172,19 @@ async function locatePlayerRow(img, playerName) {
     const text = (data.content || []).find((b) => b.type === "text")?.text || "";
     const r = extractJson(text);
     if (!r || r.found !== true) return null;
-    const [x1, y1, x2, y2] = [r.x1, r.y1, r.x2, r.y2].map(Number);
-    if (![x1, y1, x2, y2].every(Number.isFinite) || x2 <= x1 || y2 <= y1) return null;
-    // A little extra room top and bottom: the box is never pixel-perfect,
-    // and the analysis itself still matches the row by name.
-    const padY = 0.02 * H;
-    const nx1 = Math.max(0, Math.min(W, x1)) / W;
-    const nx2 = Math.max(0, Math.min(W, x2)) / W;
-    const ny1 = Math.max(0, Math.min(H, y1 - padY)) / H;
-    const ny2 = Math.max(0, Math.min(H, y2 + padY)) / H;
-    const rect = { x: nx1, y: ny1, w: nx2 - nx1, h: ny2 - ny1 };
+    let [top, bottom, left, right] = [r.top, r.bottom, r.left, r.right].map((v) => Number(v) / 100);
+    if (![top, bottom, left, right].every(Number.isFinite) || bottom <= top || right <= left) return null;
+    const nameY = Number(r.name_y) / 100;
+    if (Number.isFinite(nameY)) top = Math.min(top, nameY - 0.01);
+    // Generous margins: half the row's height again below (the cumulative
+    // scores are the part most often cut off), a quarter above, and a bit
+    // more on the right so the total is never cut.
+    const rowH = bottom - top;
+    const x1 = Math.max(0, left - 0.03);
+    const x2 = Math.min(1, right + 0.05);
+    const y1 = Math.max(0, top - Math.max(0.015, rowH * 0.25));
+    const y2 = Math.min(1, bottom + Math.max(0.03, rowH * 0.5));
+    const rect = { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
     // Ignore boxes that are clearly not a score row (tiny, or most of the photo).
     if (rect.w < 0.15 || rect.h < 0.02 || rect.w * rect.h > 0.85) return null;
     return rect;
