@@ -7815,12 +7815,12 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                 <div className="flex items-center gap-2">
                   <Crop size={18} style={{ color: COLORS.gold, flexShrink: 0 }} />
                   <div style={{ color: COLORS.strike, fontWeight: 700, fontSize: 15 }}>
-                    {autoCropped && cropRect ? "自分の行を自動で囲みました" : "自分の行を指で囲む"}
+                    {autoCropped && cropRect ? "スコアの部分を自動で切り取りました" : "自分の行を指で囲む"}
                   </div>
                 </div>
                 <div style={{ color: COLORS.strike, opacity: 0.75, fontSize: 12 }}>
                   {autoCropped && cropRect
-                    ? "違っていたら「囲み直す」で直せます"
+                    ? `この中から「${playerName.trim()}」の行を読み取ります`
                     : locateMissed
                     ? "自動で見つけられなかったので、指で囲んでください"
                     : "名前〜合計まで囲むと精度アップ(省略OK)"}
