@@ -6222,17 +6222,17 @@ function GuideShot({ src, alt, caption }) {
 }
 
 const GUIDE_VIDEOS = [
-  { no: 1, name: "tour", title: "アプリ全体の見方", sec: 35 },
-  { no: 2, name: "setup", title: "はじめの設定", sec: 80 },
-  { no: 3, name: "record_basic", title: "スコアを記録する(ベーシック)", sec: 40 },
-  { no: 4, name: "record_premium", title: "スコアを記録する(プレミアム以上)", sec: 35 },
-  { no: 5, name: "fix", title: "読み取りがずれていた時の直し方", sec: 55 },
-  { no: 6, name: "history", title: "履歴の見方", sec: 30 },
-  { no: 7, name: "stats", title: "記録(成績)の見方", sec: 45 },
-  { no: 8, name: "ranking", title: "ランキングの見方", sec: 20 },
-  { no: 9, name: "settings", title: "設定の見方", sec: 45 },
-  { no: 10, name: "chat", title: "AIチャット相談", sec: 20 },
-  { no: 11, name: "news", title: "お知らせの見方", sec: 20 },
+  { no: 1, name: "tour", title: "アプリ全体の見方", sec: 80 },
+  { no: 2, name: "setup", title: "はじめの設定", sec: 220 },
+  { no: 3, name: "record_basic", title: "スコアを記録する(ベーシック)", sec: 100 },
+  { no: 4, name: "record_premium", title: "スコアを記録する(プレミアム以上)", sec: 80 },
+  { no: 5, name: "fix", title: "読み取りがずれていた時の直し方", sec: 130 },
+  { no: 6, name: "history", title: "履歴の見方", sec: 70 },
+  { no: 7, name: "stats", title: "記録(成績)の見方", sec: 100 },
+  { no: 8, name: "ranking", title: "ランキングの見方", sec: 50 },
+  { no: 9, name: "settings", title: "設定の見方", sec: 100 },
+  { no: 10, name: "chat", title: "AIチャット相談", sec: 60 },
+  { no: 11, name: "news", title: "お知らせの見方", sec: 50 },
 ];
 const guideVideo = (name) => GUIDE_VIDEOS.find((v) => v.name === name);
 
@@ -6246,7 +6246,7 @@ function GuideVideo({ name }) {
     <div className="g-video" id={`v-${name}`}>
       <video src={`/guide-img/v_${name}.mp4`} poster={`/guide-img/v_${name}.jpg`} controls playsInline preload="none" />
       <div className="g-video-cap">
-        ▶ 動画で見る:{title}(約{seconds}秒・音なし)
+        ▶ 動画で見る:{title}(約{seconds >= 60 ? `${Math.floor(seconds / 60)}分${seconds % 60 ? `${seconds % 60}秒` : ""}` : `${seconds}秒`}・音なし)
       </div>
     </div>
   );
@@ -6374,14 +6374,14 @@ function GuidePage() {
           <h2 className="g-h2">
             <span className="g-badge">▶</span>動画で見る
           </h2>
-          <p style={{ margin: 0 }}>文字を読むより、動画の方が分かりやすい方はこちら。字幕だけなので、音が出せない場所でも見られます。見たい動画を押すと、その場所へ移動します。</p>
+          <p style={{ margin: 0 }}>文字を読むより、動画の方が分かりやすい方はこちら。字幕だけなので、音が出せない場所でも見られます。見たい動画を押すと、その場所へ移動します。ゆっくり進むので、そのまま真似しながら見られます。途中で止めたい時は、動画を押すと一時停止できます。</p>
           <div className="g-vlist">
             {GUIDE_VIDEOS.map((v) => (
               <a key={v.name} href={`#v-${v.name}`} className="g-vlink">
                 <span className="g-vnum">{v.no}</span>
                 <span>
                   {v.title}
-                  <small>約{v.sec}秒</small>
+                  <small>約{v.sec >= 60 ? `${Math.floor(v.sec / 60)}分${v.sec % 60 ? `${v.sec % 60}秒` : ""}` : `${v.sec}秒`}</small>
                 </span>
               </a>
             ))}
