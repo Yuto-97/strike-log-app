@@ -1567,6 +1567,46 @@ function CompactScoreSheet({ frames }) {
   );
 }
 
+// One line of totals for a set of games (a day): ゲーム数・トータル・アベレージ・ハイ.
+function daySummary(games) {
+  const totals = games.map((g) => Number(g.total)).filter((n) => Number.isFinite(n));
+  const sum = totals.reduce((a, b) => a + b, 0);
+  return {
+    count: games.length,
+    sum,
+    avg: totals.length ? Math.round((sum / totals.length) * 10) / 10 : null,
+    high: totals.length ? Math.max(...totals) : null,
+  };
+}
+
+function DayTotals({ games, compact = false }) {
+  const d = daySummary(games);
+  const item = (label, value, strong) => (
+    <div className="flex flex-col items-center" style={{ minWidth: 0, flex: 1 }}>
+      <span style={{ color: COLORS.strike, opacity: 0.75, fontSize: 11, whiteSpace: "nowrap" }}>{label}</span>
+      <span style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: compact ? 17 : 20, color: strong ? COLORS.gold : COLORS.cream, lineHeight: 1.2 }}>
+        {value ?? "ー"}
+      </span>
+    </div>
+  );
+  return (
+    <div className="flex items-stretch" style={{ gap: 4 }}>
+      {item("ゲーム数", d.count)}
+      {item("トータル", d.sum, true)}
+      {item("アベレージ", d.avg)}
+      {item("ハイ", d.high)}
+    </div>
+  );
+}
+
+// "2026-10-22" → "10/22(木)"
+function formatDayLabel(dateStr) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr || "");
+  if (!m) return dateStr || "日付なし";
+  const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+  return `${+m[2]}/${+m[3]}(${"日月火水木金土"[d.getUTCDay()]})`;
+}
+
 // ---------- roll picker (on-screen "keyboard" for correcting a roll) ----------
 function RollPicker({ frameIdx, rollIdx, splitEligible, onSelect, onSplitToggle, splitActive, onClear, onClose }) {
   const numberBtn = (label, value) => (
@@ -6038,7 +6078,8 @@ export default function StrikeLog() {
   const [newShoeName, setNewShoeName] = useState("");
   const [newBallOpen, setNewBallOpen] = useState(false); // 設定の「新しいボールを登録」を開いているか
   const [newShoeOpen, setNewShoeOpen] = useState(false); // 設定の「新しいマイシューズを登録」を開いているか
-  const [openDayGames, setOpenDayGames] = useState(() => new Set()); // 記録タブ「日」: games whose breakdown is open
+  const [openDayGames, setOpenDayGames] = useState(() => new Set());
+  const [openHistoryDays, setOpenHistoryDays] = useState(null); // 履歴: open days (null = just the newest) // 記録タブ「日」: games whose breakdown is open
   const [periodMode, setPeriodMode] = useState("week"); // "day" | "week" | "month" | "year" | "custom"
   const [yearAnchor, setYearAnchor] = useState(() => new Date().getFullYear()); // 1/1〜12/31
   const [dayAnchor, setDayAnchor] = useState(() => toLocalISODate(new Date()));
@@ -8461,8 +8502,86 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                 まだ記録がありません。「スコア記録」タブから撮影してみましょう。
               </div>
             )}
-            {[...games].reverse().map((g) =>
-              editingGameId === g.id ? (
+            {(() => {
+              // 履歴: grouped by day (newest first), each day folds open to show
+              // its games stacked like the 記録 tab's score table. The newest
+              // day starts open; month headings give a running overview.
+              const byDate = new Map();
+              for (const g of games) {
+                const k = g.date || "";
+                if (!byDate.has(k)) byDate.set(k, []);
+                byDate.get(k).push(g);
+              }
+              const days = [...byDate.entries()]
+                .sort((a, b) => (a[0] < b[0] ? 1 : a[0] > b[0] ? -1 : 0))
+                .map(([date, list]) => ({
+                  date,
+                  games: [...list].sort((a, b) => (a.gameNumber || 0) - (b.gameNumber || 0) || (a.createdAt || 0) - (b.createdAt || 0)),
+                }));
+              const monthOf = (d) => (d || "").slice(0, 7);
+              const monthGames = new Map();
+              for (const d of days) {
+                const m = monthOf(d.date);
+                monthGames.set(m, [...(monthGames.get(m) || []), ...d.games]);
+              }
+              const isOpen = (date, i) => (openHistoryDays ? openHistoryDays.has(date) : i === 0) || days[i].games.some((g) => g.id === editingGameId);
+              const toggle = (date, i) =>
+                setOpenHistoryDays((prev) => {
+                  const next = new Set(prev || (days[0] ? [days[0].date] : []));
+                  if (isOpen(date, i)) next.delete(date);
+                  else next.add(date);
+                  return next;
+                });
+              const ballLine = (g) => {
+                const name = (b) => (b.label ? b.label : b.type === "own" ? "マイボール" : "ハウスボール");
+                const parts = [];
+                if (g.ball && (g.ball.weight || g.ball.type)) parts.push(name(g.ball));
+                if (g.ball2 && (g.ball2.weight || g.ball2.type)) parts.push(`${name(g.ball2)}(スペア)`);
+                (g.extraBalls || []).forEach((eb) => parts.push(name(eb)));
+                if (g.shoe && g.shoe.type) parts.push(g.shoe.label ? g.shoe.label : g.shoe.type === "own" ? "マイシューズ" : "レンタルシューズ");
+                return parts.join(" / ");
+              };
+              return days.map((day, di) => {
+                const m = monthOf(day.date);
+                const showMonth = di === 0 || monthOf(days[di - 1].date) !== m;
+                const open = isOpen(day.date, di);
+                const centers = [...new Set(day.games.map((g) => g.center).filter(Boolean))].join("・");
+                const mSum = daySummary(monthGames.get(m) || []);
+                return (
+                  <React.Fragment key={day.date || "nodate"}>
+                    {showMonth && (
+                      <div className="flex items-baseline justify-between" style={{ padding: di ? "10px 2px 0" : "0 2px", color: COLORS.strike }}>
+                        <span style={{ fontWeight: 700, fontSize: 15, color: COLORS.cream }}>
+                          {/^\d{4}-\d{2}$/.test(m) ? `${m.slice(0, 4)}年${+m.slice(5)}月` : "日付なし"}
+                        </span>
+                        <span style={{ fontSize: 12 }}>
+                          {mSum.count}ゲーム ・ アベレージ {mSum.avg ?? "ー"}
+                        </span>
+                      </div>
+                    )}
+                    <div className="rounded-xl border glass-card overflow-hidden" style={{ borderColor: open ? COLORS.gold : COLORS.oak }}>
+                      <button
+                        type="button"
+                        onClick={() => toggle(day.date, di)}
+                        aria-expanded={open}
+                        className="w-full text-left"
+                        style={{ padding: "10px 12px 8px" }}
+                      >
+                        <div className="flex items-center justify-between gap-2" style={{ marginBottom: 6 }}>
+                          <div className="flex items-baseline gap-2" style={{ minWidth: 0 }}>
+                            <span style={{ color: COLORS.cream, fontWeight: 700, fontSize: 17, whiteSpace: "nowrap" }}>{formatDayLabel(day.date)}</span>
+                            {centers && (
+                              <span style={{ color: COLORS.strike, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{centers}</span>
+                            )}
+                          </div>
+                          {open ? <ChevronDown size={18} style={{ color: COLORS.gold, flexShrink: 0 }} /> : <ChevronRight size={18} style={{ color: COLORS.gold, flexShrink: 0 }} />}
+                        </div>
+                        <DayTotals games={day.games} compact />
+                      </button>
+                      {open && (
+                        <div style={{ padding: "4px 8px 10px", borderTop: "1px solid rgba(224, 168, 0, 0.3)" }}>
+                          {day.games.map((g, gi) =>
+                            editingGameId === g.id ? (
                 <div key={g.id} className="rounded-xl p-3 border glass-card space-y-3" style={{ borderColor: COLORS.gold }}>
                   <div className="flex items-center justify-between gap-2">
                     <div style={{ color: COLORS.strike, fontWeight: 700, fontSize: 15, whiteSpace: "nowrap" }}>記録を編集中</div>
@@ -8720,28 +8839,21 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                     )}
                   </div>
                 </div>
-              ) : (
-              <div key={g.id} className="rounded-xl p-3 border glass-card" style={{ borderColor: COLORS.oak }}>
-                <div className="flex items-center justify-between mb-2">
-                  <div style={{ color: COLORS.strike, fontSize: 14 }}>
-                    {g.date}
-                    <span className="ml-2" style={{ color: COLORS.cream, fontWeight: 700 }}>
-                      {g.gameNumber ? `${g.gameNumber}ゲーム目` : ""}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 20, color: COLORS.strike }}>
-                      {g.total}
-                    </div>
-                    <button onClick={() => startEditGame(g)} aria-label="編集">
-                      <Pencil size={16} style={{ color: COLORS.strike }} />
-                    </button>
-                    <button onClick={() => setConfirmDeleteId(g.id)} aria-label="削除">
-                      <X size={16} style={{ color: COLORS.strike }} />
-                    </button>
-                  </div>
-                </div>
-                {confirmDeleteId === g.id && (
+) : (
+                              <div key={g.id} style={{ marginTop: gi ? 10 : 4 }}>
+                                <div className="flex items-center justify-between" style={{ padding: "2px 2px 4px" }}>
+                                  <span style={{ color: COLORS.strike, fontWeight: 700, fontSize: 13 }}>{g.gameNumber ? `${g.gameNumber}ゲーム目` : "ゲーム"}</span>
+                                  <div className="flex items-center gap-3">
+                                    <span style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 17, color: COLORS.gold, lineHeight: 1 }}>{g.total}</span>
+                                    <button onClick={() => startEditGame(g)} aria-label="編集" style={{ padding: 2 }}>
+                                      <Pencil size={15} style={{ color: COLORS.strike }} />
+                                    </button>
+                                    <button onClick={() => setConfirmDeleteId(g.id)} aria-label="削除" style={{ padding: 2 }}>
+                                      <X size={16} style={{ color: COLORS.strike }} />
+                                    </button>
+                                  </div>
+                                </div>
+                                {confirmDeleteId === g.id && (
                   <div
                     className="mb-2 rounded-lg p-2 flex items-center justify-between"
                     style={{ background: "#FBEAE5" }}
@@ -8769,48 +8881,23 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                     </div>
                   </div>
                 )}
-                {g.ball && (g.ball.weight || g.ball.type) && (
-                  <div className="mb-2 flex items-center gap-1" style={{ color: COLORS.strike, fontSize: 13 }}>
-                    <CircleDot size={11} />
-                    {g.ball.label ? g.ball.label : g.ball.type === "own" ? "マイボール" : "ハウスボール"}
-                    {g.ball.weight && !String(g.ball.label || "").includes(`${g.ball.weight}lb`) ? ` ${g.ball.weight}lb` : ""}
-                    {g.ball.thumbless ? " ・ サムレス" : ""}
-                  </div>
-                )}
-                {g.ball2 && (g.ball2.weight || g.ball2.type) && (
-                  <div className="mb-2 flex items-center gap-1" style={{ color: COLORS.strike, fontSize: 13 }}>
-                    <CircleDot size={11} />
-                    {g.ball2.label ? g.ball2.label : g.ball2.type === "own" ? "マイボール" : "ハウスボール"}
-                    {g.ball2.weight && !String(g.ball2.label || "").includes(`${g.ball2.weight}lb`) ? ` ${g.ball2.weight}lb` : ""}
-                    {g.ball2.thumbless ? " ・ サムレス" : ""}
-                    <span style={{ color: COLORS.strike }}>(スペアボール)</span>
-                  </div>
-                )}
-                {(g.extraBalls || []).map((eb, ebIdx) => (
-                  <div key={ebIdx} className="mb-2 flex items-center gap-1" style={{ color: COLORS.strike, fontSize: 13 }}>
-                    <CircleDot size={11} />
-                    {eb.label ? eb.label : eb.type === "own" ? "マイボール" : "ハウスボール"}
-                    {eb.weight ? ` ${eb.weight}lb` : ""}
-                    {eb.thumbless ? " ・ サムレス" : ""}
-                    <span style={{ color: COLORS.strike }}>({ebIdx + 3}個目のボール)</span>
-                  </div>
-                ))}
-                {g.center && (
-                  <div className="flex items-center gap-1" style={{ color: COLORS.strike, fontSize: 13 }}>
-                    <MapPin size={11} />
-                    {g.center}
-                  </div>
-                )}
-                {g.shoe && g.shoe.type && (
-                  <div className="mb-2 flex items-center gap-1" style={{ color: COLORS.strike, fontSize: 13 }}>
-                    <CircleDot size={11} />
-                    {g.shoe.label ? g.shoe.label : g.shoe.type === "own" ? "マイシューズ" : "レンタル"}
-                  </div>
-                )}
-                <ScoreSheet frames={g.frames} />
-              </div>
-              )
-            )}
+                                <CompactScoreSheet frames={g.frames} />
+                                {ballLine(g) && (
+                                  <div className="flex items-start gap-1" style={{ color: COLORS.strike, fontSize: 12, marginTop: 4, lineHeight: 1.5 }}>
+                                    <CircleDot size={11} style={{ flexShrink: 0, marginTop: 3 }} />
+                                    <span>{ballLine(g)}</span>
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </React.Fragment>
+                );
+              });
+            })()}
             {storageError && <div className="text-xs text-center" style={{ color: COLORS.danger }}>{storageError}</div>}
           </div>
         )}
@@ -9180,6 +9267,9 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                             score printout, so as many as possible fit on one screen.
                             Tap a game's bar to open its strike/spare breakdown. */}
                         <div className="rounded-xl border glass-card overflow-hidden" style={{ borderColor: COLORS.oak, padding: "6px 8px 8px" }}>
+                          <div style={{ padding: "4px 0 8px", marginBottom: 6, borderBottom: "1px solid rgba(224, 168, 0, 0.3)" }}>
+                            <DayTotals games={periodGames} />
+                          </div>
                           {[...periodGames]
                             .sort((a, b) => (a.gameNumber || 1) - (b.gameNumber || 1))
                             .map((g, gi) => {
