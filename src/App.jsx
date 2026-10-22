@@ -5699,6 +5699,408 @@ function AdminPanel() {
   );
 }
 
+// ---------- 初回設定の案内 (setup wizard) ----------
+// Shown once to new users: one setting per page, 「次へ」 saves it and moves
+// on, 「あとで設定する」 skips it (everything can be changed later in 設定).
+// The current page lives in the parent (step/setStep) so the wizard picks
+// up where it left off even if the screen reloads mid-way (e.g. right after
+// creating an account, while the records sync).
+const SETUP_STEPS = ["welcome", "textSize", "names", "goals", "center", "balls", "shoes", "account", "done"];
+const SETUP_DONE_KEY = "setup-done-v1";
+
+function SetupField({ label, hint, children }) {
+  return (
+    <div>
+      <div style={{ color: COLORS.cream, fontSize: 14, fontWeight: 700, marginBottom: 6 }}>{label}</div>
+      {children}
+      {hint && <div style={{ color: COLORS.strike, opacity: 0.75, fontSize: 12.5, lineHeight: 1.6, marginTop: 6 }}>{hint}</div>}
+    </div>
+  );
+}
+
+const setupInputStyle = { borderColor: COLORS.oak, color: COLORS.ink, fontSize: 16, width: "100%", padding: "10px 12px", borderRadius: 8, border: `1px solid ${COLORS.oak}`, background: "#fff" };
+
+function SetupWizard({
+  step,
+  setStep,
+  textSize,
+  onTextSize,
+  initial,
+  knownCenters,
+  myBalls,
+  myShoes,
+  authUser,
+  authBusy,
+  authErrorMsg,
+  onSaveProfile,
+  onSavePlayerName,
+  onAddBall,
+  onAddShoe,
+  onSignup,
+  onFinish,
+}) {
+  const [nickname, setNickname] = useState(initial.nickname || "");
+  const [playerName, setPlayerName] = useState(initial.playerName || "");
+  const [hand, setHand] = useState(initial.dominantHand || "right");
+  const [goalAverage, setGoalAverage] = useState(initial.goalAverage || "");
+  const [goalScore, setGoalScore] = useState(initial.goalScore || "");
+  const [center, setCenter] = useState(initial.homeCenter || "");
+  const [ballType, setBallType] = useState("own");
+  const [ballRole, setBallRole] = useState("strike");
+  const [ballWeight, setBallWeight] = useState("");
+  const [ballName, setBallName] = useState("");
+  const [shoeChoice, setShoeChoice] = useState(myShoes.some((s) => s.type === "own") ? "own" : "rental");
+  const [shoeName, setShoeName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+
+  const key = SETUP_STEPS[step] || "done";
+  const total = SETUP_STEPS.length - 2; // pages between the welcome and the last page
+  const scrollRef = useRef(null);
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+  }, [step]);
+
+  const go = (n) => setStep(Math.max(0, Math.min(SETUP_STEPS.length - 1, n)));
+  const next = () => go(step + 1);
+  const back = () => go(step - 1);
+
+  const addBall = () => {
+    if (!ballWeight) return;
+    const typeLabel = ballType === "house" ? "ハウスボール" : "マイボール";
+    onAddBall({
+      id: uid(),
+      type: ballType,
+      role: ballRole,
+      label: ballName.trim() || `${typeLabel} ${ballWeight}lb`,
+      weight: Number(ballWeight),
+      thumbless: false,
+    });
+    setBallWeight("");
+    setBallName("");
+    setBallRole(ballRole === "strike" ? "spare" : "strike");
+  };
+
+  // 「次へ」: save this page, then move on. Returns false to stay (input missing).
+  const saveAndNext = async () => {
+    if (key === "names") {
+      onSaveProfile({ nickname: nickname.trim() });
+      onSavePlayerName(playerName.trim());
+    } else if (key === "goals") {
+      const ga = goalAverage === "" ? "" : String(Math.max(0, Math.min(300, Number(goalAverage) || 0)));
+      const gs = goalScore === "" ? "" : String(Math.max(0, Math.min(300, Number(goalScore) || 0)));
+      onSaveProfile({ dominantHand: hand, goalAverage: ga, goalScore: gs });
+    } else if (key === "center") {
+      onSaveProfile({ homeCenter: center.trim() });
+    } else if (key === "balls") {
+      if (ballWeight) addBall();
+    } else if (key === "shoes") {
+      if (shoeChoice === "own" && shoeName.trim() && !myShoes.some((s) => s.label === shoeName.trim())) {
+        onAddShoe({ id: uid(), type: "own", label: shoeName.trim() });
+      }
+    } else if (key === "account") {
+      if (!authUser) {
+        if (!email.trim() || password.length < 6) return;
+        await onSignup(email.trim(), password);
+        return; // moves on once the account exists (see effect below)
+      }
+    }
+    next();
+  };
+
+  // After signing up the account appears — continue to the last page.
+  useEffect(() => {
+    if (key === "account" && authUser && email) next();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authUser]);
+
+  const nextEnabled =
+    key === "account" ? !!authUser || (email.trim() && password.length >= 6 && !authBusy) : key === "names" ? true : true;
+
+  const titleOf = {
+    textSize: "文字の大きさ",
+    names: "お名前",
+    goals: "利き手と目標",
+    center: "よく行くボウリング場",
+    balls: "使っているボール",
+    shoes: "シューズ",
+    account: "アカウントの作成",
+  };
+
+  const choice = (on) => ({
+    flex: 1,
+    padding: "12px 6px",
+    borderRadius: 10,
+    fontWeight: 700,
+    fontSize: 15,
+    ...toggleStyle(on),
+  });
+
+  let body = null;
+  if (key === "welcome") {
+    body = (
+      <div className="flex flex-col items-center text-center" style={{ paddingTop: 24 }}>
+        <div
+          className="flex items-center justify-center rounded-full"
+          style={{ width: 72, height: 72, border: `2px solid ${COLORS.gold}`, background: "rgba(224,168,0,0.12)" }}
+        >
+          <Settings size={36} style={{ color: COLORS.gold }} />
+        </div>
+        <div style={{ color: COLORS.cream, fontSize: 22, fontWeight: 700, marginTop: 18 }}>ようこそ STRIKE LOG へ</div>
+        <div style={{ color: COLORS.strike, fontSize: 15, lineHeight: 1.8, marginTop: 12 }}>
+          <Phrases text="はじめに、|いくつか設定をします。|1〜2分で終わります。" />
+        </div>
+        <div style={{ color: COLORS.strike, opacity: 0.75, fontSize: 13, lineHeight: 1.7, marginTop: 10 }}>
+          <Phrases text="どの項目も「あとで設定する」で|飛ばせます。あとから「設定」で|いつでも変えられます。" />
+        </div>
+      </div>
+    );
+  } else if (key === "textSize") {
+    body = (
+      <div className="space-y-4">
+        <div style={{ color: COLORS.strike, fontSize: 14, lineHeight: 1.7 }}>見やすい大きさを選んでください。押すとすぐに変わります。</div>
+        <TextSizeChooser value={textSize} onChange={onTextSize} />
+        <div className="rounded-lg" style={{ padding: "10px 12px", background: "rgba(10,16,34,0.55)" }}>
+          <div style={{ color: COLORS.strike, fontSize: 13 }}>アベレージ</div>
+          <div style={{ color: COLORS.cream, fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 28, lineHeight: 1.2 }}>168.5</div>
+          <div style={{ color: COLORS.strike, fontSize: 13 }}>ストライク率 32.4% ・ スペア率 41.0%</div>
+        </div>
+      </div>
+    );
+  } else if (key === "names") {
+    body = (
+      <div className="space-y-5">
+        <SetupField label="ニックネーム" hint="アプリの中で表示される名前です。">
+          <input value={nickname} onChange={(e) => setNickname(e.target.value)} placeholder="例: ヤマダ" maxLength={20} style={setupInputStyle} />
+        </SetupField>
+        <SetupField
+          label="スコア画面に表示される自分の名前"
+          hint="ボウリング場のスコア画面に出る名前を、そのとおりに入れてください(例: ヤマダ、YAMADA)。写真から自分の行を見つけるのに使います。"
+        >
+          <input value={playerName} onChange={(e) => setPlayerName(e.target.value)} placeholder="例: ヤマダ" maxLength={20} style={setupInputStyle} />
+        </SetupField>
+      </div>
+    );
+  } else if (key === "goals") {
+    body = (
+      <div className="space-y-5">
+        <SetupField label="利き手">
+          <div className="flex gap-2">
+            <button type="button" onClick={() => setHand("right")} style={choice(hand === "right")}>
+              右
+            </button>
+            <button type="button" onClick={() => setHand("left")} style={choice(hand === "left")}>
+              左
+            </button>
+          </div>
+        </SetupField>
+        <SetupField label="目標アベレージ" hint="記録タブで、目標まであといくつかを表示します。">
+          <input type="number" inputMode="numeric" min={0} max={300} value={goalAverage} onChange={(e) => setGoalAverage(e.target.value)} placeholder="例: 180" style={setupInputStyle} />
+        </SetupField>
+        <SetupField label="目標スコア(1ゲームの最高点)">
+          <input type="number" inputMode="numeric" min={0} max={300} value={goalScore} onChange={(e) => setGoalScore(e.target.value)} placeholder="例: 250" style={setupInputStyle} />
+        </SetupField>
+      </div>
+    );
+  } else if (key === "center") {
+    body = (
+      <SetupField label="ホームセンター" hint="スコアを記録する時に、最初から選ばれた状態になります。">
+        <CenterPicker value={center} onChange={setCenter} known={knownCenters} />
+      </SetupField>
+    );
+  } else if (key === "balls") {
+    body = (
+      <div className="space-y-4">
+        {myBalls.length > 0 && (
+          <div className="space-y-1.5">
+            <div style={{ color: COLORS.strike, fontSize: 13 }}>登録済み</div>
+            {myBalls.map((b) => (
+              <div key={b.id} className="flex items-center gap-2 rounded-lg" style={{ padding: "8px 10px", border: "1px solid rgba(224,168,0,0.35)" }}>
+                <Check size={16} style={{ color: COLORS.gold, flexShrink: 0 }} />
+                <span style={{ color: COLORS.cream, fontWeight: 700, fontSize: 14 }}>{b.label}</span>
+                <span style={{ color: COLORS.strike, fontSize: 12 }}>{b.role === "spare" ? "スペアボール" : "1stボール"}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        <SetupField label="種類">
+          <div className="flex gap-2">
+            <button type="button" onClick={() => setBallType("own")} style={choice(ballType === "own")}>
+              マイボール
+            </button>
+            <button type="button" onClick={() => setBallType("house")} style={choice(ballType === "house")}>
+              ハウスボール
+            </button>
+          </div>
+        </SetupField>
+        <SetupField label="用途">
+          <div className="flex gap-2">
+            <button type="button" onClick={() => setBallRole("strike")} style={choice(ballRole === "strike")}>
+              1stボール
+            </button>
+            <button type="button" onClick={() => setBallRole("spare")} style={choice(ballRole === "spare")}>
+              スペアボール
+            </button>
+          </div>
+        </SetupField>
+        <SetupField label="重さ">
+          <select value={ballWeight} onChange={(e) => setBallWeight(e.target.value)} style={setupInputStyle}>
+            <option value="">選んでください</option>
+            {Array.from({ length: 11 }, (_, i) => 6 + i).map((w) => (
+              <option key={w} value={w}>
+                {w}ポンド
+              </option>
+            ))}
+          </select>
+        </SetupField>
+        {ballType === "own" && (
+          <SetupField label="ボールの名前(任意)">
+            <input value={ballName} onChange={(e) => setBallName(e.target.value)} placeholder="例: フェイズ2" maxLength={30} style={setupInputStyle} />
+          </SetupField>
+        )}
+        <button
+          type="button"
+          onClick={addBall}
+          disabled={!ballWeight}
+          className="w-full rounded-xl flex items-center justify-center gap-1"
+          style={{ padding: "11px 12px", border: `1px dashed ${COLORS.oak}`, color: COLORS.strike, fontSize: 14, fontWeight: 700, opacity: ballWeight ? 1 : 0.5 }}
+        >
+          <Plus size={16} /> このボールを登録して、もう1つ追加する
+        </button>
+        <div style={{ color: COLORS.strike, opacity: 0.75, fontSize: 12.5, lineHeight: 1.6 }}>
+          ボールの細かい情報(コアの種類など)は、あとから「設定」で追加できます。
+        </div>
+      </div>
+    );
+  } else if (key === "shoes") {
+    body = (
+      <div className="space-y-4">
+        <div className="flex gap-2">
+          <button type="button" onClick={() => setShoeChoice("rental")} style={choice(shoeChoice === "rental")}>
+            レンタル
+          </button>
+          <button type="button" onClick={() => setShoeChoice("own")} style={choice(shoeChoice === "own")}>
+            マイシューズ
+          </button>
+        </div>
+        {shoeChoice === "own" && (
+          <SetupField label="シューズの名前">
+            <input value={shoeName} onChange={(e) => setShoeName(e.target.value)} placeholder="例: ABS NV-1" maxLength={30} style={setupInputStyle} />
+          </SetupField>
+        )}
+      </div>
+    );
+  } else if (key === "account") {
+    body = authUser ? (
+      <div className="flex items-center gap-3 rounded-lg" style={{ padding: "12px", border: "1px solid rgba(224,168,0,0.4)" }}>
+        <CircleCheck size={26} style={{ color: COLORS.gold, flexShrink: 0 }} />
+        <div>
+          <div style={{ color: COLORS.cream, fontWeight: 700, fontSize: 15 }}>アカウントは作成済みです</div>
+          <div style={{ color: COLORS.strike, fontSize: 13 }}>{authUser.email}</div>
+        </div>
+      </div>
+    ) : (
+      <div className="space-y-4">
+        <div className="space-y-1.5">
+          {["記録がクラウドにも保存されます", "機種変更しても、ログインするだけで記録を引き継げます"].map((t) => (
+            <div key={t} className="flex gap-2" style={{ color: COLORS.strike, fontSize: 13.5, lineHeight: 1.6 }}>
+              <Check size={16} style={{ color: COLORS.gold, flexShrink: 0, marginTop: 3 }} />
+              <span>{t}</span>
+            </div>
+          ))}
+        </div>
+        <SetupField label="メールアドレス">
+          <input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="example@mail.com" style={setupInputStyle} />
+        </SetupField>
+        <SetupField label="パスワード(6文字以上)">
+          <input type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} style={setupInputStyle} />
+        </SetupField>
+        {authErrorMsg && <div style={{ color: "#E8836A", fontSize: 13, fontWeight: 700 }}>{authErrorMsg}</div>}
+      </div>
+    );
+  } else if (key === "done") {
+    body = (
+      <div className="flex flex-col items-center text-center" style={{ paddingTop: 24 }}>
+        <div
+          className="flex items-center justify-center rounded-full"
+          style={{ width: 72, height: 72, border: `2px solid ${COLORS.gold}`, background: "rgba(224,168,0,0.12)" }}
+        >
+          <CircleCheck size={38} style={{ color: COLORS.gold }} />
+        </div>
+        <div style={{ color: COLORS.cream, fontSize: 22, fontWeight: 700, marginTop: 18 }}>準備ができました</div>
+        <div style={{ color: COLORS.strike, fontSize: 15, lineHeight: 1.8, marginTop: 12 }}>
+          <Phrases text="ボウリング場のスコア画面を|撮影して、記録してみましょう。" />
+        </div>
+        <a href="/guide" target="_blank" rel="noreferrer" style={{ color: COLORS.gold, fontSize: 14, fontWeight: 700, marginTop: 16, textDecoration: "underline" }}>
+          使い方ガイドを見る
+        </a>
+      </div>
+    );
+  }
+
+  const isEnd = key === "done";
+  const isStart = key === "welcome";
+  return (
+    <div
+      role="dialog"
+      aria-label="はじめの設定"
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 70,
+        display: "flex",
+        flexDirection: "column",
+        background: `linear-gradient(160deg, ${COLORS.navyLight} 0%, ${COLORS.navyBg} 55%, #161D38 100%)`,
+        fontFamily: "'Noto Sans JP', 'Hiragino Sans', sans-serif",
+      }}
+    >
+      {!isStart && !isEnd && (
+        <div style={{ padding: "calc(env(safe-area-inset-top) + 14px) 20px 0" }}>
+          <div className="flex items-center justify-between" style={{ color: COLORS.strike, fontSize: 13 }}>
+            <button type="button" onClick={back} className="flex items-center gap-1" style={{ color: COLORS.strike, padding: "4px 0" }}>
+              <ChevronLeft size={18} /> 戻る
+            </button>
+            <span>
+              {step} / {total}
+            </span>
+          </div>
+          <div style={{ height: 4, borderRadius: 999, background: "rgba(255,255,255,0.12)", marginTop: 8, overflow: "hidden" }}>
+            <div style={{ width: `${(step / total) * 100}%`, height: "100%", background: COLORS.gold, borderRadius: 999, transition: "width 0.25s" }} />
+          </div>
+          <div style={{ color: COLORS.gold, fontSize: 21, fontWeight: 700, marginTop: 18 }}>{titleOf[key]}</div>
+        </div>
+      )}
+      <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", padding: "16px 20px 20px" }}>
+        <div className="max-w-md mx-auto">{body}</div>
+      </div>
+      <div style={{ padding: "12px 20px calc(env(safe-area-inset-bottom) + 14px)", borderTop: "1px solid rgba(224,168,0,0.2)" }}>
+        <div className="max-w-md mx-auto space-y-2">
+          <button
+            type="button"
+            onClick={isEnd ? onFinish : isStart ? next : saveAndNext}
+            disabled={!nextEnabled}
+            className="w-full rounded-xl flex items-center justify-center gap-2"
+            style={{ ...primaryButtonStyle(!!nextEnabled), padding: "14px 12px", fontSize: 16 }}
+          >
+            {authBusy && key === "account" ? <Loader2 className="animate-spin" size={18} /> : null}
+            {isEnd ? "はじめる" : isStart ? "設定をはじめる" : key === "account" && !authUser ? "作成して次へ" : "次へ"}
+          </button>
+          {!isEnd && (
+            <button
+              type="button"
+              onClick={isStart ? onFinish : next}
+              className="w-full rounded-xl"
+              style={{ padding: "11px 12px", fontSize: 14, fontWeight: 700, color: COLORS.strike, border: "1px solid rgba(184, 153, 104, 0.6)" }}
+            >
+              {isStart ? "設定せずにはじめる" : "あとで設定する"}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // 設定画面: the current plan and this month's counts.
 function PlanUsage({ plan }) {
   const rows = [
@@ -5756,6 +6158,394 @@ function PlanLockNote({ text, inset = false }) {
     >
       {!inset && <Lock size={14} style={{ color: COLORS.gold, flexShrink: 0 }} />}
       <span>{text}</span>
+    </div>
+  );
+}
+
+// ---------- 使い方ガイド (/guide) ----------
+// Public page (no login needed) linked from the flyer's QR code, the setup
+// wizard and 設定. Light, paper-like design so it reads well on a phone and
+// prints cleanly on A4 (see the print styles below).
+const GUIDE_URL = "https://strike-log-app.vercel.app/";
+
+function GuideShot({ src, alt, caption }) {
+  return (
+    <figure className="g-shot">
+      <img src={src} alt={alt} loading="lazy" />
+      {caption && <figcaption>{caption}</figcaption>}
+    </figure>
+  );
+}
+
+function GuideSteps({ items, start = 1 }) {
+  return (
+    <ol className="g-steps">
+      {items.map((t, i) => (
+        <li key={i}>
+          <span className="g-num">{i + start}</span>
+          <span>{t}</span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function GuidePage() {
+  const toc = [
+    ["install", "アプリを入れる"],
+    ["start", "使いはじめる"],
+    ["record", "スコアを記録する"],
+    ["history", "履歴を見る"],
+    ["stats", "成績を見る"],
+    ["more", "そのほかの機能"],
+    ["plans", "料金プラン"],
+    ["faq", "困ったときは"],
+  ];
+  return (
+    <div className="g-root">
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap');
+        .g-root { min-height: 100vh; background: #F6F1E6; color: #1E2340; font-family: 'Noto Sans JP', 'Hiragino Sans', sans-serif; font-size: 16px; line-height: 1.8; }
+        .g-wrap { max-width: 760px; margin: 0 auto; padding: 0 16px 48px; }
+        .g-hero { background: linear-gradient(160deg, #26305E 0%, #161D38 100%); color: #F5F1E4; padding: 28px 16px 26px; }
+        .g-hero-in { max-width: 760px; margin: 0 auto; display: flex; gap: 18px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+        .g-logo { font-family: 'Oswald', sans-serif; font-weight: 700; font-size: 30px; letter-spacing: 0.04em; color: #E0A800; line-height: 1.1; }
+        .g-title { font-size: 24px; font-weight: 700; margin-top: 4px; }
+        .g-lead { font-size: 14.5px; opacity: 0.85; margin-top: 6px; }
+        .g-qr { background: #fff; border-radius: 12px; padding: 8px; text-align: center; color: #1E2340; }
+        .g-qr img { width: 112px; height: 112px; display: block; }
+        .g-qr div { font-size: 11px; font-weight: 700; margin-top: 2px; }
+        .g-toc { display: flex; flex-wrap: wrap; gap: 8px; margin: 20px 0 6px; padding: 0; list-style: none; }
+        .g-toc a { display: inline-block; padding: 6px 12px; border-radius: 999px; background: #fff; border: 1px solid #D9CDB2; color: #1E2340; font-size: 14px; font-weight: 700; text-decoration: none; }
+        .g-sec { margin-top: 34px; }
+        .g-h2 { display: flex; align-items: center; gap: 10px; font-size: 21px; font-weight: 700; color: #1E2340; border-bottom: 3px solid #E0A800; padding-bottom: 6px; margin-bottom: 14px; }
+        .g-h2 .g-badge { font-family: 'Oswald', sans-serif; background: #1E2340; color: #E0A800; border-radius: 8px; min-width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; font-size: 18px; }
+        .g-h3 { font-size: 17px; font-weight: 700; margin: 18px 0 8px; }
+        .g-card { background: #fff; border: 1px solid #E3D8C0; border-radius: 14px; padding: 14px 16px; }
+        .g-grid2 { display: grid; grid-template-columns: 1fr; gap: 12px; }
+        @media (min-width: 640px) { .g-grid2 { grid-template-columns: 1fr 1fr; } }
+        .g-steps { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+        .g-steps li { display: flex; gap: 10px; align-items: flex-start; }
+        .g-num { flex: none; width: 26px; height: 26px; border-radius: 50%; background: #E0A800; color: #1E2340; font-family: 'Oswald', sans-serif; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; font-size: 15px; margin-top: 2px; }
+        .g-row { display: grid; grid-template-columns: 1fr; gap: 14px; align-items: start; }
+        @media (min-width: 640px) { .g-row { grid-template-columns: 1fr 220px; } }
+        .g-shot { margin: 0; text-align: center; }
+        .g-shot img { width: 100%; max-width: 230px; border-radius: 18px; border: 6px solid #1E2340; box-shadow: 0 4px 14px rgba(0,0,0,0.15); }
+        .g-shot figcaption { font-size: 13px; color: #5B6080; margin-top: 4px; }
+        .g-shots { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+        .g-note { background: #FFF6D9; border-left: 4px solid #E0A800; border-radius: 8px; padding: 10px 12px; font-size: 14.5px; margin-top: 12px; }
+        .g-table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 12px; overflow: hidden; font-size: 14.5px; }
+        .g-table th, .g-table td { border: 1px solid #E3D8C0; padding: 8px 10px; text-align: center; vertical-align: middle; }
+        .g-table th { background: #1E2340; color: #F5F1E4; font-weight: 700; }
+        .g-table td:first-child { text-align: left; font-weight: 700; background: #FBF8F1; }
+        .g-ok { color: #B88600; font-weight: 700; }
+        .g-faq dt { font-weight: 700; margin-top: 12px; }
+        .g-faq dt::before { content: "Q. "; color: #E0A800; font-family: 'Oswald', sans-serif; }
+        .g-faq dd { margin: 2px 0 0; padding-left: 1.6em; }
+        .g-foot { margin-top: 36px; font-size: 13.5px; color: #5B6080; text-align: center; }
+        .g-foot a { color: #1E2340; }
+        .g-print-only { display: none; }
+        @page { size: A4; margin: 14mm 12mm; }
+        @media print {
+          .g-root { background: #fff; font-size: 11.5pt; line-height: 1.7; }
+          .g-toc { display: none; }
+          .g-hero { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          .g-h2 .g-badge, .g-num, .g-table th, .g-note { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          .g-sec { break-inside: auto; }
+          .g-card, .g-row, figure, .g-table, .g-note, .g-faq-item { break-inside: avoid; }
+          .g-h2 { break-after: avoid; }
+          .g-shot img { max-width: 170px; box-shadow: none; }
+          .g-print-only { display: block; }
+          .g-grid2 { grid-template-columns: 1fr 1fr; }
+          .g-row { grid-template-columns: 1fr 180px; }
+        }
+      `}</style>
+
+      <header className="g-hero">
+        <div className="g-hero-in">
+          <div>
+            <div className="g-logo">STRIKE LOG</div>
+            <div className="g-title">使い方ガイド</div>
+            <div className="g-lead">スコア画面を撮るだけで、記録と分析ができるボウリングアプリです。</div>
+          </div>
+          <div className="g-qr">
+            <img src="/guide-img/qr.svg" alt="アプリのQRコード" />
+            <div>アプリはこちら</div>
+          </div>
+        </div>
+      </header>
+
+      <main className="g-wrap">
+        <ul className="g-toc">
+          {toc.map(([id, label]) => (
+            <li key={id}>
+              <a href={`#${id}`}>{label}</a>
+            </li>
+          ))}
+        </ul>
+
+        <section id="install" className="g-sec">
+          <h2 className="g-h2">
+            <span className="g-badge">1</span>アプリを入れる
+          </h2>
+          <p style={{ margin: "0 0 12px" }}>
+            STRIKE LOG は、アプリストアからではなく、インターネットのページをスマホの「ホーム画面」に追加して使います。追加すると、ふつうのアプリと同じようにアイコンから開けます。
+          </p>
+          <div className="g-card" style={{ marginBottom: 12 }}>
+            アドレス:<b>{GUIDE_URL.replace("https://", "").replace(/\/$/, "")}</b>
+            <br />
+            <span style={{ fontSize: 14, color: "#5B6080" }}>上のQRコードをスマホのカメラで読み取ると、すぐに開けます。</span>
+          </div>
+          <div className="g-grid2">
+            <div className="g-card">
+              <div className="g-h3" style={{ marginTop: 0 }}>iPhone の場合(Safari)</div>
+              <GuideSteps
+                items={[
+                  "Safari で上のアドレスを開く(QRコードからでもOK)",
+                  "画面の下にある共有ボタン(四角から上向きの矢印のマーク)を押す。見当たらない時は「…」を押すと出てきます",
+                  "「ホーム画面に追加」を押す(出てこない時は、下へスクロール)",
+                  "右上の「追加」を押すと、ホーム画面に STRIKE LOG のアイコンができます",
+                ]}
+              />
+            </div>
+            <div className="g-card">
+              <div className="g-h3" style={{ marginTop: 0 }}>Android の場合(Chrome)</div>
+              <GuideSteps
+                items={[
+                  "Chrome で上のアドレスを開く(QRコードからでもOK)",
+                  "右上の「︙」(点が縦に3つのマーク)を押す",
+                  "「ホーム画面に追加」または「アプリをインストール」を押す",
+                  "「追加」(または「インストール」)を押すと、ホーム画面にアイコンができます",
+                ]}
+              />
+            </div>
+          </div>
+          <div className="g-note">次からは、ホーム画面の STRIKE LOG のアイコンから開いてください。</div>
+        </section>
+
+        <section id="start" className="g-sec">
+          <h2 className="g-h2">
+            <span className="g-badge">2</span>使いはじめる
+          </h2>
+          <GuideSteps
+            items={[
+              "アイコンから STRIKE LOG を開き、画面の案内に沿って利用の手続きをします。手続きが終わると使えるようになります。",
+              "はじめて使う時は「はじめの設定」が出てきます。1ページずつ入力して「次へ」を押してください。どの項目も「あとで設定する」で飛ばせて、あとから「設定」でいつでも変えられます。",
+            ]}
+          />
+          <div className="g-card" style={{ marginTop: 12 }}>
+            <div className="g-h3" style={{ marginTop: 0 }}>はじめの設定で入れるもの</div>
+            <table className="g-table" style={{ fontSize: 14 }}>
+              <tbody>
+                {[
+                  ["文字の大きさ", "標準・大きめ・特大から、見やすいものを選びます"],
+                  ["ニックネーム", "アプリの中で表示される名前"],
+                  ["スコア画面の名前", "ボウリング場のスコア画面に出る自分の名前(例: ヤマダ、YAMADA)。写真から自分の行を見つけるのに使います"],
+                  ["利き手・目標", "目標アベレージと目標スコア。記録の画面で「あといくつ」が出ます"],
+                  ["ホームセンター", "よく行くボウリング場"],
+                  ["ボール", "マイボールやハウスボールの重さと用途(1stボール・スペアボール)"],
+                  ["シューズ", "レンタルかマイシューズか"],
+                  ["アカウント", "メールアドレスとパスワード。機種変更しても記録を引き継げます"],
+                ].map(([a, b]) => (
+                  <tr key={a}>
+                    <td style={{ width: "34%" }}>{a}</td>
+                    <td style={{ textAlign: "left" }}>{b}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="record" className="g-sec g-page">
+          <h2 className="g-h2">
+            <span className="g-badge">3</span>スコアを記録する
+          </h2>
+          <div className="g-row">
+            <div>
+              <GuideSteps
+                items={[
+                  "下の「スコア分析」を開き、「スコア画面に表示されている自分の名前」が合っているか確かめます",
+                  "「スコア画面を撮影 / アップロード」を押して、ボウリング場のスコア画面(電光掲示板)や紙のスコアシートを撮ります。あとから、撮っておいた写真を選ぶこともできます",
+                  "自分の行(名前から合計まで)を指でなぞって囲み、「解析する」を押します。プレミアム以上のプランでは、自動で切り取って読み取ります",
+                ]}
+              />
+              <div className="g-note">
+                <b>上手に撮るコツ</b>
+                <br />
+                ・画面の正面から、明るさの反射が入らないように撮る
+                <br />
+                ・自分の名前から合計までが、すべて写るようにする
+                <br />
+                ・1枚に何ゲーム分写っていても、まとめて読み取れます
+              </div>
+            </div>
+            <GuideShot src="/guide-img/scan.jpg" alt="スコア分析の画面" caption="スコア分析の画面" />
+          </div>
+          <div className="g-row" style={{ marginTop: 18 }}>
+            <div>
+              <GuideSteps
+                items={[
+                  "読み取った結果がスコア表で出ます。写真と見比べて、違うところがあればマスを押して直せます。うまく読み取れなかった時は、確認してほしいフレームをお知らせします",
+                  "プレー日・何ゲーム目・ボウリング場・使ったボール・シューズを選びます",
+                  "「記録を保存」を押して完了です。自己ベストや目標を達成すると、お祝いの花火が上がります",
+                ]}
+                start={4}
+              />
+            </div>
+            <GuideShot src="/guide-img/result.jpg" alt="読み取り結果の画面" caption="読み取った結果" />
+          </div>
+          <div className="g-shots">
+            <GuideShot src="/guide-img/auto.jpg" alt="自動で切り取った画面" caption="自動で切り取り(プレミアム以上)" />
+            <GuideShot src="/guide-img/save.jpg" alt="保存の画面" caption="ボウリング場やボールを選んで保存" />
+          </div>
+        </section>
+
+        <section id="history" className="g-sec">
+          <h2 className="g-h2">
+            <span className="g-badge">4</span>履歴を見る
+          </h2>
+          <div className="g-row">
+            <div>
+              <p style={{ marginTop: 0 }}>
+                下の「履歴」では、これまでの記録が日ごとにまとまっています。日付の欄には、その日のゲーム数・トータル・アベレージ・ハイゲームが出ます。
+              </p>
+              <GuideSteps
+                items={[
+                  "日付の欄を押すと、その日のゲームがスコア表で開きます",
+                  "えんぴつのマークで記録を直せます(日付・ボウリング場・ボール・各フレームなど)",
+                  "× のマークで記録を消せます",
+                ]}
+              />
+            </div>
+            <GuideShot src="/guide-img/history.jpg" alt="履歴の画面" caption="履歴の画面" />
+          </div>
+        </section>
+
+        <section id="stats" className="g-sec">
+          <h2 className="g-h2">
+            <span className="g-badge">5</span>成績を見る
+          </h2>
+          <div className="g-row">
+            <div>
+              <p style={{ marginTop: 0 }}>下の「記録」では、期間を選んで成績を見られます。</p>
+              <ul style={{ margin: 0, paddingLeft: "1.2em" }}>
+                <li>日・週・月・年・期間指定で切り替え(年と期間指定はプレミアム以上)</li>
+                <li>アベレージ、トータル、ハイゲーム・ローゲーム、目標まであといくつ</li>
+                <li>ストライク・スペア・スプリットなどの回数と割合</li>
+                <li>スコアの推移のグラフ</li>
+                <li>「日」では、その日のゲームをスコア表で縦に並べて表示</li>
+                <li>ボール別・ボウリング場別の成績(プレミアム以上)</li>
+              </ul>
+              <div className="g-note">「用語と計算式」を開くと、ストライク率などの意味と計算のしかたが見られます。</div>
+            </div>
+            <GuideShot src="/guide-img/stats.jpg" alt="成績の画面" caption="記録(成績)の画面" />
+          </div>
+        </section>
+
+        <section id="more" className="g-sec g-page">
+          <h2 className="g-h2">
+            <span className="g-badge">6</span>そのほかの機能
+          </h2>
+          <div className="g-grid2">
+            {[
+              ["ランキング", "アカウントを作ると、月間ランキングに参加できます(参加は自由)。表示されるのは、自分で決めた表示名と成績だけです。"],
+              ["AIチャット相談", "右上の吹き出しのマークから、アプリの使い方やボウリング用語について質問できます。"],
+              ["お知らせ", "右上のベルのマークで、アップデートやイベントのお知らせを確認できます。"],
+              ["設定", "文字の大きさ、目標、ボール・シューズの登録や変更、アカウントの作成・ログインができます。「はじめの設定をやり直す」もここからできます。"],
+            ].map(([t, d]) => (
+              <div className="g-card" key={t}>
+                <div className="g-h3" style={{ marginTop: 0 }}>{t}</div>
+                <div style={{ fontSize: 15 }}>{d}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section id="plans" className="g-sec">
+          <h2 className="g-h2">
+            <span className="g-badge">7</span>料金プラン
+          </h2>
+          <table className="g-table">
+            <thead>
+              <tr>
+                <th></th>
+                <th>ベーシック</th>
+                <th>プレミアム</th>
+                <th>
+                  プレミアム<ruby>＋<rt style={{ fontSize: 9 }}>プラス</rt></ruby>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>月額(税込)</td>
+                <td>1,000円</td>
+                <td>2,000円</td>
+                <td>3,000円</td>
+              </tr>
+              <tr>
+                <td>スコアの読み取り</td>
+                <td>月60回</td>
+                <td>月150回</td>
+                <td className="g-ok">回数無制限</td>
+              </tr>
+              <tr>
+                <td>AIチャット相談</td>
+                <td>月30回</td>
+                <td>月150回</td>
+                <td className="g-ok">回数無制限</td>
+              </tr>
+              <tr>
+                <td>自動で切り取って読み取り</td>
+                <td>ー</td>
+                <td className="g-ok">○</td>
+                <td className="g-ok">○</td>
+              </tr>
+              <tr>
+                <td>年・期間指定のグラフ、ボール別・ボウリング場別の成績</td>
+                <td>ー</td>
+                <td className="g-ok">○</td>
+                <td className="g-ok">○</td>
+              </tr>
+            </tbody>
+          </table>
+          <div className="g-note">
+            回数は毎月1日に戻ります。お支払いは毎月1日です(1〜15日のお申し込みは翌月1日から、16日〜末日のお申し込みは翌々月1日から)。くわしくは
+            <a href="/terms">利用規約</a>をご覧ください。
+          </div>
+        </section>
+
+        <section id="faq" className="g-sec">
+          <h2 className="g-h2">
+            <span className="g-badge">8</span>困ったときは
+          </h2>
+          <dl className="g-faq">
+            {[
+              ["読み取った数字が間違っている", "スコア表のマスを押すと直せます。保存したあとでも、「履歴」のえんぴつのマークから直せます。"],
+              ["自分の行が見つからないと出る", "「スコア画面に表示されている自分の名前」が、スコア画面の表示と同じか確かめてください。指で自分の行を囲んで解析することもできます。"],
+              ["文字が小さくて読みにくい", "「設定」の文字の大きさで、「大きめ」や「特大」に変えられます。"],
+              ["機種変更する", "アカウントを作っておけば、新しいスマホでログインするだけで記録を引き継げます。同時に使えるのは1台のスマホだけです。"],
+              ["今月の回数を使い切った", "毎月1日に回数が戻ります。たくさん使う方は、上のプランへの変更もご検討ください。写真はスマホのカメラで撮って残しておくと、あとから選んで記録できます。"],
+              ["解約したい", "アプリ内の設定、またはお問い合わせ先からいつでも解約できます。解約後も記録は1年間保管されます。"],
+            ].map(([q, a]) => (
+              <div key={q} className="g-faq-item">
+                <dt>{q}</dt>
+                <dd>{a}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+
+        <footer className="g-foot">
+          お問い合わせ:smmryut.9021@gmail.com
+          <br />
+          <a href="/terms">利用規約</a> ・ <a href="/privacy">プライバシーポリシー</a> ・ <a href="/tokushoho">特定商取引法に基づく表記</a>
+          <div className="g-print-only" style={{ marginTop: 8 }}>
+            最新のガイドは {GUIDE_URL}guide で見られます
+          </div>
+        </footer>
+      </main>
     </div>
   );
 }
@@ -5939,6 +6729,7 @@ export default function StrikeLog() {
     typeof window !== "undefined" &&
     (window.location.pathname.endsWith("/admin.html") ||
       new URLSearchParams(window.location.search).get("admin") === "1");
+  const guideRoute = typeof window !== "undefined" && /^\/guide\/?$/.test(window.location.pathname);
   const legalRoute =
     typeof window !== "undefined"
       ? { "/terms": "terms", "/privacy": "privacy", "/tokushoho": "tokushoho" }[window.location.pathname]
@@ -6014,6 +6805,8 @@ export default function StrikeLog() {
   const [eventPopup, setEventPopup] = useState(null);
   const [textSize, setTextSize] = useState(() => readTextSize() || "normal");
   const [textSizeAsk, setTextSizeAsk] = useState(() => !readTextSize()); // まだ選んでいなければ、最初に1回だけ聞く
+  const [setupOpen, setSetupOpen] = useState(false); // 初回設定の案内
+  const [setupStep, setSetupStep] = useState(0);
   const [hideEventChecked, setHideEventChecked] = useState(false);
   const announcementsLoadedRef = useRef(false);
   const eventPopupShownRef = useRef(false); // at most one pop-up per app launch
@@ -6490,6 +7283,59 @@ export default function StrikeLog() {
     return () => setUsageListener(null);
   }, []);
 
+  // 初回設定の案内: new users only (no records, no balls, no nickname yet),
+  // once the app is open for them. People who already use the app never see
+  // it — they're marked as done. For accounts, wait until the cloud records
+  // have loaded, so someone logging in on a new phone isn't treated as new.
+  useEffect(() => {
+    if (isAdminRoute || !storageLoaded || accessStatus !== "approved" || setupOpen) return;
+    if (authUser && syncState !== "ready") return;
+    let done = false;
+    try {
+      done = !!localStorage.getItem(SETUP_DONE_KEY);
+    } catch (e) {
+      done = true; // storage unavailable — don't nag on every launch
+    }
+    if (done) return;
+    const isNew = games.length === 0 && myBalls.length === 0 && !nickname.trim();
+    if (isNew) {
+      setSetupStep(0);
+      setSetupOpen(true);
+      setTextSizeAsk(false); // the wizard asks for the text size itself
+    } else {
+      try {
+        localStorage.setItem(SETUP_DONE_KEY, "1");
+      } catch (e) {
+        // ignore
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdminRoute, storageLoaded, accessStatus, authUser, syncState]);
+
+  const finishSetup = () => {
+    try {
+      localStorage.setItem(SETUP_DONE_KEY, "1");
+    } catch (e) {
+      // ignore
+    }
+    saveTextSize(textSize);
+    setTextSizeAsk(false);
+    setAccountDone(null);
+    setAccountNotice(null);
+    setSetupOpen(false);
+    setTab("scan");
+    window.scrollTo(0, 0);
+  };
+
+  const setupSaveProfile = (patch) => {
+    if ("nickname" in patch) setNickname(patch.nickname);
+    if ("dominantHand" in patch) setDominantHand(patch.dominantHand);
+    if ("goalAverage" in patch) setGoalAverage(patch.goalAverage);
+    if ("goalScore" in patch) setGoalScore(patch.goalScore);
+    if ("homeCenter" in patch) setHomeCenter(patch.homeCenter);
+    saveProfile(patch);
+  };
+
   const loginWithAccount = async (email, password) => {
     if (!auth) {
       setAuthErrorMsg("現在アカウント機能を利用できません。時間をおいてお試しください");
@@ -6615,7 +7461,7 @@ export default function StrikeLog() {
   // finished loading and the user is on the score screen, and never on top
   // of the celebration, chat, or bell screens.
   useEffect(() => {
-    if (eventPopupShownRef.current || eventPopup || textSizeAsk) return;
+    if (eventPopupShownRef.current || eventPopup || textSizeAsk || setupOpen) return;
     if (accessStatus !== "approved" || (authUser && syncState === "syncing")) return;
     if (tab !== "scan" || celebration || chatOpen || bellOpen) return;
     const hidden = readIdList(ANN_HIDDEN_KEY);
@@ -6634,7 +7480,7 @@ export default function StrikeLog() {
     localStorage.setItem(ANN_SHOWN_KEY, JSON.stringify(counts));
     setHideEventChecked(false);
     setEventPopup(next);
-  }, [announcements, accessStatus, authUser, syncState, tab, celebration, chatOpen, bellOpen, eventPopup, textSizeAsk]);
+  }, [announcements, accessStatus, authUser, syncState, tab, celebration, chatOpen, bellOpen, eventPopup, textSizeAsk, setupOpen]);
 
   // 写真の「自分の行を囲む」画面は、指の位置と写真の位置を正確に合わせる必要があるので、
   // 開いている間だけ拡大を外す(閉じたら選んだ文字の大きさに戻す)
@@ -7570,6 +8416,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
 
   if (isAdminRoute) return <AdminPanel />;
   if (legalRoute) return <LegalPage page={legalRoute} />;
+  if (guideRoute) return <GuidePage />;
 
   if (accessStatus !== "approved" || (authUser && syncState === "syncing")) {
     return (
@@ -7600,7 +8447,33 @@ function getNextRollCell(frameIdx, rollIdx, value) {
     >
       {celebration && <Celebration items={celebration} onClose={() => setCelebration(null)} />}
 
-      {textSizeAsk && !celebration && (
+      {setupOpen && (
+        <SetupWizard
+          step={setupStep}
+          setStep={setSetupStep}
+          textSize={textSize}
+          onTextSize={(k) => {
+            setTextSize(k);
+            applyTextSize(k);
+            saveTextSize(k);
+          }}
+          initial={{ nickname, playerName, dominantHand, goalAverage, goalScore, homeCenter }}
+          knownCenters={knownCentersFrom(games, homeCenter)}
+          myBalls={myBalls}
+          myShoes={myShoes}
+          authUser={authUser}
+          authBusy={authBusy}
+          authErrorMsg={authErrorMsg}
+          onSaveProfile={setupSaveProfile}
+          onSavePlayerName={savePlayerName}
+          onAddBall={(ball) => persistMyBalls([...myBalls, ball])}
+          onAddShoe={(shoe) => persistMyShoes([...myShoes, shoe])}
+          onSignup={signupWithAccount}
+          onFinish={finishSetup}
+        />
+      )}
+
+      {textSizeAsk && !setupOpen && !celebration && (
         <TextSizeWelcome
           value={textSize}
           onChange={(k) => {
@@ -7615,6 +8488,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
       )}
 
       {!textSizeAsk &&
+        !setupOpen &&
         centerBackfillOpen &&
         !centerBackfillDismissed &&
         !accountDone &&
@@ -7661,7 +8535,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
           </AppModal>
         )}
 
-      {accountNotice && accessStatus === "approved" && syncState !== "syncing" && !celebration && (
+      {accountNotice && !setupOpen && accessStatus === "approved" && syncState !== "syncing" && !celebration && (
         <AppModal
           title={accountNotice.kind === "created" ? "アカウントを作成しました" : "ログインしました"}
           footer={
@@ -7698,7 +8572,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
         </AppModal>
       )}
 
-      {accountDone && authUser && accessStatus === "approved" && syncState !== "syncing" && (
+      {accountDone && !setupOpen && authUser && accessStatus === "approved" && syncState !== "syncing" && (
         <AppModal
           title={accountDone === "signup" ? "アカウントを作成しました" : "ログインしました"}
           footer={
@@ -7762,7 +8636,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
       {(() => {
         // Balls whose role (1stボール / スペア) hasn't been set yet.
         const unset = myBalls.filter((b) => b.role !== "strike" && b.role !== "spare");
-        const busy = celebration || eventPopup || cropEditorOpen || saveBlockItems || accountDone;
+        const busy = celebration || eventPopup || cropEditorOpen || saveBlockItems || accountDone || setupOpen;
         if (!unset.length || rolePromptDismissed || busy || accessStatus !== "approved") return null;
         return (
           <AppModal
@@ -9692,6 +10566,29 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                   </div>
                 )
               )}
+            </div>
+
+            <div className="flex gap-2">
+              <a
+                href="/guide"
+                target="_blank"
+                rel="noreferrer"
+                className="flex-1 rounded-xl flex items-center justify-center"
+                style={{ padding: "10px 8px", border: `1px solid ${COLORS.oak}`, color: COLORS.strike, fontSize: 13.5, fontWeight: 700 }}
+              >
+                使い方ガイド
+              </a>
+              <button
+                type="button"
+                onClick={() => {
+                  setSetupStep(1);
+                  setSetupOpen(true);
+                }}
+                className="flex-1 rounded-xl"
+                style={{ padding: "10px 8px", border: `1px solid ${COLORS.oak}`, color: COLORS.strike, fontSize: 13.5, fontWeight: 700 }}
+              >
+                はじめの設定をやり直す
+              </button>
             </div>
 
             <div className="flex items-center justify-between">
