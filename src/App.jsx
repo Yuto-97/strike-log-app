@@ -9144,28 +9144,41 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                   </div>
                 ) : (
                   <>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="rounded-xl p-3 border glass-card text-center" style={{ borderColor: COLORS.oak }}>
-                        <div className="text-xs" style={{ color: COLORS.strike }}>ゲーム数</div>
-                        <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 22, color: COLORS.cream }}>{periodGames.length}</div>
-                        <div style={{ color: COLORS.strike, fontSize: 12 }}>
-                          トータル{" "}
-                          <span style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 15, color: COLORS.gold }}>{daySummary(periodGames).sum}</span>
+                    {/* Summary: the average as the headline, total and game count
+                        beside it, high/low underneath — one card, like a score board. */}
+                    <div className="rounded-xl border glass-card overflow-hidden" style={{ borderColor: COLORS.oak }}>
+                      <div className="flex items-end justify-between" style={{ padding: "14px 16px 12px" }}>
+                        <div>
+                          <div style={{ color: COLORS.strike, fontSize: 12, letterSpacing: "0.08em" }}>アベレージ</div>
+                          <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 46, lineHeight: 1, color: COLORS.cream, marginTop: 4 }}>{avg}</div>
+                        </div>
+                        <div className="text-right">
+                          <div style={{ color: COLORS.strike, fontSize: 12, letterSpacing: "0.08em" }}>トータル</div>
+                          <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 28, lineHeight: 1.1, color: COLORS.gold }}>
+                            {daySummary(periodGames).sum.toLocaleString()}
+                          </div>
+                          <div style={{ color: COLORS.strike, fontSize: 12, marginTop: 2 }}>
+                            <span style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 15, color: COLORS.cream }}>{periodGames.length}</span> ゲーム
+                          </div>
                         </div>
                       </div>
-                      <div className="rounded-xl p-3 border glass-card text-center" style={{ borderColor: COLORS.oak }}>
-                        <div className="text-xs" style={{ color: COLORS.strike }}>アベレージ</div>
-                        <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 22, color: COLORS.cream }}>{avg}</div>
-                      </div>
-                      <div className="rounded-xl p-3 border glass-card text-center" style={{ borderColor: COLORS.oak }}>
-                        <div className="text-xs flex items-center justify-center gap-1" style={{ color: COLORS.strike }}>
-                          <Trophy size={12} /> ハイゲーム
-                        </div>
-                        <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 22, color: COLORS.strike }}>{highGame}</div>
-                      </div>
-                      <div className="rounded-xl p-3 border glass-card text-center" style={{ borderColor: COLORS.oak }}>
-                        <div className="text-xs" style={{ color: COLORS.strike }}>ローゲーム</div>
-                        <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 22, color: COLORS.cream }}>{lowGame}</div>
+                      <div className="flex" style={{ borderTop: "1px solid rgba(224, 168, 0, 0.3)" }}>
+                        {[
+                          { label: "ハイゲーム", value: highGame, icon: true },
+                          { label: "ローゲーム", value: lowGame },
+                        ].map((x, i) => (
+                          <div
+                            key={x.label}
+                            className="flex items-center justify-between"
+                            style={{ flex: 1, padding: "10px 16px", borderLeft: i ? "1px solid rgba(224, 168, 0, 0.3)" : "none" }}
+                          >
+                            <span className="flex items-center gap-1" style={{ color: COLORS.strike, fontSize: 13 }}>
+                              {x.icon && <Trophy size={13} style={{ color: COLORS.gold }} />}
+                              {x.label}
+                            </span>
+                            <span style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 22, color: COLORS.cream, lineHeight: 1 }}>{x.value}</span>
+                          </div>
+                        ))}
                       </div>
                     </div>
 
