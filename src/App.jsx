@@ -9162,6 +9162,43 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                           </div>
                         </div>
                       </div>
+                      {(goalAverage || goalScore) && (
+                        <div className="space-y-2" style={{ padding: "10px 16px 12px", borderTop: "1px solid rgba(224, 168, 0, 0.3)" }}>
+                          {[
+                            goalAverage && { label: "目標アベレージ", goal: Number(goalAverage), now: Number(avg) || 0 },
+                            goalScore && { label: "目標スコア", goal: Number(goalScore), now: Number(highGame) || 0 },
+                          ]
+                            .filter(Boolean)
+                            .map((g) => {
+                              const done = g.now >= g.goal;
+                              const pct = Math.max(0, Math.min(100, (g.now / g.goal) * 100));
+                              return (
+                                <div key={g.label}>
+                                  <div className="flex items-baseline justify-between" style={{ fontSize: 12, color: COLORS.strike }}>
+                                    <span className="flex items-center gap-1">
+                                      <Target size={12} style={{ color: COLORS.gold }} />
+                                      {g.label}{" "}
+                                      <span style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 14, color: COLORS.cream }}>{g.goal}</span>
+                                    </span>
+                                    {done ? (
+                                      <span style={{ color: COLORS.gold, fontWeight: 700, fontSize: 13 }}>達成!</span>
+                                    ) : (
+                                      <span>
+                                        あと{" "}
+                                        <span style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 16, color: COLORS.gold }}>
+                                          {Math.round((g.goal - g.now) * 10) / 10}
+                                        </span>
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div style={{ height: 5, borderRadius: 999, background: "rgba(255,255,255,0.12)", marginTop: 4, overflow: "hidden" }}>
+                                    <div style={{ width: `${pct}%`, height: "100%", borderRadius: 999, background: COLORS.gold }} />
+                                  </div>
+                                </div>
+                              );
+                            })}
+                        </div>
+                      )}
                       <div className="flex" style={{ borderTop: "1px solid rgba(224, 168, 0, 0.3)" }}>
                         {[
                           { label: "ハイゲーム", value: highGame, icon: true },
@@ -9181,34 +9218,6 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                         ))}
                       </div>
                     </div>
-
-                    {(goalAverage || goalScore) && (
-                      <div className="rounded-xl p-3 border glass-card flex items-center gap-4" style={{ borderColor: COLORS.oak }}>
-                        <Target size={16} style={{ color: COLORS.gold }} />
-                        <div className="flex-1 text-xs" style={{ color: COLORS.cream }}>
-                          {goalAverage && (
-                            <div>
-                              目標アベレージ {goalAverage}
-                              {avg >= Number(goalAverage) ? (
-                                <span style={{ color: COLORS.strike, fontWeight: 700 }}> ・ 達成!</span>
-                              ) : (
-                                <span> ・ あと{Number(goalAverage) - avg}</span>
-                              )}
-                            </div>
-                          )}
-                          {goalScore && (
-                            <div>
-                              目標スコア {goalScore}
-                              {highGame >= Number(goalScore) ? (
-                                <span style={{ color: COLORS.strike, fontWeight: 700 }}> ・ 達成!</span>
-                              ) : (
-                                <span> ・ あと{Number(goalScore) - highGame}</span>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
 
                     <div className="rounded-xl border glass-card overflow-hidden" style={{ borderColor: COLORS.oak }}>
                       {[
