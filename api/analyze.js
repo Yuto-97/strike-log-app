@@ -6,6 +6,8 @@
 // Optional purpose: "locate" — the プレミアム auto row-finding step (finds the
 // player's row on the full photo before the real analysis). It needs a plan
 // that includes it and never counts toward the monthly limit.
+// purpose: "recheck" — a second look the app takes when the first reading of
+// a photo didn't add up. Part of the same analysis, so it doesn't count.
 // Before every AI call the caller's plan limit is checked (see _plans.js);
 // over the limit → 429 { error: "limit_reached" } and no AI call is made.
 // Every AI call is recorded per user (count, tokens, actual cost) — see _usage.js.
@@ -55,7 +57,7 @@ export default async function handler(req, res) {
   }
 
   const { base64, mediaType, images, prompt, purpose } = req.body || {};
-  const feature = purpose === "locate" ? "locate" : "analyze";
+  const feature = purpose === "locate" ? "locate" : purpose === "recheck" ? "recheck" : "analyze";
   const imageList = Array.isArray(images) && images.length ? images : base64 && mediaType ? [{ base64, mediaType }] : null;
   if (!imageList || !prompt) {
     res.status(400).json({ error: "prompt and either base64+mediaType or images[] are required" });

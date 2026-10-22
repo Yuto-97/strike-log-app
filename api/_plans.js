@@ -78,6 +78,7 @@ export async function checkAllowance({ db, caller, feature }) {
   }
   const { planId, used } = await loadPlanState(db, caller.key);
   const plan = PLANS[planId];
+  if (feature === "recheck") return { ok: true, planId, used, limit: null };
   if (feature === "locate") {
     return plan.autoLocate ? { ok: true, planId, used, limit: null } : { ok: false, status: 403, body: { error: "plan_required" } };
   }

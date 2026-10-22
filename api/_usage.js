@@ -78,7 +78,7 @@ async function write(db, FieldValue, userKey, fields, nowDate) {
 // step before an analysis). ok=false for failed calls. analyzeOk / chatOk
 // count successful calls only — they're what the plan limits are checked
 // against (see _plans.js); locate never counts toward a limit.
-const COUNT_FIELD = { analyze: "analyzeCount", chat: "chatCount", locate: "locateCount" };
+const COUNT_FIELD = { analyze: "analyzeCount", chat: "chatCount", locate: "locateCount", recheck: "recheckCount" };
 export async function recordAiCall({ db, FieldValue, caller, feature, model, usage, ok, now = new Date() }) {
   try {
     const cost = ok ? costUsd(model, usage) : 0;

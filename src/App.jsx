@@ -1205,7 +1205,10 @@ B. 名前「${playerName}」の文字の位置
   }
 }
 
-async function analyzeScoreImage(images, playerName, { cropped = false, zoomed = false } = {}) {
+// recheck: a second look after the first reading didn't add up — the note
+// tells the AI what looked wrong. It's part of the same analysis, so it
+// doesn't count toward the monthly limit (purpose "recheck").
+async function analyzeScoreImage(images, playerName, { cropped = false, zoomed = false, recheckNote = "" } = {}) {
   const nameInstruction = cropped
     ? `この画像は、ユーザー本人が写真の中から自分のスコアの部分を指で囲んで切り抜いたものです。${
         playerName ? `複数の行が写っている場合は、名前「${playerName}」に最も一致する行を読み取ってください。` : ""
@@ -1247,6 +1250,7 @@ async function analyzeScoreImage(images, playerName, { cropped = false, zoomed =
 
 読み取りは、写っている**ゲームごとに**以下の手順で慎重に行ってください:
 1. まず画面の種類(電光掲示板のデジタル表示か、紙のスコアシートか)と、対象プレイヤーの列/行の位置、そのゲームが何ゲーム目かを確認する。他のプレイヤーの行が近くにある場合は、対象プレイヤーの行の高さ(Y座標)をここでしっかり固定する
+1-2. 投球の記号を読む前に、対象プレイヤーの「累計スコアの段」(各フレームの下段の大きな数字)を、1フレーム目から順に、画面に表示されているとおり書き写して screen_cumulative に入れる。計算はせず、見えている数字をそのまま写すこと。累計は必ず左から右へ増えていく。表示されていないフレームは null。この数字が、このあとすべての検算の基準になる
 2. フレーム1から10まで、1フレームずつ順番に投球結果を読み取る。数字の間違えやすい組み合わせ(例: 6と8、1と7、Xと数字)は特に注意して見る。フレームが進むごとに、今読んでいる数字が手順1で固定した行の高さから外れていないか都度確認する。すぐ近くに紛らわしい別の行(繰り返し表示されている行、別プレイヤーの行、ポップアップの陰など)がある場合は、フレームごとに「これは本当に対象プレイヤーの行か」を都度確認し直す
 3. 各フレームを読み終えたら、そのフレームの累計スコアが「前のフレームの累計 + このフレームで倒したピン数」と矛盾していないか自分で検算する。矛盾があれば、累計スコアの数字(大きく表示され読み間違いにくい)は画面表示が正しい前提として、投球記号の読み取り(特に小さな「G」「-」「F」の見落としや、10フレーム目の記号のずれ)を見直して修正する
 4. 全フレームを読み終えたら、10フレーム目の累計スコア(または画面に「TOTAL」列がある場合はその数字)と、以下の複数の視点で突き合わせて検算する。1つの視点だけに頼ると、その視点が苦手なパターンの間違いを見逃すため、必ず全視点を行うこと:
@@ -1268,6 +1272,7 @@ async function analyzeScoreImage(images, playerName, { cropped = false, zoomed =
     {
       "game_label": "1ゲーム目のように画面上のラベル、なければ null",
       "detected_date": "画面や紙に印字・記入されている日付があれば YYYY-MM-DD 形式に変換して。西暦2桁表記(例: 26/8/9)は20を補って西暦4桁にする。年が書かれておらず月日のみの場合は、その月日と今日の日付から最も自然な年を推測する。日付が一切見当たらない場合は null",
+      "screen_cumulative": [17, 37, 46, "...10フレーム目まで、画面の表示どおり"],
       "frame_by_frame_reading": ["1F: 7,スペア → 累計17", "2F: ストライク → 累計37", "...", "10F: ストライク,G(ガター),8 → 累計210"],
       "frames": [
         {"rolls": ["7","/"], "score": 17, "split_roll_index": null},
@@ -1286,7 +1291,7 @@ async function analyzeScoreImage(images, playerName, { cropped = false, zoomed =
 - rolls の値は "0"〜"9" の数字文字列、ストライクは "X"、スペアは "/"、ガターは "G"、ファールは "F"、ミス(0本)は "-"。画面の記号と上の対応表に従って、記号をそのまま出力する
 - frames は必ず10フレーム分(読み取れる範囲まで)
 - 10フレーム目は最大3投
-- score は、画面に表示されている各フレームの累計スコアの数字を、そのまま書き写す(自分で計算し直した値ではなく、表示どおりの値。投球記号の読み取りと矛盾していても、表示どおりの数字を書くこと)。10フレーム目まで画像に表示されている場合は、必ず10個分のscoreを埋めること。最終フレームの累計が画面上の「TOTAL」の値と一致するか必ず確認する
+- score は、screen_cumulative に書き写した数字と必ず同じにする。画面に表示されている各フレームの累計スコアの数字を、そのまま書き写す(自分で計算し直した値ではなく、表示どおりの値。投球記号の読み取りと矛盾していても、表示どおりの数字を書くこと)。10フレーム目まで画像に表示されている場合は、必ず10個分のscoreを埋めること。最終フレームの累計が画面上の「TOTAL」の値と一致するか必ず確認する
 - split_roll_index は、そのフレームの中で数字が丸で囲まれている(スプリットを示す)投球が何投目か(0始まりのインデックス)を表す。スプリットは1投目とは限らず、10フレーム目のボーナス球(2投目・3投目)に付くこともあるので、実際に丸が付いている投球の位置を必ず確認すること。丸が付いた投球がなければ null
 - frame_by_frame_reading は手順2〜3の思考過程を1フレームずつ短い日本語で記載する(この項目を必ず frames より先に埋めること)
 - 画像にボウリングのスコア(電光掲示板・スコアシート)が写っていない場合(料理・風景・人物など無関係な写真)は、screen_type を "none"、player_matched を false、games を空配列にする。これが最優先で、名前の照合は行わない
@@ -1300,7 +1305,7 @@ async function analyzeScoreImage(images, playerName, { cropped = false, zoomed =
     response = await fetch("/api/analyze", {
       method: "POST",
       headers: { "Content-Type": "application/json", ...(await usageHeaders()) },
-      body: JSON.stringify({ images, prompt }),
+      body: JSON.stringify({ images, prompt: recheckNote ? `${prompt}\n\n${recheckNote}` : prompt, ...(recheckNote ? { purpose: "recheck" } : {}) }),
     });
   } catch (networkErr) {
     throw new Error(friendlyAiError("network", "スコア解析"));
@@ -7063,8 +7068,8 @@ export default function StrikeLog() {
         setPendingResult({ ...result, player_matched: false, notScore });
         if (notScore) reportAnalysisOutcome({ notScore: 1 });
       } else {
-        const rawGames = Array.isArray(result.games) ? result.games : [];
-        const normalizedGames = rawGames.map((game) => {
+        const normalize = (res) =>
+          (Array.isArray(res.games) ? res.games : []).map((game) => {
           const framesWithSplitRolls = (game.frames || []).map((f) => {
             const splitRolls = [];
             if (typeof f.split_roll_index === "number") splitRolls[f.split_roll_index] = true;
@@ -7077,7 +7082,11 @@ export default function StrikeLog() {
           const ocrTotal = rawTotal === null || rawTotal === undefined || rawTotal === "" ? NaN : Number(rawTotal);
           const hasOcrTotal = Number.isFinite(ocrTotal);
           // The per-frame cumulative numbers exactly as copied off the screen.
-          const ocrScores = (game.frames || []).slice(0, 10).map((f) => Number(f?.score));
+          // Prefer the row of cumulative scores the AI copied first
+          // (screen_cumulative); fall back to each frame's score.
+          const copied = Array.isArray(game.screen_cumulative) ? game.screen_cumulative : [];
+          const num = (v) => (v === null || v === undefined || v === "" ? NaN : Number(v));
+          const ocrScores = (game.frames || []).slice(0, 10).map((f, i) => (Number.isFinite(num(copied[i])) ? num(copied[i]) : Number(f?.score)));
           let autoCorrectedFrames = null;
           let issue = findReadIssue(norm.frames, ocrScores, ocrTotal, norm.total);
           if (issue) {
@@ -7106,6 +7115,35 @@ export default function StrikeLog() {
             frame_by_frame_reading: game.frame_by_frame_reading || [],
           };
         });
+        let normalizedGames = normalize(result);
+        // Didn't add up (a frame's marks and the cumulative score disagree)?
+        // Take one more look before asking the user to fix it by hand: tell
+        // the AI which frames were off and keep whichever reading has fewer
+        // problems. Costs one more AI call, only when the first one failed.
+        const flagged = normalizedGames.filter((g) => g.totalMismatch);
+        if (flagged.length) {
+          const lines = normalizedGames
+            .map((g, i) =>
+              g.totalMismatch
+                ? `・${i + 1}つ目のゲーム: 読み取った累計スコアが [${g.ocrScores.map((n) => (Number.isFinite(n) ? n : "?")).join(", ")}] で、${(g.totalMismatch.frames || []).map((f) => `${f + 1}`).join("・") || "いくつかの"}フレーム目付近で投球の記号と累計が合いませんでした`
+                : null
+            )
+            .filter(Boolean)
+            .join("\n");
+          const note = `【再確認のお願い】
+前回この画像を読み取った結果、次の食い違いがありました。
+${lines}
+前回の読み取りは間違っている可能性が高いので、先入観を持たずに、もう一度最初から画像を見直してください。特に、累計スコアの段の数字(大きく表示されている数字)を1フレーム目から順に1つずつ正確に書き写し、その差分と投球の記号が合うかをフレームごとに確かめてください。行の取り違え(別のプレイヤーの行や、ヘッダーの行を読んでいないか)にも注意してください。出力形式は上と同じJSONのみです。`;
+          try {
+            const second = await analyzeScoreImage(built.images, playerName.trim(), { ...built, recheckNote: note });
+            if (second && second.player_matched !== false && Array.isArray(second.games) && second.games.length) {
+              const again = normalize(second);
+              if (again.filter((g) => g.totalMismatch).length <= flagged.length) normalizedGames = again;
+            }
+          } catch (e) {
+            // the first reading stands
+          }
+        }
         const firstDetectedDate = normalizedGames.find((g) => g.detectedDate)?.detectedDate;
         if (firstDetectedDate && /^\d{4}-\d{2}-\d{2}$/.test(firstDetectedDate)) {
           setGameDate(firstDetectedDate);
@@ -9110,6 +9148,10 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                       <div className="rounded-xl p-3 border glass-card text-center" style={{ borderColor: COLORS.oak }}>
                         <div className="text-xs" style={{ color: COLORS.strike }}>ゲーム数</div>
                         <div style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 22, color: COLORS.cream }}>{periodGames.length}</div>
+                        <div style={{ color: COLORS.strike, fontSize: 12 }}>
+                          トータル{" "}
+                          <span style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 15, color: COLORS.gold }}>{daySummary(periodGames).sum}</span>
+                        </div>
                       </div>
                       <div className="rounded-xl p-3 border glass-card text-center" style={{ borderColor: COLORS.oak }}>
                         <div className="text-xs" style={{ color: COLORS.strike }}>アベレージ</div>
@@ -9267,9 +9309,6 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                             score printout, so as many as possible fit on one screen.
                             Tap a game's bar to open its strike/spare breakdown. */}
                         <div className="rounded-xl border glass-card overflow-hidden" style={{ borderColor: COLORS.oak, padding: "6px 8px 8px" }}>
-                          <div style={{ padding: "4px 0 8px", marginBottom: 6, borderBottom: "1px solid rgba(224, 168, 0, 0.3)" }}>
-                            <DayTotals games={periodGames} />
-                          </div>
                           {[...periodGames]
                             .sort((a, b) => (a.gameNumber || 1) - (b.gameNumber || 1))
                             .map((g, gi) => {
