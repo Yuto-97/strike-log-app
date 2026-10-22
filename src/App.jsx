@@ -6238,15 +6238,77 @@ const guideVideo = (name) => GUIDE_VIDEOS.find((v) => v.name === name);
 
 // A short how-to video (big captions, no sound needed). Tapping play opens
 // it full screen on phones.
+// Playback speeds offered under every video. The choice is remembered and
+// applied to all the guide's videos (older viewers may want it slower,
+// others faster). Big buttons, since many viewers aren't used to phones.
+const GUIDE_SPEEDS = [
+  { v: 0.75, label: "ゆっくり" },
+  { v: 1, label: "ふつう" },
+  { v: 1.25, label: "少し速く" },
+  { v: 1.5, label: "速く" },
+];
+const GUIDE_SPEED_KEY = "guide-video-speed";
+function readGuideSpeed() {
+  try {
+    const n = Number(localStorage.getItem(GUIDE_SPEED_KEY));
+    return GUIDE_SPEEDS.some((x) => x.v === n) ? n : 1;
+  } catch (e) {
+    return 1;
+  }
+}
+
 function GuideVideo({ name }) {
   const v = guideVideo(name);
   const title = v.title;
   const seconds = v.sec;
+  const ref = useRef(null);
+  const [speed, setSpeed] = useState(readGuideSpeed);
+  useEffect(() => {
+    // Another video's speed buttons changed the setting — follow it.
+    const sync = () => setSpeed(readGuideSpeed());
+    window.addEventListener("guide-speed", sync);
+    return () => window.removeEventListener("guide-speed", sync);
+  }, []);
+  useEffect(() => {
+    if (ref.current) {
+      ref.current.playbackRate = speed;
+      ref.current.defaultPlaybackRate = speed;
+    }
+  }, [speed]);
+  const choose = (n) => {
+    try {
+      localStorage.setItem(GUIDE_SPEED_KEY, String(n));
+    } catch (e) {
+      // ignore
+    }
+    setSpeed(n);
+    window.dispatchEvent(new Event("guide-speed"));
+  };
+  const len = seconds >= 60 ? `${Math.floor(seconds / 60)}分${seconds % 60 ? `${seconds % 60}秒` : ""}` : `${seconds}秒`;
   return (
     <div className="g-video" id={`v-${name}`}>
-      <video src={`/guide-img/v_${name}.mp4`} poster={`/guide-img/v_${name}.jpg`} controls playsInline preload="none" />
+      <video
+        ref={ref}
+        src={`/guide-img/v_${name}.mp4`}
+        poster={`/guide-img/v_${name}.jpg`}
+        controls
+        playsInline
+        preload="none"
+        onPlay={(e) => {
+          e.currentTarget.playbackRate = speed;
+        }}
+      />
       <div className="g-video-cap">
-        ▶ 動画で見る:{title}(約{seconds >= 60 ? `${Math.floor(seconds / 60)}分${seconds % 60 ? `${seconds % 60}秒` : ""}` : `${seconds}秒`}・音なし)
+        ▶ {title}(約{len}・音なし)
+      </div>
+      <div className="g-speed" role="group" aria-label="再生の速さ">
+        <span>見る速さ</span>
+        {GUIDE_SPEEDS.map((x) => (
+          <button key={x.v} type="button" aria-pressed={speed === x.v} className={speed === x.v ? "on" : ""} onClick={() => choose(x.v)}>
+            {x.label}
+            <small>{x.v}倍</small>
+          </button>
+        ))}
       </div>
     </div>
   );
@@ -6324,6 +6386,11 @@ function GuidePage() {
         .g-video-cap { color: #F5F1E4; font-size: 14px; font-weight: 700; padding: 8px 4px 2px; }
         .g-videos { display: grid; grid-template-columns: 1fr; gap: 12px; margin-top: 14px; }
         @media (min-width: 640px) { .g-videos { grid-template-columns: 1fr 1fr; } }
+        .g-speed { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 6px 2px 2px; }
+        .g-speed span { grid-column: 1 / -1; color: #F5F1E4; font-size: 13px; font-weight: 700; }
+        .g-speed button { padding: 9px 4px; border-radius: 10px; border: 1px solid rgba(245,241,228,0.35); background: transparent; color: #F5F1E4; font-size: 14px; font-weight: 700; white-space: nowrap; line-height: 1.3; }
+        .g-speed button small { display: block; font-size: 11px; font-weight: 400; opacity: 0.8; }
+        .g-speed button.on { background: #E0A800; border-color: #E0A800; color: #1E2340; }
         .g-vlist { display: grid; grid-template-columns: 1fr; gap: 8px; margin-top: 12px; }
         @media (min-width: 640px) { .g-vlist { grid-template-columns: 1fr 1fr; } }
         .g-vlink { display: flex; align-items: center; gap: 10px; background: #fff; border: 1px solid #E3D8C0; border-radius: 12px; padding: 10px 12px; color: #1E2340; text-decoration: none; font-weight: 700; font-size: 15px; line-height: 1.4; }
@@ -6374,7 +6441,7 @@ function GuidePage() {
           <h2 className="g-h2">
             <span className="g-badge">▶</span>動画で見る
           </h2>
-          <p style={{ margin: 0 }}>文字を読むより、動画の方が分かりやすい方はこちら。字幕だけなので、音が出せない場所でも見られます。見たい動画を押すと、その場所へ移動します。ゆっくり進むので、そのまま真似しながら見られます。途中で止めたい時は、動画を押すと一時停止できます。</p>
+          <p style={{ margin: 0 }}>文字を読むより、動画の方が分かりやすい方はこちら。字幕だけなので、音が出せない場所でも見られます。見たい動画を押すと、その場所へ移動します。ゆっくり進むので、そのまま真似しながら見られます。途中で止めたい時は、動画を押すと一時停止できます。動画の下の「ゆっくり」「速く」のボタンで、見る速さも変えられます(選んだ速さは、ほかの動画にも使われます)。</p>
           <div className="g-vlist">
             {GUIDE_VIDEOS.map((v) => (
               <a key={v.name} href={`#v-${v.name}`} className="g-vlink">
