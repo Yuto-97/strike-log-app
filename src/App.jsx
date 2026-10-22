@@ -6177,6 +6177,19 @@ function GuideShot({ src, alt, caption }) {
   );
 }
 
+// A short how-to video (big captions, no sound needed). Tapping play opens
+// it full screen on phones.
+function GuideVideo({ name, title, seconds }) {
+  return (
+    <div className="g-video">
+      <video src={`/guide-img/${name}.mp4`} poster={`/guide-img/${name}_poster.jpg`} controls playsInline preload="none" />
+      <div className="g-video-cap">
+        ▶ 動画で見る:{title}(約{seconds}秒・音なし)
+      </div>
+    </div>
+  );
+}
+
 function GuideSteps({ items, start = 1 }) {
   return (
     <ol className="g-steps">
@@ -6244,6 +6257,11 @@ function GuidePage() {
         .g-faq dd { margin: 2px 0 0; padding-left: 1.6em; }
         .g-foot { margin-top: 36px; font-size: 13.5px; color: #5B6080; text-align: center; }
         .g-foot a { color: #1E2340; }
+        .g-video { background: #1E2340; border-radius: 16px; padding: 10px; margin: 0 auto 14px; max-width: 270px; }
+        .g-video video { width: 100%; display: block; border-radius: 10px; background: #000; aspect-ratio: 720 / 1592; }
+        .g-video-cap { color: #F5F1E4; font-size: 14px; font-weight: 700; padding: 8px 4px 2px; }
+        .g-videos { display: grid; grid-template-columns: 1fr; gap: 12px; margin-top: 14px; }
+        @media (min-width: 640px) { .g-videos { grid-template-columns: 1fr 1fr 1fr; } }
         .g-print-only { display: none; }
         @page { size: A4; margin: 14mm 12mm; }
         @media print {
@@ -6256,6 +6274,7 @@ function GuidePage() {
           .g-h2 { break-after: avoid; }
           .g-shot img { max-width: 170px; box-shadow: none; }
           .g-print-only { display: block; }
+          .g-video, .g-videos { display: none !important; }
           .g-grid2 { grid-template-columns: 1fr 1fr; }
           .g-row { grid-template-columns: 1fr 180px; }
         }
@@ -6283,6 +6302,18 @@ function GuidePage() {
             </li>
           ))}
         </ul>
+
+        <section className="g-sec" style={{ marginTop: 22 }}>
+          <h2 className="g-h2">
+            <span className="g-badge">▶</span>動画で見る
+          </h2>
+          <p style={{ margin: 0 }}>文字を読むより、動画の方が分かりやすい方はこちら。字幕だけなので、音が出せない場所でも見られます。</p>
+          <div className="g-videos">
+            <GuideVideo name="setup" title="はじめの設定" seconds={80} />
+            <GuideVideo name="record" title="スコアを記録する" seconds={50} />
+            <GuideVideo name="view" title="履歴と成績を見る" seconds={35} />
+          </div>
+        </section>
 
         <section id="install" className="g-sec">
           <h2 className="g-h2">
@@ -6333,6 +6364,9 @@ function GuidePage() {
               "はじめて使う時は「はじめの設定」が出てきます。1ページずつ入力して「次へ」を押してください。どの項目も「あとで設定する」で飛ばせて、あとから「設定」でいつでも変えられます。",
             ]}
           />
+          <div style={{ marginTop: 12 }}>
+            <GuideVideo name="setup" title="はじめの設定" seconds={80} />
+          </div>
           <div className="g-card" style={{ marginTop: 12 }}>
             <div className="g-h3" style={{ marginTop: 0 }}>はじめの設定で入れるもの</div>
             <table className="g-table" style={{ fontSize: 14 }}>
@@ -6361,6 +6395,7 @@ function GuidePage() {
           <h2 className="g-h2">
             <span className="g-badge">3</span>スコアを記録する
           </h2>
+          <GuideVideo name="record" title="スコアを記録する" seconds={50} />
           <div className="g-row">
             <div>
               <GuideSteps
@@ -6405,6 +6440,7 @@ function GuidePage() {
           <h2 className="g-h2">
             <span className="g-badge">4</span>履歴を見る
           </h2>
+          <GuideVideo name="view" title="履歴と成績を見る" seconds={35} />
           <div className="g-row">
             <div>
               <p style={{ marginTop: 0 }}>
@@ -6542,7 +6578,7 @@ function GuidePage() {
           <br />
           <a href="/terms">利用規約</a> ・ <a href="/privacy">プライバシーポリシー</a> ・ <a href="/tokushoho">特定商取引法に基づく表記</a>
           <div className="g-print-only" style={{ marginTop: 8 }}>
-            最新のガイドは {GUIDE_URL}guide で見られます
+            操作の動画と最新のガイドは {GUIDE_URL}guide で見られます
           </div>
         </footer>
       </main>
