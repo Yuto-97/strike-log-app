@@ -6452,7 +6452,7 @@ function GuidePage() {
               ["ランキング", "アカウントを作ると、月間ランキングに参加できます(参加は自由)。表示されるのは、自分で決めた表示名と成績だけです。"],
               ["AIチャット相談", "右上の吹き出しのマークから、アプリの使い方やボウリング用語について質問できます。"],
               ["お知らせ", "右上のベルのマークで、アップデートやイベントのお知らせを確認できます。"],
-              ["設定", "文字の大きさ、目標、ボール・シューズの登録や変更、アカウントの作成・ログインができます。「はじめの設定をやり直す」もここからできます。"],
+              ["設定", "文字の大きさ、目標、ボール・シューズの登録や変更、アカウントの作成・ログインができます。いちばん下の「使い方ガイドを見る」から、このガイドを開けます。"],
             ].map(([t, d]) => (
               <div className="g-card" key={t}>
                 <div className="g-h3" style={{ marginTop: 0 }}>{t}</div>
@@ -10568,29 +10568,6 @@ function getNextRollCell(frameIdx, rollIdx, value) {
               )}
             </div>
 
-            <div className="flex gap-2">
-              <a
-                href="/guide"
-                target="_blank"
-                rel="noreferrer"
-                className="flex-1 rounded-xl flex items-center justify-center"
-                style={{ padding: "10px 8px", border: `1px solid ${COLORS.oak}`, color: COLORS.strike, fontSize: 13.5, fontWeight: 700 }}
-              >
-                使い方ガイド
-              </a>
-              <button
-                type="button"
-                onClick={() => {
-                  setSetupStep(1);
-                  setSetupOpen(true);
-                }}
-                className="flex-1 rounded-xl"
-                style={{ padding: "10px 8px", border: `1px solid ${COLORS.oak}`, color: COLORS.strike, fontSize: 13.5, fontWeight: 700 }}
-              >
-                はじめの設定をやり直す
-              </button>
-            </div>
-
             <div className="flex items-center justify-between">
               <div className="text-sm" style={{ color: COLORS.strike }}>基本情報</div>
               {profileSaved && <span style={{ color: COLORS.strike, fontSize: 13 }}>保存しました</span>}
@@ -11089,6 +11066,16 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                 {feedbackSubmitting ? "送信中..." : feedbackSent ? "送信しました!" : "送信する"}
               </button>
             </div>
+
+            <a
+              href="/guide"
+              target="_blank"
+              rel="noreferrer"
+              className="w-full rounded-xl flex items-center justify-center"
+              style={{ padding: "12px 8px", border: `1px solid ${COLORS.oak}`, color: COLORS.strike, fontSize: 14, fontWeight: 700 }}
+            >
+              使い方ガイドを見る
+            </a>
 
             <div className="legal-links flex items-center justify-center gap-2 pt-2 flex-nowrap" style={{ fontSize: 10, color: COLORS.strike, whiteSpace: "nowrap" }}>
               <a href="/terms" style={{ textDecoration: "underline" }}>利用規約</a>
