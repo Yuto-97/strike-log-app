@@ -5749,6 +5749,11 @@ function SetupWizard({
   const [ballRole, setBallRole] = useState("strike");
   const [ballWeight, setBallWeight] = useState("");
   const [ballName, setBallName] = useState("");
+  const [ballThumbless, setBallThumbless] = useState(false);
+  const [ballCore, setBallCore] = useState("");
+  const [ballCover, setBallCover] = useState("");
+  const [ballMotion, setBallMotion] = useState("");
+  const [ballLane, setBallLane] = useState("");
   const [shoeChoice, setShoeChoice] = useState(myShoes.some((s) => s.type === "own") ? "own" : "rental");
   const [shoeName, setShoeName] = useState("");
   const [email, setEmail] = useState("");
@@ -5772,12 +5777,20 @@ function SetupWizard({
       id: uid(),
       type: ballType,
       role: ballRole,
-      label: ballName.trim() || `${typeLabel} ${ballWeight}lb`,
+      label: ballName.trim() || `${typeLabel} ${ballWeight}lb${ballThumbless ? "・サムレス" : ""}`,
       weight: Number(ballWeight),
-      thumbless: false,
+      thumbless: ballThumbless,
+      ...(ballType === "own"
+        ? { core: ballCore || null, coverstock: ballCover || null, motion: ballMotion || null, laneCondition: ballLane || null }
+        : {}),
     });
     setBallWeight("");
     setBallName("");
+    setBallThumbless(false);
+    setBallCore("");
+    setBallCover("");
+    setBallMotion("");
+    setBallLane("");
     setBallRole(ballRole === "strike" ? "spare" : "strike");
   };
 
@@ -5953,10 +5966,41 @@ function SetupWizard({
             ))}
           </select>
         </SetupField>
+        <label className="flex items-center gap-2" style={{ color: COLORS.cream, fontSize: 14 }}>
+          <input type="checkbox" checked={ballThumbless} onChange={(e) => setBallThumbless(e.target.checked)} style={{ width: 20, height: 20 }} />
+          サムレス(親指を入れずに投げる)
+        </label>
         {ballType === "own" && (
-          <SetupField label="ボールの名前(任意)">
-            <input value={ballName} onChange={(e) => setBallName(e.target.value)} placeholder="例: フェイズ2" maxLength={30} style={setupInputStyle} />
-          </SetupField>
+          <>
+            <SetupField label="ボールの名前(任意)">
+              <input value={ballName} onChange={(e) => setBallName(e.target.value)} placeholder="例: フェイズ2" maxLength={30} style={setupInputStyle} />
+            </SetupField>
+            <div className="rounded-xl space-y-4" style={{ padding: "12px", border: "1px solid rgba(224,168,0,0.35)", background: "rgba(10,16,34,0.35)" }}>
+              <div>
+                <div style={{ color: COLORS.gold, fontSize: 14, fontWeight: 700 }}>くわしい情報(任意)</div>
+                <div style={{ color: COLORS.strike, fontSize: 12.5, lineHeight: 1.6, marginTop: 4 }}>
+                  分からなければ「選択しない」のままで大丈夫です。ボールの箱や説明書、メーカーのホームページ、プロショップで確認できます。入れておくと、ボール別の成績がくわしく見られます。
+                </div>
+              </div>
+              {[
+                { label: "コアタイプ", hint: "ボールの中心にある重り(コア)の形", value: ballCore, set: setBallCore, opts: CORE_LABELS },
+                { label: "カバーストック", hint: "ボールの表面の素材。よく曲がる順に リアクティブ・パーティクル > ウレタン > プラスチック", value: ballCover, set: setBallCover, opts: COVERSTOCK_LABELS },
+                { label: "球質(回転タイプ)", hint: "自分の投げるボールの曲がり方", value: ballMotion, set: setBallMotion, opts: MOTION_LABELS },
+                { label: "合うレーンコンディション", hint: "床のオイル(油)の多さ。オイルが少ない=ドライ、多い=オイリー", value: ballLane, set: setBallLane, opts: LANE_LABELS },
+              ].map((f) => (
+                <SetupField key={f.label} label={f.label} hint={f.hint}>
+                  <select value={f.value} onChange={(e) => f.set(e.target.value)} style={setupInputStyle}>
+                    <option value="">選択しない</option>
+                    {Object.entries(f.opts).map(([k, v]) => (
+                      <option key={k} value={k}>
+                        {v}
+                      </option>
+                    ))}
+                  </select>
+                </SetupField>
+              ))}
+            </div>
+          </>
         )}
         <button
           type="button"
@@ -5968,7 +6012,7 @@ function SetupWizard({
           <Plus size={16} /> このボールを登録して、もう1つ追加する
         </button>
         <div style={{ color: COLORS.strike, opacity: 0.75, fontSize: 12.5, lineHeight: 1.6 }}>
-          ボールの細かい情報(コアの種類など)は、あとから「設定」で追加できます。
+          ボールはあとから「設定」でも追加・変更できます。
         </div>
       </div>
     );
@@ -6177,12 +6221,30 @@ function GuideShot({ src, alt, caption }) {
   );
 }
 
+const GUIDE_VIDEOS = [
+  { no: 1, name: "tour", title: "アプリ全体の見方", sec: 35 },
+  { no: 2, name: "setup", title: "はじめの設定", sec: 80 },
+  { no: 3, name: "record_basic", title: "スコアを記録する(ベーシック)", sec: 40 },
+  { no: 4, name: "record_premium", title: "スコアを記録する(プレミアム以上)", sec: 35 },
+  { no: 5, name: "fix", title: "読み取りがずれていた時の直し方", sec: 55 },
+  { no: 6, name: "history", title: "履歴の見方", sec: 30 },
+  { no: 7, name: "stats", title: "記録(成績)の見方", sec: 45 },
+  { no: 8, name: "ranking", title: "ランキングの見方", sec: 20 },
+  { no: 9, name: "settings", title: "設定の見方", sec: 45 },
+  { no: 10, name: "chat", title: "AIチャット相談", sec: 20 },
+  { no: 11, name: "news", title: "お知らせの見方", sec: 20 },
+];
+const guideVideo = (name) => GUIDE_VIDEOS.find((v) => v.name === name);
+
 // A short how-to video (big captions, no sound needed). Tapping play opens
 // it full screen on phones.
-function GuideVideo({ name, title, seconds }) {
+function GuideVideo({ name }) {
+  const v = guideVideo(name);
+  const title = v.title;
+  const seconds = v.sec;
   return (
-    <div className="g-video">
-      <video src={`/guide-img/${name}.mp4`} poster={`/guide-img/${name}_poster.jpg`} controls playsInline preload="none" />
+    <div className="g-video" id={`v-${name}`}>
+      <video src={`/guide-img/v_${name}.mp4`} poster={`/guide-img/v_${name}.jpg`} controls playsInline preload="none" />
       <div className="g-video-cap">
         ▶ 動画で見る:{title}(約{seconds}秒・音なし)
       </div>
@@ -6261,7 +6323,12 @@ function GuidePage() {
         .g-video video { width: 100%; display: block; border-radius: 10px; background: #000; aspect-ratio: 720 / 1592; }
         .g-video-cap { color: #F5F1E4; font-size: 14px; font-weight: 700; padding: 8px 4px 2px; }
         .g-videos { display: grid; grid-template-columns: 1fr; gap: 12px; margin-top: 14px; }
-        @media (min-width: 640px) { .g-videos { grid-template-columns: 1fr 1fr 1fr; } }
+        @media (min-width: 640px) { .g-videos { grid-template-columns: 1fr 1fr; } }
+        .g-vlist { display: grid; grid-template-columns: 1fr; gap: 8px; margin-top: 12px; }
+        @media (min-width: 640px) { .g-vlist { grid-template-columns: 1fr 1fr; } }
+        .g-vlink { display: flex; align-items: center; gap: 10px; background: #fff; border: 1px solid #E3D8C0; border-radius: 12px; padding: 10px 12px; color: #1E2340; text-decoration: none; font-weight: 700; font-size: 15px; line-height: 1.4; }
+        .g-vlink small { display: block; font-weight: 400; font-size: 12.5px; color: #5B6080; }
+        .g-vnum { flex: none; width: 30px; height: 30px; border-radius: 8px; background: #1E2340; color: #E0A800; font-family: 'Oswald', sans-serif; display: inline-flex; align-items: center; justify-content: center; }
         .g-print-only { display: none; }
         @page { size: A4; margin: 14mm 12mm; }
         @media print {
@@ -6274,7 +6341,7 @@ function GuidePage() {
           .g-h2 { break-after: avoid; }
           .g-shot img { max-width: 170px; box-shadow: none; }
           .g-print-only { display: block; }
-          .g-video, .g-videos { display: none !important; }
+          .g-video, .g-videos, .g-vlist { display: none !important; }
           .g-grid2 { grid-template-columns: 1fr 1fr; }
           .g-row { grid-template-columns: 1fr 180px; }
         }
@@ -6307,11 +6374,17 @@ function GuidePage() {
           <h2 className="g-h2">
             <span className="g-badge">▶</span>動画で見る
           </h2>
-          <p style={{ margin: 0 }}>文字を読むより、動画の方が分かりやすい方はこちら。字幕だけなので、音が出せない場所でも見られます。</p>
-          <div className="g-videos">
-            <GuideVideo name="setup" title="はじめの設定" seconds={80} />
-            <GuideVideo name="record" title="スコアを記録する" seconds={50} />
-            <GuideVideo name="view" title="履歴と成績を見る" seconds={35} />
+          <p style={{ margin: 0 }}>文字を読むより、動画の方が分かりやすい方はこちら。字幕だけなので、音が出せない場所でも見られます。見たい動画を押すと、その場所へ移動します。</p>
+          <div className="g-vlist">
+            {GUIDE_VIDEOS.map((v) => (
+              <a key={v.name} href={`#v-${v.name}`} className="g-vlink">
+                <span className="g-vnum">{v.no}</span>
+                <span>
+                  {v.title}
+                  <small>約{v.sec}秒</small>
+                </span>
+              </a>
+            ))}
           </div>
         </section>
 
@@ -6364,8 +6437,9 @@ function GuidePage() {
               "はじめて使う時は「はじめの設定」が出てきます。1ページずつ入力して「次へ」を押してください。どの項目も「あとで設定する」で飛ばせて、あとから「設定」でいつでも変えられます。",
             ]}
           />
-          <div style={{ marginTop: 12 }}>
-            <GuideVideo name="setup" title="はじめの設定" seconds={80} />
+          <div className="g-videos" style={{ marginTop: 12 }}>
+            <GuideVideo name="tour" />
+            <GuideVideo name="setup" />
           </div>
           <div className="g-card" style={{ marginTop: 12 }}>
             <div className="g-h3" style={{ marginTop: 0 }}>はじめの設定で入れるもの</div>
@@ -6377,7 +6451,7 @@ function GuidePage() {
                   ["スコア画面の名前", "ボウリング場のスコア画面に出る自分の名前(例: ヤマダ、YAMADA)。写真から自分の行を見つけるのに使います"],
                   ["利き手・目標", "目標アベレージと目標スコア。記録の画面で「あといくつ」が出ます"],
                   ["ホームセンター", "よく行くボウリング場"],
-                  ["ボール", "マイボールやハウスボールの重さと用途(1stボール・スペアボール)"],
+                  ["ボール", "重さと用途(1stボール・スペアボール)。マイボールは名前と、コアタイプ・カバーストック(表面の素材)・球質・合うレーンも入れられます。くわしい情報は分からなければ空欄でOK"],
                   ["シューズ", "レンタルかマイシューズか"],
                   ["アカウント", "メールアドレスとパスワード。機種変更しても記録を引き継げます"],
                 ].map(([a, b]) => (
@@ -6395,14 +6469,18 @@ function GuidePage() {
           <h2 className="g-h2">
             <span className="g-badge">3</span>スコアを記録する
           </h2>
-          <GuideVideo name="record" title="スコアを記録する" seconds={50} />
+          <p style={{ margin: "0 0 10px" }}>プランによって、自分の行の選び方が少しちがいます。</p>
+          <div className="g-videos">
+            <GuideVideo name="record_basic" />
+            <GuideVideo name="record_premium" />
+          </div>
           <div className="g-row">
             <div>
               <GuideSteps
                 items={[
                   "下の「スコア分析」を開き、「スコア画面に表示されている自分の名前」が合っているか確かめます",
                   "「スコア画面を撮影 / アップロード」を押して、ボウリング場のスコア画面(電光掲示板)や紙のスコアシートを撮ります。あとから、撮っておいた写真を選ぶこともできます",
-                  "自分の行(名前から合計まで)を指でなぞって囲み、「解析する」を押します。プレミアム以上のプランでは、自動で切り取って読み取ります",
+                  "ベーシック:自分の行(名前から合計まで)を指でなぞって囲み、「この範囲で決定」→「囲んだ範囲を解析する」を押します。プレミアム以上:囲まなくても、自分の行を自動で探して読み取ります(うまくいかない時は「囲み直す」)",
                 ]}
               />
               <div className="g-note">
@@ -6434,13 +6512,27 @@ function GuidePage() {
             <GuideShot src="/guide-img/auto.jpg" alt="自動で切り取った画面" caption="自動で切り取り(プレミアム以上)" />
             <GuideShot src="/guide-img/save.jpg" alt="保存の画面" caption="ボウリング場やボールを選んで保存" />
           </div>
+          <div className="g-h3" style={{ marginTop: 24 }}>読み取りがずれていた時は</div>
+          <div className="g-row">
+            <div>
+              <GuideSteps
+                items={[
+                  "合わないところがあると「〇フレーム目がうまく読み取れなかったようで…」とお知らせが出ます。写真と見比べてください",
+                  "直したいマスを押すと、下に数字のボタンが出ます。正しい数字、またはストライク・スペア・G(ガター)・F(ファール)・-(0本)を押します。スプリットは「スプリット」のボタンで丸を付けられます",
+                  "直すと、合計も自動で計算し直されます",
+                  "保存したあとに気づいた時は、「履歴」でそのゲームのえんぴつのマークを押すと、同じように直せます(最後に「保存」)",
+                ]}
+              />
+            </div>
+            <GuideVideo name="fix" />
+          </div>
         </section>
 
         <section id="history" className="g-sec">
           <h2 className="g-h2">
             <span className="g-badge">4</span>履歴を見る
           </h2>
-          <GuideVideo name="view" title="履歴と成績を見る" seconds={35} />
+          <GuideVideo name="history" />
           <div className="g-row">
             <div>
               <p style={{ marginTop: 0 }}>
@@ -6462,6 +6554,7 @@ function GuidePage() {
           <h2 className="g-h2">
             <span className="g-badge">5</span>成績を見る
           </h2>
+          <GuideVideo name="stats" />
           <div className="g-row">
             <div>
               <p style={{ marginTop: 0 }}>下の「記録」では、期間を選んで成績を見られます。</p>
@@ -6495,6 +6588,12 @@ function GuidePage() {
                 <div style={{ fontSize: 15 }}>{d}</div>
               </div>
             ))}
+          </div>
+          <div className="g-videos">
+            <GuideVideo name="ranking" />
+            <GuideVideo name="settings" />
+            <GuideVideo name="chat" />
+            <GuideVideo name="news" />
           </div>
         </section>
 
