@@ -6250,10 +6250,61 @@ function readGuideSpeed() {
 
 const guideLen = (sec) => (sec >= 60 ? `${Math.floor(sec / 60)}分${sec % 60 ? `${sec % 60}秒` : ""}` : `${sec}秒`);
 
+// Captions of each how-to video: [start sec, end sec, text]. They are shown
+// in a big box right under the video (not burned into the picture), so the
+// video itself can be smaller and the words are hard to miss.
+const GUIDE_CAPTIONS = {
+  tour: [[0.4, 4.5, "アプリ全体の見方"], [4.5, 10.2, "画面の下に5つのボタンがあります"], [10.2, 18.59, "「スコア分析」スコア画面の写真からスコアを記録します"], [18.59, 27.02, "「履歴」これまでの記録を日ごとに見られます"], [27.02, 35.54, "「記録」アベレージやストライク率など成績を見られます"], [35.54, 43.97, "「ランキング」みんなとの月間ランキングです"], [43.97, 57.41, "「設定」ボールの登録や文字の大きさなどを変えられます"], [57.41, 64.92, "右上のベルは「お知らせ」アップデートなどが届きます"], [64.92, 72.42, "吹き出しは「AIチャット相談」使い方を質問できます"], [72.42, 79.52, "くわしい使い方はそれぞれの動画で紹介しています"]],
+  setup: [[0.4, 6.7, "はじめて開くと「はじめの設定」が出ます"], [6.7, 14.68, "「設定をはじめる」を押します"], [14.68, 28.5, "文字の大きさを選びます押すとすぐに変わります"], [28.5, 35.12, "選んだら「次へ」"], [35.12, 44.45, "ニックネームを入れます"], [44.45, 54.26, "スコア画面に出る自分の名前を画面と同じように入れます"], [54.26, 60.94, "「次へ」"], [60.94, 81.77, "利き手と目標を入れます"], [81.77, 88.41, "「次へ」"], [88.41, 101.64, "よく行くボウリング場を入れます"], [101.64, 108.27, "「次へ」"], [108.27, 123.99, "使っているボールを登録します種類・用途・重さを選びます"], [123.99, 132.98, "マイボールは名前も入れられます"], [132.98, 141.88, "くわしい情報は分かる所だけでOK分からなければ空欄のままで大丈夫"], [141.88, 149.58, "例えばカバーストック(ボールの表面の素材)を選びます"], [149.58, 156.54, "球質(曲がり方)なども分かれば選びます"], [156.54, 164.7, "ボールが2つ以上あるときは「もう1つ追加する」"], [164.7, 173.1, "登録したボールが上に並びます登録できたら「次へ」"], [173.1, 188.65, "シューズを選びますマイシューズは名前を入れます"], [188.65, 195.27, "「次へ」"], [195.27, 202.37, "アカウントを作ると機種変更しても記録が残ります"], [202.37, 209.02, "あとで作るときは「あとで設定する」"], [209.02, 218.33, "これで準備ができました「はじめる」を押します"]],
+  record_basic: [[0.4, 6.9, "スコアの記録のしかた(ベーシックプラン)"], [6.9, 14.6, "まず、ここの名前がスコア画面の名前と同じか確かめます"], [14.6, 21.9, "「スコア画面を撮影」を押してスコア画面を撮ります"], [21.9, 29.21, "自分の行を、名前から合計まで指でなぞって囲みます"], [29.21, 35.86, "囲めたら「この範囲で決定」"], [35.86, 42.99, "「囲んだ範囲を解析する」を押します"], [42.99, 50.09, "AIがスコアを読み取ります(10〜20秒ほど)"], [50.09, 57.39, "読み取った結果が出ました写真と見比べて確かめます"], [57.39, 65.89, "違うところがあればマスを押して直せます(直し方は別の動画で)"], [65.89, 72.99, "プレー日・何ゲーム目・ボウリング場を確かめます"], [72.99, 84.59, "使ったボールを選びます"], [84.59, 92.19, "最後に「記録を保存」を押します"], [92.19, 98.89, "これで記録できました「履歴」に追加されます"]],
+  record_premium: [[0.4, 7.5, "スコアの記録のしかた(プレミアム以上のプラン)"], [7.5, 13.4, "名前がスコア画面と同じか確かめます"], [13.4, 20.7, "「スコア画面を撮影」を押してスコア画面を撮ります"], [20.7, 27.2, "指で囲まなくても自分の行を自動で探します"], [27.2, 34.71, "スコアの部分を自動で切り取ってそのまま読み取ります"], [34.71, 42.01, "読み取った結果が出ました写真と見比べて確かめます"], [42.01, 49.91, "うまく切り取れなかった時は「囲み直す」で自分で囲めます"], [49.91, 57.01, "プレー日・何ゲーム目・ボウリング場を確かめます"], [57.01, 68.65, "使ったボールを選びます"], [68.65, 76.3, "最後に「記録を保存」を押します"], [76.3, 83.0, "これで記録できました「履歴」に追加されます"]],
+  fix: [[0.4, 5.9, "読み取りがずれていた時の直し方"], [5.9, 13.6, "まず、ここの名前がスコア画面の名前と同じか確かめます"], [13.6, 20.9, "「スコア画面を撮影」を押してスコア画面を撮ります"], [20.9, 28.2, "自分の行を、名前から合計まで指でなぞって囲みます"], [28.2, 34.83, "囲めたら「この範囲で決定」"], [34.83, 42.09, "「囲んだ範囲を解析する」を押します"], [42.09, 49.19, "AIがスコアを読み取ります(10〜20秒ほど)"], [49.19, 56.12, "合わないところがあるとお知らせが出ます"], [56.12, 63.62, "写真と見比べると4フレーム目の1投目が「8」でした"], [63.62, 70.27, "直したいマスを押します"], [70.27, 78.78, "下に数字のボタンが出るので正しい数字を押します"], [78.78, 87.72, "ストライクやスペアは記号のボタンで入れられます"], [87.72, 93.62, "直すと合計も自動で計算し直されます"], [93.62, 100.73, "保存したあとに気づいた時は「履歴」から直せます"], [100.73, 107.73, "直したいゲームのえんぴつのマークを押します"], [107.73, 117.17, "同じようにマスを押すと数字のボタンが出ます"], [117.17, 125.46, "直したら「保存」を押します(やめる時は「キャンセル」)"], [125.46, 131.96, "ボウリング場やボールも同じ画面で直せます"]],
+  history: [[0.4, 9.06, "「履歴」の見方"], [9.06, 15.96, "月ごとの見出しにゲーム数とアベレージが出ます"], [15.96, 24.46, "1日ごとにカードになっていてトータルやアベレージが分かります"], [24.46, 33.08, "日付のカードを押すとその日のゲームが開きます"], [33.08, 39.18, "全部のフレームがスコア表で見られます"], [39.18, 45.28, "ゲームの下には使ったボールとシューズ"], [45.28, 58.09, "えんぴつのマークで直す×のマークで消せます"], [58.09, 71.77, "ほかの日も、押すと開きますもう一度押すと閉じます"]],
+  stats: [[0.4, 8.76, "「記録」の見方"], [8.76, 16.66, "上のボタンで期間を切り替えます日・週・月・年・期間指定"], [16.66, 22.36, "「‹ ›」で前後の期間に移れます"], [22.36, 30.06, "アベレージ・トータル・ゲーム数ハイゲーム・ローゲーム"], [30.06, 36.36, "目標まであといくつかもバーで分かります"], [36.36, 44.86, "ストライク・スペアなどの回数と割合"], [44.86, 52.56, "スコアの移り変わりのグラフ点が多い時は横にスクロール"], [52.56, 66.86, "「ボール別」「ボウリング場別」の成績は押すと開きます"], [66.86, 76.15, "「用語と計算式」でストライク率などの意味が分かります"], [76.15, 89.52, "「日」にすると、その日のゲームをスコア表で並べて見られます"], [89.52, 97.92, "ゲーム名を押すとストライクなどの内訳が開きます"]],
+  ranking: [[0.4, 9.26, "「ランキング」の見方"], [9.26, 17.16, "アカウントを作った人どうしで毎月のランキングを競えます"], [17.16, 30.14, "アベレージとハイゲームで切り替えられます"], [30.14, 36.24, "自分の順位は色が変わって表示されます"], [36.24, 42.55, "年代や性別などで絞り込むこともできます"], [42.55, 49.65, "参加は自由です「設定」からいつでもやめられます"]],
+  settings: [[0.4, 8.99, "「設定」の見方"], [8.99, 16.49, "アカウントとニックネームIDもここで確かめられます"], [16.49, 21.81, "今のプランと今月の回数"], [21.81, 28.76, "月間ランキングに参加するかを切り替えられます"], [28.76, 38.07, "利き手・目標・ホームセンター"], [38.07, 46.48, "ボールの登録「新しいボールを登録」を押します"], [46.48, 54.47, "マイボールは、くわしい情報も分かる所だけ入れられます"], [54.47, 66.07, "どれも選ばなくても登録できます"], [66.07, 71.17, "マイシューズも登録できます"], [71.17, 85.56, "文字の大きさはここでいつでも変えられます"], [85.56, 90.48, "ご意見・要望も送れます"], [90.48, 97.62, "一番下から使い方ガイドを開けます"]],
+  chat: [[0.4, 5.7, "「AIチャット相談」の使い方"], [5.7, 12.74, "右上の吹き出しを押します"], [12.74, 19.64, "アプリの使い方やボウリング用語を質問できます"], [19.64, 35.29, "質問を入れて送ります"], [35.29, 41.0, "AIが答えてくれます"], [41.0, 48.3, "使い方とボウリング用語いがいの質問には答えません"], [48.3, 55.24, "閉じるときは右上の「×」"]],
+  news: [[0.4, 4.7, "「お知らせ」の見方"], [4.7, 12.6, "右上のベルを押します新しいお知らせがあると印が付きます"], [12.6, 21.39, "お知らせの一覧です読みたいものを押します"], [21.39, 25.49, "中身が読めます"], [25.49, 32.72, "一覧に戻るときは左上の矢印"], [32.72, 39.43, "ボウリング場のイベント情報もここに届きます"], [39.43, 46.37, "閉じるときは右上の「×」"]],
+};
+
+// Videos the viewer has watched to the end (this phone only).
+const GUIDE_WATCHED_KEY = "guide-watched";
+function readGuideWatched() {
+  try {
+    const a = JSON.parse(localStorage.getItem(GUIDE_WATCHED_KEY) || "[]");
+    return Array.isArray(a) ? a : [];
+  } catch (e) {
+    return [];
+  }
+}
+function markGuideWatched(name) {
+  const a = readGuideWatched();
+  if (a.includes(name)) return;
+  try {
+    localStorage.setItem(GUIDE_WATCHED_KEY, JSON.stringify([...a, name]));
+  } catch (e) {
+    // ignore
+  }
+  window.dispatchEvent(new Event("guide-watched"));
+}
+function useGuideWatched() {
+  const [w, setW] = useState(readGuideWatched);
+  useEffect(() => {
+    const sync = () => setW(readGuideWatched());
+    window.addEventListener("guide-watched", sync);
+    return () => window.removeEventListener("guide-watched", sync);
+  }, []);
+  return w;
+}
+
 function GuideVideo({ name }) {
   const v = guideVideo(name);
+  const caps = GUIDE_CAPTIONS[name] || [];
   const ref = useRef(null);
+  const watched = useGuideWatched().includes(name);
   const [speed, setSpeed] = useState(readGuideSpeed);
+  const [state, setState] = useState("idle"); // idle | playing | paused | ended
+  const [time, setTime] = useState(0);
   useEffect(() => {
     // Another video's speed buttons changed the setting — follow it.
     const sync = () => setSpeed(readGuideSpeed());
@@ -6275,20 +6326,77 @@ function GuideVideo({ name }) {
     setSpeed(n);
     window.dispatchEvent(new Event("guide-speed"));
   };
+  const play = () => {
+    const el = ref.current;
+    if (!el) return;
+    if (state === "ended") el.currentTime = 0;
+    el.playbackRate = speed;
+    // Bring the video, its subtitle box and the speed buttons into view.
+    const box = el.closest(".g-video");
+    if (box && box.scrollIntoView) box.scrollIntoView({ behavior: "smooth", block: "start" });
+    el.play().catch(() => {});
+  };
+  let idx = -1;
+  caps.forEach((c, i) => {
+    if (time >= c[0] - 0.05) idx = i;
+  });
+  const started = state !== "idle";
   return (
-    <div className="g-video">
-      <video
-        ref={ref}
-        src={`/guide-img/v_${name}.mp4`}
-        poster={`/guide-img/v_${name}.jpg`}
-        controls
-        playsInline
-        preload="none"
-        onPlay={(e) => {
-          e.currentTarget.playbackRate = speed;
-        }}
-      />
-      <p className="g-video-cap">動画 {guideLen(v.sec)}・音は出ません</p>
+    <div className={`g-video${watched ? " is-watched" : ""}`}>
+      <div className="g-screen">
+        <video
+          ref={ref}
+          src={`/guide-img/v_${name}.mp4`}
+          poster={`/guide-img/v_${name}.jpg`}
+          controls={started}
+          controlsList="nofullscreen nodownload noremoteplayback"
+          disablePictureInPicture
+          playsInline
+          preload="metadata"
+          onPlay={(e) => {
+            e.currentTarget.playbackRate = speed;
+            setState("playing");
+          }}
+          onPause={(e) => {
+            if (!e.currentTarget.ended) setState("paused");
+          }}
+          onEnded={() => {
+            setState("ended");
+            markGuideWatched(name);
+          }}
+          onTimeUpdate={(e) => setTime(e.currentTarget.currentTime)}
+        />
+        {state !== "playing" && (
+          <button type="button" className={`g-play${state === "paused" ? " is-small" : ""}`} onClick={play}>
+            <span className="g-play-ic" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="40" height="40">
+                {state === "ended" ? (
+                  <path fill="currentColor" d="M12 5V2L7 6l5 4V7a6 6 0 1 1-6 6H4a8 8 0 1 0 8-8z" />
+                ) : (
+                  <path fill="currentColor" d="M8 5v14l11-7z" />
+                )}
+              </svg>
+            </span>
+            <span className="g-play-label">{state === "ended" ? "もう一度見る" : state === "paused" ? "つづきを見る" : "ここを押すと再生します"}</span>
+          </button>
+        )}
+      </div>
+      <div className="g-cap" aria-live="polite">
+        {started && idx >= 0 ? (
+          <>
+            <div className="g-cap-no">
+              説明 {idx + 1} / {caps.length}
+            </div>
+            <div className="g-cap-text">{caps[idx][2]}</div>
+          </>
+        ) : (
+          <>
+            <div className="g-cap-no">動画 {guideLen(v.sec)}・音は出ません</div>
+            <div className="g-cap-text">再生すると、ここに説明の字幕が出ます</div>
+          </>
+        )}
+      </div>
+      {watched && <div className="g-watched-note">✓ この動画は見終わりました</div>}
       <div className="g-speed" role="group" aria-label="再生の速さ">
         {GUIDE_SPEEDS.map((x) => (
           <button key={x.v} type="button" aria-pressed={speed === x.v} className={speed === x.v ? "on" : ""} onClick={() => choose(x.v)}>
@@ -6331,50 +6439,64 @@ function GuideMore({ title, children }) {
   );
 }
 
+// Two big side-by-side choices (iPhone / Android, ベーシック / プレミアム以上).
+function GuideSeg({ options, value, onChange, label }) {
+  return (
+    <div className="g-seg g-noprint" role="group" aria-label={label}>
+      {options.map(([v, t]) => (
+        <button key={v} type="button" className={value === v ? "on" : ""} aria-pressed={value === v} onClick={() => onChange(v)}>
+          {t}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+const GUIDE_APP_HOST = GUIDE_URL.replace("https://", "").replace(/\/$/, "");
+
 // How to add the web app to the home screen. One phone type at a time
-// (chosen automatically, switchable) so the page never shows two sets of
-// steps side by side.
+// (chosen automatically, switchable).
 function GuideInstall() {
   const [os, setOs] = useState(() => (typeof navigator !== "undefined" && /android/i.test(navigator.userAgent) ? "android" : "iphone"));
   const steps = {
-    iphone: [
-      "Safari(サファリ)で下のアドレスを開きます",
-      "画面の下の共有ボタン(四角から上向きの矢印)を押します",
-      "「ホーム画面に追加」を押します",
-      "右上の「追加」を押すと、アイコンができます",
-    ],
-    android: [
-      "Chrome(クローム)で下のアドレスを開きます",
-      "右上の「︙」(点が縦に3つ)を押します",
-      "「ホーム画面に追加」を押します",
-      "「追加」を押すと、アイコンができます",
-    ],
+    iphone: ["Safari(サファリ)で、下のボタンを押してアプリを開きます", "画面の下の共有ボタン(四角から上向きの矢印)を押します", "「ホーム画面に追加」を押します", "右上の「追加」を押すと、アイコンができます"],
+    android: ["Chrome(クローム)で、下のボタンを押してアプリを開きます", "右上の「︙」(点が縦に3つ)を押します", "「ホーム画面に追加」を押します", "「追加」を押すと、アイコンができます"],
   };
+  // On paper there is no button to press: point to the QR code instead.
+  const printSteps = (list) => [list[0].replace("下のボタンを押して", "下のQRコードを読み取って"), ...list.slice(1)];
   return (
     <>
-      <div className="g-seg g-noprint" role="group" aria-label="スマホの種類">
-        <button type="button" className={os === "iphone" ? "on" : ""} aria-pressed={os === "iphone"} onClick={() => setOs("iphone")}>
-          iPhone
-        </button>
-        <button type="button" className={os === "android" ? "on" : ""} aria-pressed={os === "android"} onClick={() => setOs("android")}>
-          Android
-        </button>
-      </div>
+      <GuideSeg
+        label="スマホの種類"
+        options={[
+          ["iphone", "iPhone"],
+          ["android", "Android"],
+        ]}
+        value={os}
+        onChange={setOs}
+      />
       <div className="g-noprint">
         <GuideSteps items={steps[os]} />
+        <a className="g-open" href="/">
+          <small>押すとアプリが開きます</small>
+          {GUIDE_URL.replace(/\/$/, "")}
+        </a>
       </div>
       <div className="g-print-only">
-        <p className="g-p"><b>iPhone の場合</b></p>
-        <GuideSteps items={steps.iphone} />
-        <p className="g-p"><b>Android の場合</b></p>
-        <GuideSteps items={steps.android} />
-      </div>
-      <div className="g-addr">
-        <img src="/guide-img/qr.svg" alt="アプリのQRコード" />
-        <div>
-          <div className="g-addr-label">アドレス</div>
-          <div className="g-addr-url">{GUIDE_URL.replace("https://", "").replace(/\/$/, "")}</div>
-          <div className="g-addr-note">QRコードをスマホのカメラで読み取っても開けます</div>
+        <p className="g-p">
+          <b>iPhone の場合</b>
+        </p>
+        <GuideSteps items={printSteps(steps.iphone)} />
+        <p className="g-p">
+          <b>Android の場合</b>
+        </p>
+        <GuideSteps items={printSteps(steps.android)} />
+        <div className="g-addr">
+          <img src="/guide-img/qr.svg" alt="アプリのQRコード" />
+          <div>
+            <div className="g-addr-url">{GUIDE_APP_HOST}</div>
+            <div className="g-addr-note">QRコードをスマホのカメラで読み取ると開けます</div>
+          </div>
         </div>
       </div>
       <GuideTip>次からは、ホーム画面の STRIKE LOG のアイコンから開いてください。</GuideTip>
@@ -6382,9 +6504,17 @@ function GuideInstall() {
   );
 }
 
-// One topic per screen. Each topic: a short line, one video, at most four
-// one-sentence steps, one picture, one tip. Anything longer goes into a
-// closed 「くわしく」 box so the first view stays calm.
+const GUIDE_PLAN_ROWS = [
+  ["月額(税込)", "1,000円", "2,000円", "3,000円"],
+  ["スコアの読み取り", "月60回", "月150回", "無制限"],
+  ["AIに相談", "月30回", "月150回", "無制限"],
+  ["自動で読み取り", "ー", "○", "○"],
+  ["くわしい成績", "ー", "○", "○"],
+];
+
+// One topic per screen: a video (or a choice of two), at most four
+// one-sentence steps, one picture, one tip. Longer details go into a closed
+// 「くわしく」 box.
 const GUIDE_TOPICS = [
   {
     id: "install",
@@ -6399,12 +6529,7 @@ const GUIDE_TOPICS = [
     title: "アプリ全体の見方",
     sub: "どこに何があるか",
     video: "tour",
-    steps: [
-      "画面の下に、5つのボタンが並んでいます",
-      "「スコア分析」で、スコアを撮って記録します",
-      "「履歴」「記録」で、これまでの成績を見られます",
-      "右上の吹き出しは相談、ベルはお知らせです",
-    ],
+    steps: ["画面の下に、5つのボタンが並んでいます", "「スコア分析」で、スコアを撮って記録します", "「履歴」「記録」で、これまでの成績を見られます", "右上の吹き出しは相談、ベルはお知らせです"],
   },
   {
     id: "setup",
@@ -6442,19 +6567,23 @@ const GUIDE_TOPICS = [
     group: "start",
     title: "スコアを記録する",
     sub: "スコア画面を撮るだけ",
-    video: "record_basic",
-    steps: ["下の「スコア分析」を押します", "「スコア画面を撮影」を押して、スコア画面を撮ります", "自分の行を指でなぞって囲み、「解析する」を押します", "日付などを選んで「記録を保存」を押します"],
+    choose: "ご利用のプランを選んでください",
+    variants: [
+      {
+        key: "basic",
+        label: "ベーシック",
+        video: "record_basic",
+        steps: ["下の「スコア分析」を押します", "「スコア画面を撮影」を押して、スコア画面を撮ります", "自分の行を指でなぞって囲み、「解析する」を押します", "日付などを選んで「記録を保存」を押します"],
+      },
+      {
+        key: "premium",
+        label: "プレミアム以上",
+        video: "record_premium",
+        steps: ["下の「スコア分析」を押します", "「スコア画面を撮影」を押して、スコア画面を撮ります", "自分の行を自動で見つけて読み取ります(囲まなくてOK)", "日付などを選んで「記録を保存」を押します"],
+      },
+    ],
     shot: ["scan", "スコア分析の画面"],
     tip: "画面の正面から、自分の名前から合計まで全部入るように撮るときれいに読めます。",
-    more: {
-      title: "プレミアム以上の方(囲まなくてOK)",
-      content: () => (
-        <>
-          <p className="g-p">プレミアム以上のプランでは、自分の行を自動で探して読み取ります。うまくいかない時は「囲み直す」を押してください。</p>
-          <GuideVideo name="record_premium" />
-        </>
-      ),
-    },
   },
   {
     id: "fix",
@@ -6526,26 +6655,31 @@ const GUIDE_TOPICS = [
     sub: "月1,000円から",
     body: () => (
       <>
-        <div className="g-plans">
-          {[
-            ["ベーシック", "1,000円", ["スコアの読み取り 月60回", "AIに相談 月30回"]],
-            ["プレミアム", "2,000円", ["スコアの読み取り 月150回", "AIに相談 月150回", "自動で読み取り", "くわしい成績"]],
-            ["プレミアム＋(プラス)", "3,000円", ["読み取り・相談とも回数無制限", "自動で読み取り", "くわしい成績"]],
-          ].map(([n, price, items]) => (
-            <div className="g-plan" key={n}>
-              <div className="g-plan-name">{n}</div>
-              <div className="g-plan-price">
-                月{price}
-                <small>(税込)</small>
-              </div>
-              <ul>
-                {items.map((t) => (
-                  <li key={t}>{t}</li>
+        <table className="g-ptable">
+          <thead>
+            <tr>
+              <th></th>
+              <th>ベーシック</th>
+              <th>プレミアム</th>
+              <th>
+                プレミアム
+                <br />＋(プラス)
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {GUIDE_PLAN_ROWS.map(([label, ...cells], r) => (
+              <tr key={label} className={r === 0 ? "is-price" : ""}>
+                <th scope="row">{label}</th>
+                {cells.map((c, i) => (
+                  <td key={i} className={c === "ー" ? "is-no" : c === "○" || c === "無制限" ? "is-yes" : ""}>
+                    {c}
+                  </td>
                 ))}
-              </ul>
-            </div>
-          ))}
-        </div>
+              </tr>
+            ))}
+          </tbody>
+        </table>
         <GuideTip>回数は毎月1日に戻ります。</GuideTip>
         <GuideMore title="お支払いについてくわしく見る">
           <p className="g-p">
@@ -6563,20 +6697,30 @@ const GUIDE_TOPICS = [
     body: () => (
       <div className="g-faq">
         {[
-          ["読み取った数字がちがう", "スコア表のマスを押すと直せます。保存したあとは「履歴」のえんぴつのマークから直せます。"],
-          ["自分の行が見つからない", "「スコア画面に表示されている自分の名前」が、画面の表示と同じか確かめてください。指で自分の行を囲んでも読み取れます。"],
-          ["文字が小さくて読みにくい", "「設定」の「文字の大きさ」で「大きめ」か「特大」にしてください。"],
-          ["機種変更する", "アカウントを作っておけば、新しいスマホでログインするだけで記録が引き継げます。使えるのは1台だけです。"],
-          ["今月の回数を使い切った", "毎月1日に戻ります。写真を撮っておけば、あとから選んで記録できます。"],
-          ["やめたい(解約)", "アプリの設定か、下のお問い合わせ先からいつでも解約できます。記録は1年間残ります。"],
-        ].map(([q, a]) => (
-          <details key={q} className="g-more">
-            <summary>{q}</summary>
-            <div className="g-more-in">
-              <p className="g-p">{a}</p>
-            </div>
-          </details>
-        ))}
+          ["読み取った数字がちがう", "数字がちがうマスを押すと直せます。保存したあとは「履歴」のえんぴつのマークから直せます。", "fix"],
+          ["自分の行が見つからない", "「スコア画面に表示されている自分の名前」が、ボウリング場の画面の表示と同じか確かめてください。指で自分の行を囲んでも読み取れます。", "record"],
+          ["文字が小さくて読みにくい", "「設定」の「文字の大きさ」で「大きめ」か「特大」にしてください。", "settings"],
+          ["機種変更する", "「設定」でアカウントを作っておけば、新しいスマホでログインするだけで記録が引き継げます。使えるのは1台だけです。", "settings"],
+          ["今月の回数を使い切った", "毎月1日に戻ります。写真を撮っておけば、あとから選んで記録できます。", "plans"],
+          ["やめたい(解約)", "下のお問い合わせ先に、メールでご連絡ください。記録は解約日から1年間残ります。"],
+        ].map(([q, a, link]) => {
+          const t = link && GUIDE_TOPICS.find((x) => x.id === link);
+          const hasVideo = t && (t.video || t.variants);
+          return (
+            <details key={q} className="g-more">
+              <summary>{q}</summary>
+              <div className="g-more-in">
+                <p className="g-p">{a}</p>
+                {t && (
+                  <a className="g-faq-link" href={`#${t.id}`}>
+                    <span aria-hidden="true">{hasVideo ? "▶" : "›"}</span>
+                    {hasVideo ? `動画で見る「${t.title}」` : `「${t.title}」を見る`}
+                  </a>
+                )}
+              </div>
+            </details>
+          );
+        })}
       </div>
     ),
   },
@@ -6588,22 +6732,59 @@ const GUIDE_GROUPS = [
   ["other", "そのほか"],
 ];
 
+const guideTopicVideos = (t) => (t.variants ? t.variants.map((x) => x.video) : t.video ? [t.video] : []);
+
 const guideHash = () => {
   const h = (typeof window !== "undefined" ? window.location.hash : "").replace(/^#/, "");
   return GUIDE_TOPICS.some((t) => t.id === h) ? h : "";
 };
 
+// Opened from the app's 設定 (…/guide?from=app): offer a way back. Kept for
+// the whole visit, since moving between topics only changes the #hash.
+const GUIDE_FROM_APP_KEY = "guide-from-app";
+function guideFromApp() {
+  try {
+    if (/[?&]from=app\b/.test(window.location.search)) sessionStorage.setItem(GUIDE_FROM_APP_KEY, "1");
+    return sessionStorage.getItem(GUIDE_FROM_APP_KEY) === "1";
+  } catch (e) {
+    return /[?&]from=app\b/.test(window.location.search);
+  }
+}
+
 function GuideTopic({ t, active, onBack }) {
   const i = GUIDE_TOPICS.indexOf(t);
   const next = GUIDE_TOPICS[i + 1];
+  const [variant, setVariant] = useState(t.variants ? t.variants[0].key : "");
+  const cur = t.variants ? t.variants.find((x) => x.key === variant) : t;
   return (
     <section className={`g-topic${active ? "" : " g-off"}`} aria-hidden={!active}>
-      <button type="button" className="g-back g-noprint" onClick={onBack}>
-        ← 目次にもどる
-      </button>
       <h2 className="g-h2">{t.title}</h2>
-      {t.video && active && <GuideVideo name={t.video} />}
-      {t.steps && <GuideSteps items={t.steps} />}
+      {t.variants && (
+        <>
+          <p className="g-choose g-noprint">{t.choose}</p>
+          <GuideSeg label={t.choose} options={t.variants.map((x) => [x.key, x.label])} value={variant} onChange={setVariant} />
+        </>
+      )}
+      {cur.video && active && <GuideVideo key={cur.video} name={cur.video} />}
+      {t.variants ? (
+        <>
+          <div className="g-noprint">
+            <GuideSteps items={cur.steps} />
+          </div>
+          <div className="g-print-only">
+            {t.variants.map((x) => (
+              <div key={x.key}>
+                <p className="g-p">
+                  <b>{x.label}の場合</b>
+                </p>
+                <GuideSteps items={x.steps} />
+              </div>
+            ))}
+          </div>
+        </>
+      ) : (
+        t.steps && <GuideSteps items={t.steps} />
+      )}
       {t.body && t.body()}
       {t.shot && (
         <figure className="g-shot">
@@ -6631,6 +6812,8 @@ function GuideTopic({ t, active, onBack }) {
 
 function GuidePage() {
   const [topic, setTopic] = useState(guideHash);
+  const [fromApp] = useState(guideFromApp);
+  const watched = useGuideWatched();
   useEffect(() => {
     const on = () => {
       setTopic(guideHash());
@@ -6646,9 +6829,16 @@ function GuidePage() {
     };
   }, []);
   const back = () => {
-    if (window.location.hash) window.history.pushState(null, "", window.location.pathname);
+    if (window.location.hash) window.history.pushState(null, "", window.location.pathname + window.location.search);
     setTopic("");
     window.scrollTo(0, 0);
+  };
+  const toApp = () => {
+    try {
+      sessionStorage.removeItem(GUIDE_FROM_APP_KEY);
+    } catch (e) {
+      // ignore
+    }
   };
   return (
     <div className="g-root">
@@ -6657,31 +6847,48 @@ function GuidePage() {
         .g-root { min-height: 100vh; background: #F6F1E6; color: #1E2340; font-family: 'Noto Sans JP', 'Hiragino Sans', sans-serif; font-size: 19px; line-height: 1.8; -webkit-text-size-adjust: 100%; }
         .g-root a { color: inherit; }
         .g-wrap { max-width: 560px; margin: 0 auto; padding: 0 16px 56px; }
-        .g-hero { background: #1E2340; color: #F5F1E4; padding: 28px 16px 30px; }
+        .g-hero { background: #1E2340; color: #F5F1E4; padding: 24px 16px 28px; }
         .g-hero-in { max-width: 560px; margin: 0 auto; }
         .g-logo { font-family: 'Oswald', sans-serif; font-weight: 700; font-size: 22px; letter-spacing: 0.06em; color: #E0A800; line-height: 1.2; }
-        .g-title { font-size: 32px; font-weight: 700; line-height: 1.3; margin-top: 4px; }
-        .g-lead { font-size: 18px; margin-top: 8px; color: #D9DCEA; }
+        .g-title { font-size: 32px; font-weight: 700; line-height: 1.3; margin: 4px 0 0; }
+        .g-lead { font-size: 18px; margin: 8px 0 0; color: #D9DCEA; }
+        .g-toapp { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 56px; margin: 0 0 18px; border-radius: 14px; background: #E0A800; color: #1E2340 !important; font-size: 19px; font-weight: 700; text-decoration: none; }
+        .g-bar { position: sticky; top: 0; z-index: 5; background: #1E2340; padding: 10px 16px; }
+        .g-bar-in { max-width: 560px; margin: 0 auto; display: flex; gap: 10px; }
+        .g-bar button, .g-bar a { flex: 1; display: inline-flex; align-items: center; justify-content: center; min-height: 50px; padding: 0 12px; border-radius: 12px; border: 2px solid #F5F1E4; background: transparent; color: #F5F1E4 !important; font-size: 18px; font-weight: 700; font-family: inherit; text-decoration: none; cursor: pointer; white-space: nowrap; }
+        .g-bar a { background: #E0A800; border-color: #E0A800; color: #1E2340 !important; }
         .g-group { font-size: 17px; font-weight: 700; color: #6B6450; margin: 32px 4px 10px; }
         .g-tiles { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
         .g-tile { display: flex; align-items: center; gap: 16px; min-height: 84px; padding: 14px 18px; background: #fff; border-radius: 16px; text-decoration: none; color: #1E2340; box-shadow: 0 1px 3px rgba(30,35,64,0.08); }
         .g-tile:active { background: #FFF6D9; }
         .g-tile-no { flex: none; width: 44px; height: 44px; border-radius: 50%; background: #1E2340; color: #E0A800; font-family: 'Oswald', sans-serif; font-size: 22px; display: flex; align-items: center; justify-content: center; }
         .g-tile-main { flex: 1; min-width: 0; }
-        .g-tile-t { font-size: 21px; font-weight: 700; line-height: 1.4; }
-        .g-tile-s { font-size: 16px; color: #5B6080; line-height: 1.5; }
+        .g-tile-t { display: block; font-size: 21px; font-weight: 700; line-height: 1.4; }
+        .g-tile-s { display: block; font-size: 16px; color: #5B6080; line-height: 1.5; }
         .g-tile-v { display: inline-block; margin-top: 4px; font-size: 15px; font-weight: 700; color: #8A6400; background: #FFF6D9; border-radius: 999px; padding: 1px 10px; white-space: nowrap; }
         .g-tile-arrow { flex: none; font-size: 26px; color: #B88600; }
-        .g-topic { padding-top: 16px; }
+        .g-tile.is-watched { background: #EEF7EF; }
+        .g-tile.is-watched .g-tile-no { background: #2E7D4F; color: #fff; }
+        .g-tile.is-watched .g-tile-v { background: #2E7D4F; color: #fff; }
+        .g-topic { padding-top: 4px; }
         .g-off { display: none; }
-        .g-back { display: inline-flex; align-items: center; min-height: 52px; padding: 0 18px; border-radius: 999px; border: 2px solid #1E2340; background: #fff; color: #1E2340; font-size: 18px; font-weight: 700; font-family: inherit; cursor: pointer; }
-        .g-h2 { font-size: 30px; font-weight: 700; line-height: 1.35; margin: 20px 0 18px; }
+        .g-h2 { font-size: 27px; font-weight: 700; line-height: 1.35; margin: 14px 0 12px; }
+        .g-choose { margin: 0 0 8px; font-size: 18px; font-weight: 700; color: #5B6080; }
         .g-p { margin: 0 0 12px; }
-        .g-video { background: #1E2340; border-radius: 18px; padding: 12px; margin: 0 auto 24px; max-width: 320px; }
-        .g-video video { width: 100%; display: block; border-radius: 10px; background: #000; aspect-ratio: 720 / 1592; }
-        .g-video-cap { color: #F5F1E4; font-size: 16px; margin: 10px 4px 8px; text-align: center; }
-        .g-speed { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-        .g-speed button { min-height: 52px; border-radius: 12px; border: 2px solid rgba(245,241,228,0.4); background: transparent; color: #F5F1E4; font-size: 17px; font-weight: 700; font-family: inherit; cursor: pointer; }
+        .g-video { background: #1E2340; border-radius: 18px; padding: 12px; margin: 0 0 24px; scroll-margin-top: 78px; }
+        .g-video.is-watched { background: #1F4D34; }
+        .g-screen { position: relative; width: fit-content; margin: 0 auto; }
+        .g-screen video { display: block; height: clamp(280px, calc(100vh - 400px), 600px); height: clamp(280px, calc(100svh - 400px), 600px); width: auto; aspect-ratio: 1 / 2; border-radius: 10px; background: #000; }
+        .g-play { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; border: 0; border-radius: 10px; background: rgba(15,19,40,0.55); color: #fff; font-family: inherit; cursor: pointer; }
+        .g-play.is-small { inset: auto; left: 50%; top: 50%; transform: translate(-50%, -50%); background: transparent; }
+        .g-play-ic { width: 88px; height: 88px; border-radius: 50%; background: #E0A800; color: #1E2340; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 16px rgba(0,0,0,0.35); }
+        .g-play-label { font-size: 18px; font-weight: 700; background: #1E2340; padding: 4px 14px; border-radius: 999px; white-space: nowrap; }
+        .g-cap { margin-top: 10px; background: #FFF6D9; color: #1E2340; border-radius: 12px; padding: 8px 14px; min-height: 96px; }
+        .g-cap-no { font-size: 15px; font-weight: 700; color: #8A6400; }
+        .g-cap-text { font-size: 20px; font-weight: 700; line-height: 1.5; }
+        .g-watched-note { margin-top: 10px; text-align: center; color: #fff; font-size: 17px; font-weight: 700; }
+        .g-speed { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 10px; }
+        .g-speed button { min-height: 48px; padding: 0 2px; border-radius: 10px; border: 2px solid rgba(245,241,228,0.4); background: transparent; color: #F5F1E4; font-size: 15px; font-weight: 700; font-family: inherit; cursor: pointer; white-space: nowrap; }
         .g-speed button.on { background: #E0A800; border-color: #E0A800; color: #1E2340; }
         .g-steps { list-style: none; padding: 0; margin: 0 0 20px; display: grid; gap: 12px; }
         .g-steps li { display: flex; gap: 14px; align-items: flex-start; background: #fff; border-radius: 14px; padding: 16px 18px; font-size: 20px; line-height: 1.6; }
@@ -6697,6 +6904,8 @@ function GuidePage() {
         .g-more summary::after { content: "＋"; position: absolute; right: 18px; top: 50%; transform: translateY(-50%); color: #B88600; font-size: 24px; }
         .g-more[open] summary::after { content: "－"; }
         .g-more-in { padding: 0 18px 16px; }
+        .g-faq-link { display: flex; align-items: center; gap: 10px; min-height: 54px; padding: 0 16px; border-radius: 12px; background: #1E2340; color: #fff !important; text-decoration: none; font-size: 18px; font-weight: 700; }
+        .g-faq-link span { color: #E0A800; }
         .g-dl { margin: 0; }
         .g-dl > div { padding: 10px 0; border-top: 1px solid #EFE7D4; }
         .g-dl dt { font-weight: 700; }
@@ -6704,17 +6913,21 @@ function GuidePage() {
         .g-seg { display: grid; grid-template-columns: 1fr 1fr; gap: 0; background: #E9E1CD; border-radius: 14px; padding: 4px; margin: 0 0 18px; }
         .g-seg button { min-height: 54px; border: 0; border-radius: 11px; background: transparent; font-size: 19px; font-weight: 700; color: #3D4560; font-family: inherit; cursor: pointer; }
         .g-seg button.on { background: #1E2340; color: #fff; }
-        .g-addr { display: flex; flex-direction: column; gap: 10px; align-items: center; text-align: center; background: #fff; border-radius: 14px; padding: 16px 18px; margin: 0 0 20px; }
-        .g-addr img { width: 140px; height: 140px; flex: none; }
-        .g-addr-label { font-size: 15px; color: #5B6080; }
-        .g-addr-url { font-size: 19px; font-weight: 700; white-space: nowrap; line-height: 1.4; }
-        .g-addr-note { font-size: 15px; color: #5B6080; line-height: 1.5; margin-top: 4px; }
-        .g-plans { display: grid; gap: 12px; margin: 0 0 20px; }
-        .g-plan { background: #fff; border-radius: 14px; padding: 16px 18px; }
-        .g-plan-name { font-size: 18px; font-weight: 700; color: #5B6080; }
-        .g-plan-price { font-size: 30px; font-weight: 700; line-height: 1.3; }
-        .g-plan-price small { font-size: 15px; font-weight: 400; color: #5B6080; margin-left: 4px; }
-        .g-plan ul { margin: 6px 0 0; padding-left: 1.2em; font-size: 18px; }
+        .g-open { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 76px; margin: 0 0 20px; padding: 10px 16px; border-radius: 14px; background: #fff; border: 3px solid #1E2340; color: #1A56C9 !important; font-size: 19px; font-weight: 700; text-decoration: underline; line-height: 1.4; word-break: break-all; text-align: center; }
+        .g-open small { display: block; color: #5B6080; font-size: 15px; font-weight: 400; text-decoration: none; }
+        .g-addr { display: flex; gap: 14px; align-items: center; margin: 4px 0 12px; }
+        .g-addr img { width: 90px; height: 90px; flex: none; }
+        .g-addr-url { font-weight: 700; }
+        .g-addr-note { font-size: 0.85em; color: #5B6080; }
+        .g-ptable { width: 100%; border-collapse: separate; border-spacing: 0; background: #fff; border-radius: 14px; overflow: hidden; margin: 0 0 20px; font-size: 16px; line-height: 1.4; table-layout: fixed; }
+        .g-ptable th, .g-ptable td { padding: 12px 4px; text-align: center; border-bottom: 1px solid #EFE7D4; }
+        .g-ptable thead th { background: #1E2340; color: #fff; font-size: 15px; font-weight: 700; }
+        .g-ptable thead th:first-child { width: 30%; }
+        .g-ptable tbody th { text-align: left; padding-left: 12px; font-weight: 700; background: #FBF8F1; font-size: 15px; }
+        .g-ptable tr.is-price td { font-size: 19px; font-weight: 700; }
+        .g-ptable td.is-yes { color: #8A6400; font-weight: 700; }
+        .g-ptable td.is-no { color: #A8ACBE; }
+        .g-ptable tr:last-child th, .g-ptable tr:last-child td { border-bottom: 0; }
         .g-next { display: flex; flex-direction: column; justify-content: center; width: 100%; min-height: 76px; margin-top: 28px; padding: 12px 20px; border: 0; border-radius: 16px; background: #1E2340; color: #fff !important; text-decoration: none; font-size: 21px; font-weight: 700; font-family: inherit; text-align: left; cursor: pointer; line-height: 1.4; }
         .g-next small { font-size: 15px; font-weight: 400; color: #E0A800; }
         .g-foot { margin-top: 44px; font-size: 16px; color: #5B6080; text-align: center; line-height: 1.9; }
@@ -6722,12 +6935,12 @@ function GuidePage() {
         @page { size: A4; margin: 14mm 14mm; }
         @media print {
           .g-root { background: #fff; font-size: 12pt; line-height: 1.7; }
-          .g-hero, .g-num, .g-tip { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-          .g-home, .g-noprint, .g-video { display: none !important; }
+          .g-hero, .g-num, .g-tip, .g-ptable thead th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          .g-home, .g-noprint, .g-video, .g-bar, .g-toapp, .g-faq-link { display: none !important; }
+          .g-hero { display: block !important; }
           .g-off { display: block; }
           .g-print-only { display: block; }
           .g-wrap { max-width: none; }
-          .g-topic { padding-top: 4px; }
           .g-h2 { font-size: 18pt; margin: 14px 0 8px; border-bottom: 2px solid #E0A800; break-after: avoid; }
           .g-steps { gap: 4px; margin-bottom: 8px; }
           .g-steps li { padding: 4px 0; font-size: 12pt; }
@@ -6735,45 +6948,72 @@ function GuidePage() {
           .g-shot { break-inside: avoid; margin: 4px 0 10px; }
           .g-shot img { max-width: 120px; border-width: 4px; }
           .g-tip { padding: 8px 12px; margin-bottom: 10px; break-inside: avoid; }
-          .g-addr { flex-direction: row; text-align: left; padding: 8px 0; }
-          .g-addr img { width: 90px; height: 90px; }
+          .g-ptable { font-size: 11pt; border: 1px solid #D9CDB2; max-width: 150mm; }
+          .g-ptable th, .g-ptable td { padding: 5px 4px; }
+          .g-ptable tr.is-price td { font-size: 12pt; }
           .g-more { break-inside: avoid; }
           .g-more summary::after, .g-more[open] summary::after { content: ""; }
           .g-more summary { min-height: 0; padding: 6px 0; }
           .g-more-in { padding: 0 0 6px; }
-          .g-more:not([open]) > .g-more-in { display: block; }
         }
       `}</style>
 
-      <header className="g-hero">
+      {topic ? (
+        <div className="g-bar">
+          <div className="g-bar-in">
+            <button type="button" onClick={back}>
+              ← 目次
+            </button>
+            {fromApp && (
+              <a href="/" onClick={toApp}>
+                アプリにもどる
+              </a>
+            )}
+          </div>
+        </div>
+      ) : null}
+      <header className="g-hero" style={topic ? { display: "none" } : undefined}>
         <div className="g-hero-in">
           <div className="g-logo">STRIKE LOG</div>
-          <h1 className="g-title" style={{ margin: 0 }}>使い方ガイド</h1>
-          <p className="g-lead" style={{ marginBottom: 0 }}>知りたいことを押してください。動画でも見られます。</p>
+          <h1 className="g-title">使い方ガイド</h1>
+          <p className="g-lead">知りたいことを押してください。動画でも見られます。</p>
         </div>
       </header>
 
       <main className="g-wrap">
         <nav className={`g-home${topic ? " g-off" : ""}`} aria-label="目次">
+          {fromApp && (
+            <a className="g-toapp" href="/" onClick={toApp} style={{ marginTop: 18 }}>
+              ← アプリにもどる
+            </a>
+          )}
           {GUIDE_GROUPS.map(([g, label]) => (
             <div key={g}>
               <h2 className="g-group">{label}</h2>
               <ul className="g-tiles">
-                {GUIDE_TOPICS.filter((t) => t.group === g).map((t) => (
-                  <li key={t.id}>
-                    <a className="g-tile" href={`#${t.id}`}>
-                      <span className="g-tile-no">{GUIDE_TOPICS.indexOf(t) + 1}</span>
-                      <span className="g-tile-main">
-                        <span className="g-tile-t" style={{ display: "block" }}>{t.title}</span>
-                        <span className="g-tile-s" style={{ display: "block" }}>
-                          {t.sub}
+                {GUIDE_TOPICS.filter((t) => t.group === g).map((t) => {
+                  const vids = guideTopicVideos(t);
+                  const done = vids.length > 0 && vids.some((n) => watched.includes(n));
+                  return (
+                    <li key={t.id}>
+                      <a className={`g-tile${done ? " is-watched" : ""}`} href={`#${t.id}`}>
+                        <span className="g-tile-no">{done ? "✓" : GUIDE_TOPICS.indexOf(t) + 1}</span>
+                        <span className="g-tile-main">
+                          <span className="g-tile-t">{t.title}</span>
+                          <span className="g-tile-s">{t.sub}</span>
+                          {vids.length > 0 && (
+                            <span className="g-tile-v">
+                              {done ? "✓ 見ました" : `▶ 動画 ${guideLen(guideVideo(vids[0]).sec)}`}
+                            </span>
+                          )}
                         </span>
-                        {t.video && <span className="g-tile-v">▶ 動画 {guideLen(guideVideo(t.video).sec)}</span>}
-                      </span>
-                      <span className="g-tile-arrow" aria-hidden="true">›</span>
-                    </a>
-                  </li>
-                ))}
+                        <span className="g-tile-arrow" aria-hidden="true">
+                          ›
+                        </span>
+                      </a>
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           ))}
@@ -7030,7 +7270,20 @@ export default function StrikeLog() {
     }
   }, [isAdminRoute]);
 
-  const [tab, setTab] = useState("scan");
+  const [tab, setTab] = useState(() => {
+    try {
+      return sessionStorage.getItem("app-return-tab") || "scan";
+    } catch (e) {
+      return "scan";
+    }
+  });
+  useEffect(() => {
+    try {
+      sessionStorage.removeItem("app-return-tab");
+    } catch (e) {
+      // ignore
+    }
+  }, []);
   const [games, setGames] = useState([]);
   const [loadingGames, setLoadingGames] = useState(true);
   const [storageError, setStorageError] = useState("");
@@ -11314,9 +11567,15 @@ function getNextRollCell(frameIdx, rollIdx, value) {
             </div>
 
             <a
-              href="/guide"
-              target="_blank"
-              rel="noreferrer"
+              href="/guide?from=app"
+              onClick={() => {
+                // Come back to 設定 when returning from the guide.
+                try {
+                  sessionStorage.setItem("app-return-tab", "profile");
+                } catch (e) {
+                  // ignore
+                }
+              }}
               className="w-full rounded-xl flex items-center justify-center"
               style={{ padding: "12px 8px", border: `1px solid ${COLORS.oak}`, color: COLORS.strike, fontSize: 14, fontWeight: 700 }}
             >
