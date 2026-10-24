@@ -6732,6 +6732,11 @@ const GUIDE_GROUPS = [
   ["other", "そのほか"],
 ];
 
+// Printed guide: each of these topics starts a new A4 page, so every page
+// holds whole topics (1: install + tour, 2: setup, 3: record, 4: fix +
+// history, 5: stats + ranking, 6: chat + news + settings, 7: plans, 8: faq).
+const GUIDE_PRINT_NEW_PAGE = new Set(["setup", "record", "fix", "stats", "chat", "plans", "faq"]);
+
 const guideTopicVideos = (t) => (t.variants ? t.variants.map((x) => x.video) : t.video ? [t.video] : []);
 
 const guideHash = () => {
@@ -6757,7 +6762,7 @@ function GuideTopic({ t, active, onBack }) {
   const [variant, setVariant] = useState(t.variants ? t.variants[0].key : "");
   const cur = t.variants ? t.variants.find((x) => x.key === variant) : t;
   return (
-    <section className={`g-topic${active ? "" : " g-off"}`} aria-hidden={!active}>
+    <section className={`g-topic${active ? "" : " g-off"}${t.shot ? " has-shot" : ""}${GUIDE_PRINT_NEW_PAGE.has(t.id) ? " g-pb" : ""}`} aria-hidden={!active}>
       <h2 className="g-h2">{t.title}</h2>
       {t.variants && (
         <>
@@ -6934,23 +6939,35 @@ function GuidePage() {
         .g-print-only { display: none; }
         @page { size: A4; margin: 14mm 14mm; }
         @media print {
-          .g-root { background: #fff; font-size: 12pt; line-height: 1.7; }
+          .g-root { background: #fff; font-size: 13pt; line-height: 1.7; }
+          .g-topic { break-inside: avoid; padding-top: 0; margin-bottom: 6mm; }
+          .g-pb { break-before: page; }
+          .g-topic.has-shot { display: grid; grid-template-columns: 1fr 44mm; column-gap: 8mm; align-items: start; }
+          .g-topic.has-shot > * { grid-column: 1 / -1; }
+          .g-topic.has-shot > .g-steps, .g-topic.has-shot > .g-print-only, .g-topic.has-shot > .g-tip { grid-column: 1; }
+          .g-topic.has-shot > .g-shot { grid-column: 2; grid-row: 2 / span 3; margin: 0; }
           .g-hero, .g-num, .g-tip, .g-ptable thead th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           .g-home, .g-noprint, .g-video, .g-bar, .g-toapp, .g-faq-link { display: none !important; }
-          .g-hero { display: block !important; }
+          .g-hero { display: block !important; margin-bottom: 6mm; padding: 5mm 6mm; }
+          .g-addr { margin: 0 0 3mm; }
+          .g-addr img { width: 72px; height: 72px; }
+          .g-title { font-size: 24pt; }
+          .g-lead { font-size: 11pt; margin-top: 1mm; }
+          .g-p { margin-bottom: 2mm; }
           .g-off { display: block; }
           .g-print-only { display: block; }
           .g-wrap { max-width: none; }
-          .g-h2 { font-size: 18pt; margin: 14px 0 8px; border-bottom: 2px solid #E0A800; break-after: avoid; }
-          .g-steps { gap: 4px; margin-bottom: 8px; }
-          .g-steps li { padding: 4px 0; font-size: 12pt; }
-          .g-num { width: 24px; height: 24px; font-size: 13pt; }
-          .g-shot { break-inside: avoid; margin: 4px 0 10px; }
-          .g-shot img { max-width: 120px; border-width: 4px; }
-          .g-tip { padding: 8px 12px; margin-bottom: 10px; break-inside: avoid; }
-          .g-ptable { font-size: 11pt; border: 1px solid #D9CDB2; max-width: 150mm; }
-          .g-ptable th, .g-ptable td { padding: 5px 4px; }
-          .g-ptable tr.is-price td { font-size: 12pt; }
+          .g-h2 { font-size: 20pt; margin: 0 0 4mm; padding-bottom: 2mm; border-bottom: 3px solid #E0A800; break-after: avoid; }
+          .g-steps { gap: 2mm; margin-bottom: 3mm; }
+          .g-steps li { padding: 0; font-size: 13pt; }
+          .g-num { width: 28px; height: 28px; font-size: 13pt; }
+          .g-shot { break-inside: avoid; margin: 0 0 4mm; }
+          .g-shot img { width: 100%; max-width: 44mm; border-width: 4px; }
+          .g-shot figcaption { font-size: 10pt; }
+          .g-tip { padding: 3mm 4mm; margin-bottom: 4mm; break-inside: avoid; }
+          .g-ptable { font-size: 12pt; border: 1px solid #D9CDB2; }
+          .g-ptable th, .g-ptable td { padding: 3mm 2mm; }
+          .g-ptable tr.is-price td { font-size: 14pt; }
           .g-more { break-inside: avoid; }
           .g-more summary::after, .g-more[open] summary::after { content: ""; }
           .g-more summary { min-height: 0; padding: 6px 0; }
