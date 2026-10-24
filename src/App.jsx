@@ -6212,27 +6212,18 @@ function PlanLockNote({ text, inset = false }) {
 // prints cleanly on A4 (see the print styles below).
 const GUIDE_URL = "https://strike-log-app.vercel.app/";
 
-function GuideShot({ src, alt, caption }) {
-  return (
-    <figure className="g-shot">
-      <img src={src} alt={alt} loading="lazy" />
-      {caption && <figcaption>{caption}</figcaption>}
-    </figure>
-  );
-}
-
 const GUIDE_VIDEOS = [
   { no: 1, name: "tour", title: "アプリ全体の見方", sec: 80 },
-  { no: 2, name: "setup", title: "はじめの設定", sec: 220 },
+  { no: 2, name: "setup", title: "はじめの設定", sec: 219 },
   { no: 3, name: "record_basic", title: "スコアを記録する(ベーシック)", sec: 100 },
-  { no: 4, name: "record_premium", title: "スコアを記録する(プレミアム以上)", sec: 80 },
-  { no: 5, name: "fix", title: "読み取りがずれていた時の直し方", sec: 130 },
-  { no: 6, name: "history", title: "履歴の見方", sec: 70 },
-  { no: 7, name: "stats", title: "記録(成績)の見方", sec: 100 },
+  { no: 4, name: "record_premium", title: "スコアを記録する(プレミアム以上)", sec: 84 },
+  { no: 5, name: "fix", title: "読み取りがずれていた時の直し方", sec: 133 },
+  { no: 6, name: "history", title: "履歴の見方", sec: 73 },
+  { no: 7, name: "stats", title: "記録(成績)の見方", sec: 99 },
   { no: 8, name: "ranking", title: "ランキングの見方", sec: 50 },
-  { no: 9, name: "settings", title: "設定の見方", sec: 100 },
-  { no: 10, name: "chat", title: "AIチャット相談", sec: 60 },
-  { no: 11, name: "news", title: "お知らせの見方", sec: 50 },
+  { no: 9, name: "settings", title: "設定の見方", sec: 98 },
+  { no: 10, name: "chat", title: "AIチャット相談", sec: 56 },
+  { no: 11, name: "news", title: "お知らせの見方", sec: 47 },
 ];
 const guideVideo = (name) => GUIDE_VIDEOS.find((v) => v.name === name);
 
@@ -6257,10 +6248,10 @@ function readGuideSpeed() {
   }
 }
 
+const guideLen = (sec) => (sec >= 60 ? `${Math.floor(sec / 60)}分${sec % 60 ? `${sec % 60}秒` : ""}` : `${sec}秒`);
+
 function GuideVideo({ name }) {
   const v = guideVideo(name);
-  const title = v.title;
-  const seconds = v.sec;
   const ref = useRef(null);
   const [speed, setSpeed] = useState(readGuideSpeed);
   useEffect(() => {
@@ -6284,9 +6275,8 @@ function GuideVideo({ name }) {
     setSpeed(n);
     window.dispatchEvent(new Event("guide-speed"));
   };
-  const len = seconds >= 60 ? `${Math.floor(seconds / 60)}分${seconds % 60 ? `${seconds % 60}秒` : ""}` : `${seconds}秒`;
   return (
-    <div className="g-video" id={`v-${name}`}>
+    <div className="g-video">
       <video
         ref={ref}
         src={`/guide-img/v_${name}.mp4`}
@@ -6298,15 +6288,11 @@ function GuideVideo({ name }) {
           e.currentTarget.playbackRate = speed;
         }}
       />
-      <div className="g-video-cap">
-        ▶ {title}(約{len}・音なし)
-      </div>
+      <p className="g-video-cap">動画 {guideLen(v.sec)}・音は出ません</p>
       <div className="g-speed" role="group" aria-label="再生の速さ">
-        <span>見る速さ</span>
         {GUIDE_SPEEDS.map((x) => (
           <button key={x.v} type="button" aria-pressed={speed === x.v} className={speed === x.v ? "on" : ""} onClick={() => choose(x.v)}>
             {x.label}
-            <small>{x.v}倍</small>
           </button>
         ))}
       </div>
@@ -6314,12 +6300,12 @@ function GuideVideo({ name }) {
   );
 }
 
-function GuideSteps({ items, start = 1 }) {
+function GuideSteps({ items }) {
   return (
     <ol className="g-steps">
       {items.map((t, i) => (
         <li key={i}>
-          <span className="g-num">{i + start}</span>
+          <span className="g-num">{i + 1}</span>
           <span>{t}</span>
         </li>
       ))}
@@ -6327,422 +6313,480 @@ function GuideSteps({ items, start = 1 }) {
   );
 }
 
+function GuideTip({ children }) {
+  return (
+    <div className="g-tip">
+      <b>ポイント</b>
+      <div>{children}</div>
+    </div>
+  );
+}
+
+function GuideMore({ title, children }) {
+  return (
+    <details className="g-more">
+      <summary>{title}</summary>
+      <div className="g-more-in">{children}</div>
+    </details>
+  );
+}
+
+// How to add the web app to the home screen. One phone type at a time
+// (chosen automatically, switchable) so the page never shows two sets of
+// steps side by side.
+function GuideInstall() {
+  const [os, setOs] = useState(() => (typeof navigator !== "undefined" && /android/i.test(navigator.userAgent) ? "android" : "iphone"));
+  const steps = {
+    iphone: [
+      "Safari(サファリ)で下のアドレスを開きます",
+      "画面の下の共有ボタン(四角から上向きの矢印)を押します",
+      "「ホーム画面に追加」を押します",
+      "右上の「追加」を押すと、アイコンができます",
+    ],
+    android: [
+      "Chrome(クローム)で下のアドレスを開きます",
+      "右上の「︙」(点が縦に3つ)を押します",
+      "「ホーム画面に追加」を押します",
+      "「追加」を押すと、アイコンができます",
+    ],
+  };
+  return (
+    <>
+      <div className="g-seg g-noprint" role="group" aria-label="スマホの種類">
+        <button type="button" className={os === "iphone" ? "on" : ""} aria-pressed={os === "iphone"} onClick={() => setOs("iphone")}>
+          iPhone
+        </button>
+        <button type="button" className={os === "android" ? "on" : ""} aria-pressed={os === "android"} onClick={() => setOs("android")}>
+          Android
+        </button>
+      </div>
+      <div className="g-noprint">
+        <GuideSteps items={steps[os]} />
+      </div>
+      <div className="g-print-only">
+        <p className="g-p"><b>iPhone の場合</b></p>
+        <GuideSteps items={steps.iphone} />
+        <p className="g-p"><b>Android の場合</b></p>
+        <GuideSteps items={steps.android} />
+      </div>
+      <div className="g-addr">
+        <img src="/guide-img/qr.svg" alt="アプリのQRコード" />
+        <div>
+          <div className="g-addr-label">アドレス</div>
+          <div className="g-addr-url">{GUIDE_URL.replace("https://", "").replace(/\/$/, "")}</div>
+          <div className="g-addr-note">QRコードをスマホのカメラで読み取っても開けます</div>
+        </div>
+      </div>
+      <GuideTip>次からは、ホーム画面の STRIKE LOG のアイコンから開いてください。</GuideTip>
+    </>
+  );
+}
+
+// One topic per screen. Each topic: a short line, one video, at most four
+// one-sentence steps, one picture, one tip. Anything longer goes into a
+// closed 「くわしく」 box so the first view stays calm.
+const GUIDE_TOPICS = [
+  {
+    id: "install",
+    group: "start",
+    title: "アプリを入れる",
+    sub: "ホーム画面に追加します",
+    body: () => <GuideInstall />,
+  },
+  {
+    id: "tour",
+    group: "start",
+    title: "アプリ全体の見方",
+    sub: "どこに何があるか",
+    video: "tour",
+    steps: [
+      "画面の下に、5つのボタンが並んでいます",
+      "「スコア分析」で、スコアを撮って記録します",
+      "「履歴」「記録」で、これまでの成績を見られます",
+      "右上の吹き出しは相談、ベルはお知らせです",
+    ],
+  },
+  {
+    id: "setup",
+    group: "start",
+    title: "はじめの設定",
+    sub: "名前や目標を入れます",
+    video: "setup",
+    steps: ["はじめて開くと、設定の画面が出ます", "1ページずつ入れて「次へ」を押します", "分からない項目は「あとで設定する」で飛ばせます"],
+    tip: "あとから「設定」でいつでも変えられます。",
+    more: {
+      title: "入れる項目をくわしく見る",
+      content: () => (
+        <dl className="g-dl">
+          {[
+            ["文字の大きさ", "標準・大きめ・特大から選びます"],
+            ["ニックネーム", "アプリの中で表示される名前"],
+            ["スコア画面の名前", "ボウリング場の画面に出る自分の名前(例: ヤマダ)"],
+            ["利き手・目標", "目標のアベレージとスコア"],
+            ["ホームセンター", "よく行くボウリング場"],
+            ["ボール", "重さと使い方。マイボールのくわしい情報は空欄でOK"],
+            ["シューズ", "レンタルかマイシューズか"],
+            ["アカウント", "メールとパスワード。機種変更しても記録が残ります"],
+          ].map(([a, b]) => (
+            <div key={a}>
+              <dt>{a}</dt>
+              <dd>{b}</dd>
+            </div>
+          ))}
+        </dl>
+      ),
+    },
+  },
+  {
+    id: "record",
+    group: "start",
+    title: "スコアを記録する",
+    sub: "スコア画面を撮るだけ",
+    video: "record_basic",
+    steps: ["下の「スコア分析」を押します", "「スコア画面を撮影」を押して、スコア画面を撮ります", "自分の行を指でなぞって囲み、「解析する」を押します", "日付などを選んで「記録を保存」を押します"],
+    shot: ["scan", "スコア分析の画面"],
+    tip: "画面の正面から、自分の名前から合計まで全部入るように撮るときれいに読めます。",
+    more: {
+      title: "プレミアム以上の方(囲まなくてOK)",
+      content: () => (
+        <>
+          <p className="g-p">プレミアム以上のプランでは、自分の行を自動で探して読み取ります。うまくいかない時は「囲み直す」を押してください。</p>
+          <GuideVideo name="record_premium" />
+        </>
+      ),
+    },
+  },
+  {
+    id: "fix",
+    group: "more",
+    title: "読み取りを直す",
+    sub: "数字がちがっていた時",
+    video: "fix",
+    steps: ["写真と見比べて、ちがうマスを押します", "下に出るボタンで、正しい数字を押します", "合計は自動で計算し直されます"],
+    shot: ["result", "読み取った結果の画面"],
+    tip: "保存したあとでも、「履歴」のえんぴつのマークから直せます。",
+  },
+  {
+    id: "history",
+    group: "more",
+    title: "履歴を見る",
+    sub: "これまでのスコア",
+    video: "history",
+    steps: ["下の「履歴」を押します", "日付を押すと、その日のスコア表が開きます", "えんぴつのマークで直す、×で消せます"],
+    shot: ["history", "履歴の画面"],
+  },
+  {
+    id: "stats",
+    group: "more",
+    title: "成績を見る",
+    sub: "アベレージやグラフ",
+    video: "stats",
+    steps: ["下の「記録」を押します", "上で「日・週・月」などの期間を選びます", "アベレージ、ストライクの割合、グラフが見られます"],
+    shot: ["stats", "成績の画面"],
+    tip: "「用語と計算式」を押すと、言葉の意味が分かります。",
+  },
+  {
+    id: "ranking",
+    group: "more",
+    title: "ランキング",
+    sub: "月ごとの順位",
+    video: "ranking",
+    steps: ["下の「ランキング」を押します", "アカウントを作ると参加できます(参加は自由です)"],
+    tip: "出るのは、自分で決めた名前と成績だけです。",
+  },
+  {
+    id: "chat",
+    group: "more",
+    title: "AIに相談する",
+    sub: "使い方や用語を質問",
+    video: "chat",
+    steps: ["右上の吹き出しのマークを押します", "聞きたいことを書いて送ります"],
+  },
+  {
+    id: "news",
+    group: "more",
+    title: "お知らせを見る",
+    sub: "アップデートやイベント",
+    video: "news",
+    steps: ["右上のベルのマークを押します"],
+  },
+  {
+    id: "settings",
+    group: "more",
+    title: "設定を変える",
+    sub: "文字の大きさ・目標・ボール",
+    video: "settings",
+    steps: ["下の「設定」を押します", "変えたい項目を押して直します"],
+    tip: "文字が小さい時は「文字の大きさ」を「大きめ」か「特大」にしてください。",
+  },
+  {
+    id: "plans",
+    group: "other",
+    title: "料金プラン",
+    sub: "月1,000円から",
+    body: () => (
+      <>
+        <div className="g-plans">
+          {[
+            ["ベーシック", "1,000円", ["スコアの読み取り 月60回", "AIに相談 月30回"]],
+            ["プレミアム", "2,000円", ["スコアの読み取り 月150回", "AIに相談 月150回", "自動で読み取り", "くわしい成績"]],
+            ["プレミアム＋(プラス)", "3,000円", ["読み取り・相談とも回数無制限", "自動で読み取り", "くわしい成績"]],
+          ].map(([n, price, items]) => (
+            <div className="g-plan" key={n}>
+              <div className="g-plan-name">{n}</div>
+              <div className="g-plan-price">
+                月{price}
+                <small>(税込)</small>
+              </div>
+              <ul>
+                {items.map((t) => (
+                  <li key={t}>{t}</li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+        <GuideTip>回数は毎月1日に戻ります。</GuideTip>
+        <GuideMore title="お支払いについてくわしく見る">
+          <p className="g-p">
+            お支払いは毎月1日です。1〜15日のお申し込みは翌月1日から、16日〜末日のお申し込みは翌々月1日からです。くわしくは<a href="/terms">利用規約</a>をご覧ください。
+          </p>
+        </GuideMore>
+      </>
+    ),
+  },
+  {
+    id: "faq",
+    group: "other",
+    title: "困ったときは",
+    sub: "よくある質問",
+    body: () => (
+      <div className="g-faq">
+        {[
+          ["読み取った数字がちがう", "スコア表のマスを押すと直せます。保存したあとは「履歴」のえんぴつのマークから直せます。"],
+          ["自分の行が見つからない", "「スコア画面に表示されている自分の名前」が、画面の表示と同じか確かめてください。指で自分の行を囲んでも読み取れます。"],
+          ["文字が小さくて読みにくい", "「設定」の「文字の大きさ」で「大きめ」か「特大」にしてください。"],
+          ["機種変更する", "アカウントを作っておけば、新しいスマホでログインするだけで記録が引き継げます。使えるのは1台だけです。"],
+          ["今月の回数を使い切った", "毎月1日に戻ります。写真を撮っておけば、あとから選んで記録できます。"],
+          ["やめたい(解約)", "アプリの設定か、下のお問い合わせ先からいつでも解約できます。記録は1年間残ります。"],
+        ].map(([q, a]) => (
+          <details key={q} className="g-more">
+            <summary>{q}</summary>
+            <div className="g-more-in">
+              <p className="g-p">{a}</p>
+            </div>
+          </details>
+        ))}
+      </div>
+    ),
+  },
+];
+
+const GUIDE_GROUPS = [
+  ["start", "まずはここから"],
+  ["more", "もっと使う"],
+  ["other", "そのほか"],
+];
+
+const guideHash = () => {
+  const h = (typeof window !== "undefined" ? window.location.hash : "").replace(/^#/, "");
+  return GUIDE_TOPICS.some((t) => t.id === h) ? h : "";
+};
+
+function GuideTopic({ t, active, onBack }) {
+  const i = GUIDE_TOPICS.indexOf(t);
+  const next = GUIDE_TOPICS[i + 1];
+  return (
+    <section className={`g-topic${active ? "" : " g-off"}`} aria-hidden={!active}>
+      <button type="button" className="g-back g-noprint" onClick={onBack}>
+        ← 目次にもどる
+      </button>
+      <h2 className="g-h2">{t.title}</h2>
+      {t.video && active && <GuideVideo name={t.video} />}
+      {t.steps && <GuideSteps items={t.steps} />}
+      {t.body && t.body()}
+      {t.shot && (
+        <figure className="g-shot">
+          <img src={`/guide-img/${t.shot[0]}.jpg`} alt={t.shot[1]} loading="lazy" />
+          <figcaption>{t.shot[1]}</figcaption>
+        </figure>
+      )}
+      {t.tip && <GuideTip>{t.tip}</GuideTip>}
+      {t.more && <GuideMore title={t.more.title}>{t.more.content()}</GuideMore>}
+      <div className="g-noprint">
+        {next ? (
+          <a className="g-next" href={`#${next.id}`}>
+            <small>つぎへ</small>
+            {next.title} →
+          </a>
+        ) : (
+          <button type="button" className="g-next" onClick={onBack}>
+            目次にもどる
+          </button>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function GuidePage() {
-  const toc = [
-    ["install", "アプリを入れる"],
-    ["start", "使いはじめる"],
-    ["record", "スコアを記録する"],
-    ["history", "履歴を見る"],
-    ["stats", "成績を見る"],
-    ["more", "そのほかの機能"],
-    ["plans", "料金プラン"],
-    ["faq", "困ったときは"],
-  ];
+  const [topic, setTopic] = useState(guideHash);
+  useEffect(() => {
+    const on = () => {
+      setTopic(guideHash());
+      window.scrollTo(0, 0);
+    };
+    // Printing shows every topic, so open the folded 「くわしく」 boxes too.
+    const openAll = () => document.querySelectorAll(".g-root details").forEach((d) => (d.open = true));
+    window.addEventListener("hashchange", on);
+    window.addEventListener("beforeprint", openAll);
+    return () => {
+      window.removeEventListener("hashchange", on);
+      window.removeEventListener("beforeprint", openAll);
+    };
+  }, []);
+  const back = () => {
+    if (window.location.hash) window.history.pushState(null, "", window.location.pathname);
+    setTopic("");
+    window.scrollTo(0, 0);
+  };
   return (
     <div className="g-root">
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap');
-        .g-root { min-height: 100vh; background: #F6F1E6; color: #1E2340; font-family: 'Noto Sans JP', 'Hiragino Sans', sans-serif; font-size: 16px; line-height: 1.8; }
-        .g-wrap { max-width: 760px; margin: 0 auto; padding: 0 16px 48px; }
-        .g-hero { background: linear-gradient(160deg, #26305E 0%, #161D38 100%); color: #F5F1E4; padding: 28px 16px 26px; }
-        .g-hero-in { max-width: 760px; margin: 0 auto; display: flex; gap: 18px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
-        .g-logo { font-family: 'Oswald', sans-serif; font-weight: 700; font-size: 30px; letter-spacing: 0.04em; color: #E0A800; line-height: 1.1; }
-        .g-title { font-size: 24px; font-weight: 700; margin-top: 4px; }
-        .g-lead { font-size: 14.5px; opacity: 0.85; margin-top: 6px; }
-        .g-qr { background: #fff; border-radius: 12px; padding: 8px; text-align: center; color: #1E2340; }
-        .g-qr img { width: 112px; height: 112px; display: block; }
-        .g-qr div { font-size: 11px; font-weight: 700; margin-top: 2px; }
-        .g-toc { display: flex; flex-wrap: wrap; gap: 8px; margin: 20px 0 6px; padding: 0; list-style: none; }
-        .g-toc a { display: inline-block; padding: 6px 12px; border-radius: 999px; background: #fff; border: 1px solid #D9CDB2; color: #1E2340; font-size: 14px; font-weight: 700; text-decoration: none; }
-        .g-sec { margin-top: 34px; }
-        .g-h2 { display: flex; align-items: center; gap: 10px; font-size: 21px; font-weight: 700; color: #1E2340; border-bottom: 3px solid #E0A800; padding-bottom: 6px; margin-bottom: 14px; }
-        .g-h2 .g-badge { font-family: 'Oswald', sans-serif; background: #1E2340; color: #E0A800; border-radius: 8px; min-width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; font-size: 18px; }
-        .g-h3 { font-size: 17px; font-weight: 700; margin: 18px 0 8px; }
-        .g-card { background: #fff; border: 1px solid #E3D8C0; border-radius: 14px; padding: 14px 16px; }
-        .g-grid2 { display: grid; grid-template-columns: 1fr; gap: 12px; }
-        @media (min-width: 640px) { .g-grid2 { grid-template-columns: 1fr 1fr; } }
-        .g-steps { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
-        .g-steps li { display: flex; gap: 10px; align-items: flex-start; }
-        .g-num { flex: none; width: 26px; height: 26px; border-radius: 50%; background: #E0A800; color: #1E2340; font-family: 'Oswald', sans-serif; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; font-size: 15px; margin-top: 2px; }
-        .g-row { display: grid; grid-template-columns: 1fr; gap: 14px; align-items: start; }
-        @media (min-width: 640px) { .g-row { grid-template-columns: 1fr 220px; } }
-        .g-shot { margin: 0; text-align: center; }
-        .g-shot img { width: 100%; max-width: 230px; border-radius: 18px; border: 6px solid #1E2340; box-shadow: 0 4px 14px rgba(0,0,0,0.15); }
-        .g-shot figcaption { font-size: 13px; color: #5B6080; margin-top: 4px; }
-        .g-shots { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
-        .g-note { background: #FFF6D9; border-left: 4px solid #E0A800; border-radius: 8px; padding: 10px 12px; font-size: 14.5px; margin-top: 12px; }
-        .g-table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 12px; overflow: hidden; font-size: 14.5px; }
-        .g-table th, .g-table td { border: 1px solid #E3D8C0; padding: 8px 10px; text-align: center; vertical-align: middle; }
-        .g-table th { background: #1E2340; color: #F5F1E4; font-weight: 700; }
-        .g-table td:first-child { text-align: left; font-weight: 700; background: #FBF8F1; }
-        .g-ok { color: #B88600; font-weight: 700; }
-        .g-faq dt { font-weight: 700; margin-top: 12px; }
-        .g-faq dt::before { content: "Q. "; color: #E0A800; font-family: 'Oswald', sans-serif; }
-        .g-faq dd { margin: 2px 0 0; padding-left: 1.6em; }
-        .g-foot { margin-top: 36px; font-size: 13.5px; color: #5B6080; text-align: center; }
-        .g-foot a { color: #1E2340; }
-        .g-video { background: #1E2340; border-radius: 16px; padding: 10px; margin: 0 auto 14px; max-width: 270px; }
+        @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@600;700&family=Noto+Sans+JP:wght@400;700&display=swap');
+        .g-root { min-height: 100vh; background: #F6F1E6; color: #1E2340; font-family: 'Noto Sans JP', 'Hiragino Sans', sans-serif; font-size: 19px; line-height: 1.8; -webkit-text-size-adjust: 100%; }
+        .g-root a { color: inherit; }
+        .g-wrap { max-width: 560px; margin: 0 auto; padding: 0 16px 56px; }
+        .g-hero { background: #1E2340; color: #F5F1E4; padding: 28px 16px 30px; }
+        .g-hero-in { max-width: 560px; margin: 0 auto; }
+        .g-logo { font-family: 'Oswald', sans-serif; font-weight: 700; font-size: 22px; letter-spacing: 0.06em; color: #E0A800; line-height: 1.2; }
+        .g-title { font-size: 32px; font-weight: 700; line-height: 1.3; margin-top: 4px; }
+        .g-lead { font-size: 18px; margin-top: 8px; color: #D9DCEA; }
+        .g-group { font-size: 17px; font-weight: 700; color: #6B6450; margin: 32px 4px 10px; }
+        .g-tiles { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+        .g-tile { display: flex; align-items: center; gap: 16px; min-height: 84px; padding: 14px 18px; background: #fff; border-radius: 16px; text-decoration: none; color: #1E2340; box-shadow: 0 1px 3px rgba(30,35,64,0.08); }
+        .g-tile:active { background: #FFF6D9; }
+        .g-tile-no { flex: none; width: 44px; height: 44px; border-radius: 50%; background: #1E2340; color: #E0A800; font-family: 'Oswald', sans-serif; font-size: 22px; display: flex; align-items: center; justify-content: center; }
+        .g-tile-main { flex: 1; min-width: 0; }
+        .g-tile-t { font-size: 21px; font-weight: 700; line-height: 1.4; }
+        .g-tile-s { font-size: 16px; color: #5B6080; line-height: 1.5; }
+        .g-tile-v { display: inline-block; margin-top: 4px; font-size: 15px; font-weight: 700; color: #8A6400; background: #FFF6D9; border-radius: 999px; padding: 1px 10px; white-space: nowrap; }
+        .g-tile-arrow { flex: none; font-size: 26px; color: #B88600; }
+        .g-topic { padding-top: 16px; }
+        .g-off { display: none; }
+        .g-back { display: inline-flex; align-items: center; min-height: 52px; padding: 0 18px; border-radius: 999px; border: 2px solid #1E2340; background: #fff; color: #1E2340; font-size: 18px; font-weight: 700; font-family: inherit; cursor: pointer; }
+        .g-h2 { font-size: 30px; font-weight: 700; line-height: 1.35; margin: 20px 0 18px; }
+        .g-p { margin: 0 0 12px; }
+        .g-video { background: #1E2340; border-radius: 18px; padding: 12px; margin: 0 auto 24px; max-width: 320px; }
         .g-video video { width: 100%; display: block; border-radius: 10px; background: #000; aspect-ratio: 720 / 1592; }
-        .g-video-cap { color: #F5F1E4; font-size: 14px; font-weight: 700; padding: 8px 4px 2px; }
-        .g-videos { display: grid; grid-template-columns: 1fr; gap: 12px; margin-top: 14px; }
-        @media (min-width: 640px) { .g-videos { grid-template-columns: 1fr 1fr; } }
-        .g-speed { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 6px 2px 2px; }
-        .g-speed span { grid-column: 1 / -1; color: #F5F1E4; font-size: 13px; font-weight: 700; }
-        .g-speed button { padding: 9px 4px; border-radius: 10px; border: 1px solid rgba(245,241,228,0.35); background: transparent; color: #F5F1E4; font-size: 14px; font-weight: 700; white-space: nowrap; line-height: 1.3; }
-        .g-speed button small { display: block; font-size: 11px; font-weight: 400; opacity: 0.8; }
+        .g-video-cap { color: #F5F1E4; font-size: 16px; margin: 10px 4px 8px; text-align: center; }
+        .g-speed { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .g-speed button { min-height: 52px; border-radius: 12px; border: 2px solid rgba(245,241,228,0.4); background: transparent; color: #F5F1E4; font-size: 17px; font-weight: 700; font-family: inherit; cursor: pointer; }
         .g-speed button.on { background: #E0A800; border-color: #E0A800; color: #1E2340; }
-        .g-vlist { display: grid; grid-template-columns: 1fr; gap: 8px; margin-top: 12px; }
-        @media (min-width: 640px) { .g-vlist { grid-template-columns: 1fr 1fr; } }
-        .g-vlink { display: flex; align-items: center; gap: 10px; background: #fff; border: 1px solid #E3D8C0; border-radius: 12px; padding: 10px 12px; color: #1E2340; text-decoration: none; font-weight: 700; font-size: 15px; line-height: 1.4; }
-        .g-vlink small { display: block; font-weight: 400; font-size: 12.5px; color: #5B6080; }
-        .g-vnum { flex: none; width: 30px; height: 30px; border-radius: 8px; background: #1E2340; color: #E0A800; font-family: 'Oswald', sans-serif; display: inline-flex; align-items: center; justify-content: center; }
+        .g-steps { list-style: none; padding: 0; margin: 0 0 20px; display: grid; gap: 12px; }
+        .g-steps li { display: flex; gap: 14px; align-items: flex-start; background: #fff; border-radius: 14px; padding: 16px 18px; font-size: 20px; line-height: 1.6; }
+        .g-num { flex: none; width: 36px; height: 36px; border-radius: 50%; background: #E0A800; color: #1E2340; font-family: 'Oswald', sans-serif; font-weight: 700; font-size: 20px; display: flex; align-items: center; justify-content: center; margin-top: 1px; }
+        .g-shot { margin: 8px 0 24px; text-align: center; }
+        .g-shot img { width: 72%; max-width: 260px; border-radius: 20px; border: 6px solid #1E2340; }
+        .g-shot figcaption { font-size: 16px; color: #5B6080; margin-top: 6px; }
+        .g-tip { background: #FFF6D9; border-radius: 14px; padding: 16px 18px; margin: 0 0 20px; }
+        .g-tip b { display: block; font-size: 17px; color: #8A6400; margin-bottom: 2px; }
+        .g-more { background: #fff; border-radius: 14px; margin: 0 0 12px; }
+        .g-more summary { list-style: none; cursor: pointer; min-height: 60px; padding: 14px 52px 14px 18px; font-size: 19px; font-weight: 700; position: relative; display: flex; align-items: center; }
+        .g-more summary::-webkit-details-marker { display: none; }
+        .g-more summary::after { content: "＋"; position: absolute; right: 18px; top: 50%; transform: translateY(-50%); color: #B88600; font-size: 24px; }
+        .g-more[open] summary::after { content: "－"; }
+        .g-more-in { padding: 0 18px 16px; }
+        .g-dl { margin: 0; }
+        .g-dl > div { padding: 10px 0; border-top: 1px solid #EFE7D4; }
+        .g-dl dt { font-weight: 700; }
+        .g-dl dd { margin: 0; color: #3D4560; }
+        .g-seg { display: grid; grid-template-columns: 1fr 1fr; gap: 0; background: #E9E1CD; border-radius: 14px; padding: 4px; margin: 0 0 18px; }
+        .g-seg button { min-height: 54px; border: 0; border-radius: 11px; background: transparent; font-size: 19px; font-weight: 700; color: #3D4560; font-family: inherit; cursor: pointer; }
+        .g-seg button.on { background: #1E2340; color: #fff; }
+        .g-addr { display: flex; flex-direction: column; gap: 10px; align-items: center; text-align: center; background: #fff; border-radius: 14px; padding: 16px 18px; margin: 0 0 20px; }
+        .g-addr img { width: 140px; height: 140px; flex: none; }
+        .g-addr-label { font-size: 15px; color: #5B6080; }
+        .g-addr-url { font-size: 19px; font-weight: 700; white-space: nowrap; line-height: 1.4; }
+        .g-addr-note { font-size: 15px; color: #5B6080; line-height: 1.5; margin-top: 4px; }
+        .g-plans { display: grid; gap: 12px; margin: 0 0 20px; }
+        .g-plan { background: #fff; border-radius: 14px; padding: 16px 18px; }
+        .g-plan-name { font-size: 18px; font-weight: 700; color: #5B6080; }
+        .g-plan-price { font-size: 30px; font-weight: 700; line-height: 1.3; }
+        .g-plan-price small { font-size: 15px; font-weight: 400; color: #5B6080; margin-left: 4px; }
+        .g-plan ul { margin: 6px 0 0; padding-left: 1.2em; font-size: 18px; }
+        .g-next { display: flex; flex-direction: column; justify-content: center; width: 100%; min-height: 76px; margin-top: 28px; padding: 12px 20px; border: 0; border-radius: 16px; background: #1E2340; color: #fff !important; text-decoration: none; font-size: 21px; font-weight: 700; font-family: inherit; text-align: left; cursor: pointer; line-height: 1.4; }
+        .g-next small { font-size: 15px; font-weight: 400; color: #E0A800; }
+        .g-foot { margin-top: 44px; font-size: 16px; color: #5B6080; text-align: center; line-height: 1.9; }
         .g-print-only { display: none; }
-        @page { size: A4; margin: 14mm 12mm; }
+        @page { size: A4; margin: 14mm 14mm; }
         @media print {
-          .g-root { background: #fff; font-size: 11.5pt; line-height: 1.7; }
-          .g-toc { display: none; }
-          .g-hero { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-          .g-h2 .g-badge, .g-num, .g-table th, .g-note { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-          .g-sec { break-inside: auto; }
-          .g-card, .g-row, figure, .g-table, .g-note, .g-faq-item { break-inside: avoid; }
-          .g-h2 { break-after: avoid; }
-          .g-shot img { max-width: 170px; box-shadow: none; }
+          .g-root { background: #fff; font-size: 12pt; line-height: 1.7; }
+          .g-hero, .g-num, .g-tip { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          .g-home, .g-noprint, .g-video { display: none !important; }
+          .g-off { display: block; }
           .g-print-only { display: block; }
-          .g-video, .g-videos, .g-vlist { display: none !important; }
-          .g-grid2 { grid-template-columns: 1fr 1fr; }
-          .g-row { grid-template-columns: 1fr 180px; }
+          .g-wrap { max-width: none; }
+          .g-topic { padding-top: 4px; }
+          .g-h2 { font-size: 18pt; margin: 14px 0 8px; border-bottom: 2px solid #E0A800; break-after: avoid; }
+          .g-steps { gap: 4px; margin-bottom: 8px; }
+          .g-steps li { padding: 4px 0; font-size: 12pt; }
+          .g-num { width: 24px; height: 24px; font-size: 13pt; }
+          .g-shot { break-inside: avoid; margin: 4px 0 10px; }
+          .g-shot img { max-width: 120px; border-width: 4px; }
+          .g-tip { padding: 8px 12px; margin-bottom: 10px; break-inside: avoid; }
+          .g-addr { flex-direction: row; text-align: left; padding: 8px 0; }
+          .g-addr img { width: 90px; height: 90px; }
+          .g-more { break-inside: avoid; }
+          .g-more summary::after, .g-more[open] summary::after { content: ""; }
+          .g-more summary { min-height: 0; padding: 6px 0; }
+          .g-more-in { padding: 0 0 6px; }
+          .g-more:not([open]) > .g-more-in { display: block; }
         }
       `}</style>
 
       <header className="g-hero">
         <div className="g-hero-in">
-          <div>
-            <div className="g-logo">STRIKE LOG</div>
-            <div className="g-title">使い方ガイド</div>
-            <div className="g-lead">スコア画面を撮るだけで、記録と分析ができるボウリングアプリです。</div>
-          </div>
-          <div className="g-qr">
-            <img src="/guide-img/qr.svg" alt="アプリのQRコード" />
-            <div>アプリはこちら</div>
-          </div>
+          <div className="g-logo">STRIKE LOG</div>
+          <h1 className="g-title" style={{ margin: 0 }}>使い方ガイド</h1>
+          <p className="g-lead" style={{ marginBottom: 0 }}>知りたいことを押してください。動画でも見られます。</p>
         </div>
       </header>
 
       <main className="g-wrap">
-        <ul className="g-toc">
-          {toc.map(([id, label]) => (
-            <li key={id}>
-              <a href={`#${id}`}>{label}</a>
-            </li>
-          ))}
-        </ul>
-
-        <section className="g-sec" style={{ marginTop: 22 }}>
-          <h2 className="g-h2">
-            <span className="g-badge">▶</span>動画で見る
-          </h2>
-          <p style={{ margin: 0 }}>文字を読むより、動画の方が分かりやすい方はこちら。字幕だけなので、音が出せない場所でも見られます。見たい動画を押すと、その場所へ移動します。ゆっくり進むので、そのまま真似しながら見られます。途中で止めたい時は、動画を押すと一時停止できます。動画の下の「ゆっくり」「速く」のボタンで、見る速さも変えられます(選んだ速さは、ほかの動画にも使われます)。</p>
-          <div className="g-vlist">
-            {GUIDE_VIDEOS.map((v) => (
-              <a key={v.name} href={`#v-${v.name}`} className="g-vlink">
-                <span className="g-vnum">{v.no}</span>
-                <span>
-                  {v.title}
-                  <small>約{v.sec >= 60 ? `${Math.floor(v.sec / 60)}分${v.sec % 60 ? `${v.sec % 60}秒` : ""}` : `${v.sec}秒`}</small>
-                </span>
-              </a>
-            ))}
-          </div>
-        </section>
-
-        <section id="install" className="g-sec">
-          <h2 className="g-h2">
-            <span className="g-badge">1</span>アプリを入れる
-          </h2>
-          <p style={{ margin: "0 0 12px" }}>
-            STRIKE LOG は、アプリストアからではなく、インターネットのページをスマホの「ホーム画面」に追加して使います。追加すると、ふつうのアプリと同じようにアイコンから開けます。
-          </p>
-          <div className="g-card" style={{ marginBottom: 12 }}>
-            アドレス:<b>{GUIDE_URL.replace("https://", "").replace(/\/$/, "")}</b>
-            <br />
-            <span style={{ fontSize: 14, color: "#5B6080" }}>上のQRコードをスマホのカメラで読み取ると、すぐに開けます。</span>
-          </div>
-          <div className="g-grid2">
-            <div className="g-card">
-              <div className="g-h3" style={{ marginTop: 0 }}>iPhone の場合(Safari)</div>
-              <GuideSteps
-                items={[
-                  "Safari で上のアドレスを開く(QRコードからでもOK)",
-                  "画面の下にある共有ボタン(四角から上向きの矢印のマーク)を押す。見当たらない時は「…」を押すと出てきます",
-                  "「ホーム画面に追加」を押す(出てこない時は、下へスクロール)",
-                  "右上の「追加」を押すと、ホーム画面に STRIKE LOG のアイコンができます",
-                ]}
-              />
-            </div>
-            <div className="g-card">
-              <div className="g-h3" style={{ marginTop: 0 }}>Android の場合(Chrome)</div>
-              <GuideSteps
-                items={[
-                  "Chrome で上のアドレスを開く(QRコードからでもOK)",
-                  "右上の「︙」(点が縦に3つのマーク)を押す",
-                  "「ホーム画面に追加」または「アプリをインストール」を押す",
-                  "「追加」(または「インストール」)を押すと、ホーム画面にアイコンができます",
-                ]}
-              />
-            </div>
-          </div>
-          <div className="g-note">次からは、ホーム画面の STRIKE LOG のアイコンから開いてください。</div>
-        </section>
-
-        <section id="start" className="g-sec">
-          <h2 className="g-h2">
-            <span className="g-badge">2</span>使いはじめる
-          </h2>
-          <GuideSteps
-            items={[
-              "アイコンから STRIKE LOG を開き、画面の案内に沿って利用の手続きをします。手続きが終わると使えるようになります。",
-              "はじめて使う時は「はじめの設定」が出てきます。1ページずつ入力して「次へ」を押してください。どの項目も「あとで設定する」で飛ばせて、あとから「設定」でいつでも変えられます。",
-            ]}
-          />
-          <div className="g-videos" style={{ marginTop: 12 }}>
-            <GuideVideo name="tour" />
-            <GuideVideo name="setup" />
-          </div>
-          <div className="g-card" style={{ marginTop: 12 }}>
-            <div className="g-h3" style={{ marginTop: 0 }}>はじめの設定で入れるもの</div>
-            <table className="g-table" style={{ fontSize: 14 }}>
-              <tbody>
-                {[
-                  ["文字の大きさ", "標準・大きめ・特大から、見やすいものを選びます"],
-                  ["ニックネーム", "アプリの中で表示される名前"],
-                  ["スコア画面の名前", "ボウリング場のスコア画面に出る自分の名前(例: ヤマダ、YAMADA)。写真から自分の行を見つけるのに使います"],
-                  ["利き手・目標", "目標アベレージと目標スコア。記録の画面で「あといくつ」が出ます"],
-                  ["ホームセンター", "よく行くボウリング場"],
-                  ["ボール", "重さと用途(1stボール・スペアボール)。マイボールは名前と、コアタイプ・カバーストック(表面の素材)・球質・合うレーンも入れられます。くわしい情報は分からなければ空欄でOK"],
-                  ["シューズ", "レンタルかマイシューズか"],
-                  ["アカウント", "メールアドレスとパスワード。機種変更しても記録を引き継げます"],
-                ].map(([a, b]) => (
-                  <tr key={a}>
-                    <td style={{ width: "34%" }}>{a}</td>
-                    <td style={{ textAlign: "left" }}>{b}</td>
-                  </tr>
+        <nav className={`g-home${topic ? " g-off" : ""}`} aria-label="目次">
+          {GUIDE_GROUPS.map(([g, label]) => (
+            <div key={g}>
+              <h2 className="g-group">{label}</h2>
+              <ul className="g-tiles">
+                {GUIDE_TOPICS.filter((t) => t.group === g).map((t) => (
+                  <li key={t.id}>
+                    <a className="g-tile" href={`#${t.id}`}>
+                      <span className="g-tile-no">{GUIDE_TOPICS.indexOf(t) + 1}</span>
+                      <span className="g-tile-main">
+                        <span className="g-tile-t" style={{ display: "block" }}>{t.title}</span>
+                        <span className="g-tile-s" style={{ display: "block" }}>
+                          {t.sub}
+                        </span>
+                        {t.video && <span className="g-tile-v">▶ 動画 {guideLen(guideVideo(t.video).sec)}</span>}
+                      </span>
+                      <span className="g-tile-arrow" aria-hidden="true">›</span>
+                    </a>
+                  </li>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <section id="record" className="g-sec g-page">
-          <h2 className="g-h2">
-            <span className="g-badge">3</span>スコアを記録する
-          </h2>
-          <p style={{ margin: "0 0 10px" }}>プランによって、自分の行の選び方が少しちがいます。</p>
-          <div className="g-videos">
-            <GuideVideo name="record_basic" />
-            <GuideVideo name="record_premium" />
-          </div>
-          <div className="g-row">
-            <div>
-              <GuideSteps
-                items={[
-                  "下の「スコア分析」を開き、「スコア画面に表示されている自分の名前」が合っているか確かめます",
-                  "「スコア画面を撮影 / アップロード」を押して、ボウリング場のスコア画面(電光掲示板)や紙のスコアシートを撮ります。あとから、撮っておいた写真を選ぶこともできます",
-                  "ベーシック:自分の行(名前から合計まで)を指でなぞって囲み、「この範囲で決定」→「囲んだ範囲を解析する」を押します。プレミアム以上:囲まなくても、自分の行を自動で探して読み取ります(うまくいかない時は「囲み直す」)",
-                ]}
-              />
-              <div className="g-note">
-                <b>上手に撮るコツ</b>
-                <br />
-                ・画面の正面から、明るさの反射が入らないように撮る
-                <br />
-                ・自分の名前から合計までが、すべて写るようにする
-                <br />
-                ・1枚に何ゲーム分写っていても、まとめて読み取れます
-              </div>
-            </div>
-            <GuideShot src="/guide-img/scan.jpg" alt="スコア分析の画面" caption="スコア分析の画面" />
-          </div>
-          <div className="g-row" style={{ marginTop: 18 }}>
-            <div>
-              <GuideSteps
-                items={[
-                  "読み取った結果がスコア表で出ます。写真と見比べて、違うところがあればマスを押して直せます。うまく読み取れなかった時は、確認してほしいフレームをお知らせします",
-                  "プレー日・何ゲーム目・ボウリング場・使ったボール・シューズを選びます",
-                  "「記録を保存」を押して完了です。自己ベストや目標を達成すると、お祝いの花火が上がります",
-                ]}
-                start={4}
-              />
-            </div>
-            <GuideShot src="/guide-img/result.jpg" alt="読み取り結果の画面" caption="読み取った結果" />
-          </div>
-          <div className="g-shots">
-            <GuideShot src="/guide-img/auto.jpg" alt="自動で切り取った画面" caption="自動で切り取り(プレミアム以上)" />
-            <GuideShot src="/guide-img/save.jpg" alt="保存の画面" caption="ボウリング場やボールを選んで保存" />
-          </div>
-          <div className="g-h3" style={{ marginTop: 24 }}>読み取りがずれていた時は</div>
-          <div className="g-row">
-            <div>
-              <GuideSteps
-                items={[
-                  "合わないところがあると「〇フレーム目がうまく読み取れなかったようで…」とお知らせが出ます。写真と見比べてください",
-                  "直したいマスを押すと、下に数字のボタンが出ます。正しい数字、またはストライク・スペア・G(ガター)・F(ファール)・-(0本)を押します。スプリットは「スプリット」のボタンで丸を付けられます",
-                  "直すと、合計も自動で計算し直されます",
-                  "保存したあとに気づいた時は、「履歴」でそのゲームのえんぴつのマークを押すと、同じように直せます(最後に「保存」)",
-                ]}
-              />
-            </div>
-            <GuideVideo name="fix" />
-          </div>
-        </section>
-
-        <section id="history" className="g-sec">
-          <h2 className="g-h2">
-            <span className="g-badge">4</span>履歴を見る
-          </h2>
-          <GuideVideo name="history" />
-          <div className="g-row">
-            <div>
-              <p style={{ marginTop: 0 }}>
-                下の「履歴」では、これまでの記録が日ごとにまとまっています。日付の欄には、その日のゲーム数・トータル・アベレージ・ハイゲームが出ます。
-              </p>
-              <GuideSteps
-                items={[
-                  "日付の欄を押すと、その日のゲームがスコア表で開きます",
-                  "えんぴつのマークで記録を直せます(日付・ボウリング場・ボール・各フレームなど)",
-                  "× のマークで記録を消せます",
-                ]}
-              />
-            </div>
-            <GuideShot src="/guide-img/history.jpg" alt="履歴の画面" caption="履歴の画面" />
-          </div>
-        </section>
-
-        <section id="stats" className="g-sec">
-          <h2 className="g-h2">
-            <span className="g-badge">5</span>成績を見る
-          </h2>
-          <GuideVideo name="stats" />
-          <div className="g-row">
-            <div>
-              <p style={{ marginTop: 0 }}>下の「記録」では、期間を選んで成績を見られます。</p>
-              <ul style={{ margin: 0, paddingLeft: "1.2em" }}>
-                <li>日・週・月・年・期間指定で切り替え(年と期間指定はプレミアム以上)</li>
-                <li>アベレージ、トータル、ハイゲーム・ローゲーム、目標まであといくつ</li>
-                <li>ストライク・スペア・スプリットなどの回数と割合</li>
-                <li>スコアの推移のグラフ</li>
-                <li>「日」では、その日のゲームをスコア表で縦に並べて表示</li>
-                <li>ボール別・ボウリング場別の成績(プレミアム以上)</li>
               </ul>
-              <div className="g-note">「用語と計算式」を開くと、ストライク率などの意味と計算のしかたが見られます。</div>
             </div>
-            <GuideShot src="/guide-img/stats.jpg" alt="成績の画面" caption="記録(成績)の画面" />
-          </div>
-        </section>
+          ))}
+        </nav>
 
-        <section id="more" className="g-sec g-page">
-          <h2 className="g-h2">
-            <span className="g-badge">6</span>そのほかの機能
-          </h2>
-          <div className="g-grid2">
-            {[
-              ["ランキング", "アカウントを作ると、月間ランキングに参加できます(参加は自由)。表示されるのは、自分で決めた表示名と成績だけです。"],
-              ["AIチャット相談", "右上の吹き出しのマークから、アプリの使い方やボウリング用語について質問できます。"],
-              ["お知らせ", "右上のベルのマークで、アップデートやイベントのお知らせを確認できます。"],
-              ["設定", "文字の大きさ、目標、ボール・シューズの登録や変更、アカウントの作成・ログインができます。いちばん下の「使い方ガイドを見る」から、このガイドを開けます。"],
-            ].map(([t, d]) => (
-              <div className="g-card" key={t}>
-                <div className="g-h3" style={{ marginTop: 0 }}>{t}</div>
-                <div style={{ fontSize: 15 }}>{d}</div>
-              </div>
-            ))}
-          </div>
-          <div className="g-videos">
-            <GuideVideo name="ranking" />
-            <GuideVideo name="settings" />
-            <GuideVideo name="chat" />
-            <GuideVideo name="news" />
-          </div>
-        </section>
-
-        <section id="plans" className="g-sec">
-          <h2 className="g-h2">
-            <span className="g-badge">7</span>料金プラン
-          </h2>
-          <table className="g-table">
-            <thead>
-              <tr>
-                <th></th>
-                <th>ベーシック</th>
-                <th>プレミアム</th>
-                <th>
-                  プレミアム<ruby>＋<rt style={{ fontSize: 9 }}>プラス</rt></ruby>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>月額(税込)</td>
-                <td>1,000円</td>
-                <td>2,000円</td>
-                <td>3,000円</td>
-              </tr>
-              <tr>
-                <td>スコアの読み取り</td>
-                <td>月60回</td>
-                <td>月150回</td>
-                <td className="g-ok">回数無制限</td>
-              </tr>
-              <tr>
-                <td>AIチャット相談</td>
-                <td>月30回</td>
-                <td>月150回</td>
-                <td className="g-ok">回数無制限</td>
-              </tr>
-              <tr>
-                <td>自動で切り取って読み取り</td>
-                <td>ー</td>
-                <td className="g-ok">○</td>
-                <td className="g-ok">○</td>
-              </tr>
-              <tr>
-                <td>年・期間指定のグラフ、ボール別・ボウリング場別の成績</td>
-                <td>ー</td>
-                <td className="g-ok">○</td>
-                <td className="g-ok">○</td>
-              </tr>
-            </tbody>
-          </table>
-          <div className="g-note">
-            回数は毎月1日に戻ります。お支払いは毎月1日です(1〜15日のお申し込みは翌月1日から、16日〜末日のお申し込みは翌々月1日から)。くわしくは
-            <a href="/terms">利用規約</a>をご覧ください。
-          </div>
-        </section>
-
-        <section id="faq" className="g-sec">
-          <h2 className="g-h2">
-            <span className="g-badge">8</span>困ったときは
-          </h2>
-          <dl className="g-faq">
-            {[
-              ["読み取った数字が間違っている", "スコア表のマスを押すと直せます。保存したあとでも、「履歴」のえんぴつのマークから直せます。"],
-              ["自分の行が見つからないと出る", "「スコア画面に表示されている自分の名前」が、スコア画面の表示と同じか確かめてください。指で自分の行を囲んで解析することもできます。"],
-              ["文字が小さくて読みにくい", "「設定」の文字の大きさで、「大きめ」や「特大」に変えられます。"],
-              ["機種変更する", "アカウントを作っておけば、新しいスマホでログインするだけで記録を引き継げます。同時に使えるのは1台のスマホだけです。"],
-              ["今月の回数を使い切った", "毎月1日に回数が戻ります。たくさん使う方は、上のプランへの変更もご検討ください。写真はスマホのカメラで撮って残しておくと、あとから選んで記録できます。"],
-              ["解約したい", "アプリ内の設定、またはお問い合わせ先からいつでも解約できます。解約後も記録は1年間保管されます。"],
-            ].map(([q, a]) => (
-              <div key={q} className="g-faq-item">
-                <dt>{q}</dt>
-                <dd>{a}</dd>
-              </div>
-            ))}
-          </dl>
-        </section>
+        {GUIDE_TOPICS.map((t) => (
+          <GuideTopic key={t.id} t={t} active={topic === t.id} onBack={back} />
+        ))}
 
         <footer className="g-foot">
-          お問い合わせ:smmryut.9021@gmail.com
+          お問い合わせ: smmryut.9021@gmail.com
           <br />
-          <a href="/terms">利用規約</a> ・ <a href="/privacy">プライバシーポリシー</a> ・ <a href="/tokushoho">特定商取引法に基づく表記</a>
+          <a href="/terms">利用規約</a> ・ <a href="/privacy">プライバシー</a> ・ <a href="/tokushoho">特定商取引法の表記</a>
           <div className="g-print-only" style={{ marginTop: 8 }}>
             操作の動画と最新のガイドは {GUIDE_URL}guide で見られます
           </div>
