@@ -7267,7 +7267,7 @@ export default function StrikeLog() {
   const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
   const [feedbackSent, setFeedbackSent] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
-  const [chatViewportHeight, setChatViewportHeight] = useState(null); // shrinks when the keyboard opens
+  const [chatViewport, setChatViewport] = useState(null); // visible area { h, top, kb } — shrinks when the keyboard opens
   const [chatMessages, setChatMessages] = useState([]); // [{ role: "user"|"assistant", content }]
   const [chatInput, setChatInput] = useState("");
   const [chatSending, setChatSending] = useState(false);
@@ -8025,17 +8025,32 @@ export default function StrikeLog() {
   // resizing it, which would otherwise hide the text box being typed in.
   useEffect(() => {
     const vv = window.visualViewport;
-    if (!chatOpen || !vv) {
-      setChatViewportHeight(null);
+    if (!chatOpen) {
+      setChatViewport(null);
       return;
     }
-    const update = () => setChatViewportHeight(vv.height);
+    // Keep the page behind still, so the app's own screen (bottom tabs etc.)
+    // can't slide into view under the chat while typing.
+    const html = document.documentElement;
+    const prevOverflow = [html.style.overflow, document.body.style.overflow];
+    html.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
+    if (!vv) {
+      return () => {
+        [html.style.overflow, document.body.style.overflow] = prevOverflow;
+      };
+    }
+    // When the keyboard opens, iPhone scrolls the page up as well as covering
+    // the bottom: follow both the visible height and where it starts.
+    const update = () =>
+      setChatViewport({ h: vv.height, top: vv.offsetTop, kb: vv.height < window.innerHeight * 0.85 });
     update();
     vv.addEventListener("resize", update);
     vv.addEventListener("scroll", update);
     return () => {
       vv.removeEventListener("resize", update);
       vv.removeEventListener("scroll", update);
+      [html.style.overflow, document.body.style.overflow] = prevOverflow;
     };
   }, [chatOpen]);
 
@@ -11644,7 +11659,9 @@ function getNextRollCell(frameIdx, rollIdx, value) {
           className="fixed left-0 right-0 top-0 flex flex-col"
           style={{
             // Track the visible area so the input stays above the keyboard.
-            height: chatViewportHeight ? `calc(${chatViewportHeight}px / var(--app-zoom, 1))` : "100%",
+            height: chatViewport ? `calc(${chatViewport.h}px / var(--app-zoom, 1))` : "100%",
+            transform: chatViewport && chatViewport.top ? `translateY(calc(${chatViewport.top}px / var(--app-zoom, 1)))` : undefined,
+            overscrollBehavior: "contain",
             background: `linear-gradient(160deg, ${COLORS.navyLight} 0%, ${COLORS.navyBg} 55%, #161D38 100%)`,
             zIndex: 50,
           }}
@@ -11719,7 +11736,8 @@ function getNextRollCell(frameIdx, rollIdx, value) {
             style={{
               borderTop: `1px solid ${COLORS.oak}`,
               background: COLORS.navyBg,
-              paddingBottom: "calc(12px + env(safe-area-inset-bottom))",
+              // With the keyboard up, the home-bar gap is covered anyway.
+              paddingBottom: chatViewport && chatViewport.kb ? 10 : "calc(12px + env(safe-area-inset-bottom))",
             }}
           >
             <input
