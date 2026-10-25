@@ -8600,9 +8600,10 @@ ${lines}
       extraBalls: extraBallsData,
       shoe,
       center: center.trim() || null,
-      // 月間ランキング: the final score as read from the photo (hand edits to
-      // the frames don't change it), and which photo it came from, so the
-      // same photo uploaded twice is only counted once.
+      // 月間ランキング counts the game's own total (hand corrections included).
+      // photoTotal is kept as the score read from the photo, and photoKey
+      // says which photo it came from, so the same photo uploaded twice is
+      // only counted once.
       photoTotal: Number.isFinite(g.ocrTotal) ? g.ocrTotal : null,
       photoKey: photoHash ? `${photoHash}:${idx}` : null,
       createdAt: Date.now() + idx,

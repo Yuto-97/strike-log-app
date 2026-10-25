@@ -37,13 +37,41 @@ export const RANKING_MIN_GAMES_FOR_AVERAGE = 3;
 export const RANKING_TOP = 30;
 const MONTH_RE = /^\d{4}-\d{2}$/;
 
+// The score a game counts with in the ranking: the game's own total (after
+// any hand corrections — the frames are re-scored by the official rules, so
+// the total always matches the frames), as long as all 10 frames are there.
+// Older records without a usable total fall back to the total read from the
+// photo. Must be an actual number: an empty value would otherwise turn into 0.
+export function rankingScore(g) {
+  if (!g) return null;
+  const complete = Array.isArray(g.frames) && g.frames.length === 10;
+  const t = complete && typeof g.total === "number" ? g.total : typeof g.photoTotal === "number" ? g.photoTotal : null;
+  return t !== null && Number.isFinite(t) && t >= 0 && t <= 300 ? t : null;
+}
+
+// Recalculates one person's ranking entry for one month from their saved games.
+export async function refreshRankingEntry(db, userRef, uid, m) {
+  const snap = await userRef.collection("games").where("date", ">=", `${m}-01`).where("date", "<=", `${m}-31`).get();
+  const list = [];
+  for (const d of snap.docs) {
+    try {
+      list.push(JSON.parse(d.data().json));
+    } catch (e) {
+      // skip corrupted
+    }
+  }
+  const sum = rankingSummaryByBall(list);
+  const ref = db.collection("rankingMonths").doc(m).collection("entries").doc(uid);
+  if (sum) await ref.set({ ...sum, updatedAt: new Date().toISOString() });
+  else await ref.delete();
+}
+
 export function rankingSummary(gamesList) {
   const seen = new Set();
   const scores = [];
   for (const g of [...gamesList].sort((a, b) => String(a.date).localeCompare(String(b.date)) || (a.createdAt || 0) - (b.createdAt || 0))) {
-    // Must be an actual number: an empty value would otherwise turn into 0.
-    if (!g || typeof g.photoTotal !== "number") continue;
-    const s = g.photoTotal;
+    const s = rankingScore(g);
+    if (s === null) continue;
     if (!Number.isFinite(s) || s < 0 || s > 300) continue;
     if (g.photoKey) {
       if (seen.has(g.photoKey)) continue;
@@ -315,6 +343,13 @@ export function createHandler({ db, adminAuth, FieldValue }) {
         return;
       }
       try {
+        // The viewer's own entry is recalculated first, so it always reflects
+        // their latest records (and records saved under older counting rules).
+        try {
+          await refreshRankingEntry(db, userRef, caller.uid, month);
+        } catch (e) {
+          // show the stored ranking even if the refresh fails
+        }
         const [entriesSnap, partsSnap] = await Promise.all([
           db.collection("rankingMonths").doc(month).collection("entries").get(),
           db.collection("rankingParticipants").get(),
@@ -601,19 +636,7 @@ export function createHandler({ db, adminAuth, FieldValue }) {
       }
       for (const m of months) {
         if (!MONTH_RE.test(m)) continue;
-        const snap = await userRef.collection("games").where("date", ">=", `${m}-01`).where("date", "<=", `${m}-31`).get();
-        const list = [];
-        for (const d of snap.docs) {
-          try {
-            list.push(JSON.parse(d.data().json));
-          } catch (e) {
-            // skip corrupted
-          }
-        }
-        const sum = rankingSummaryByBall(list);
-        const ref = db.collection("rankingMonths").doc(m).collection("entries").doc(caller.uid);
-        if (sum) await ref.set({ ...sum, updatedAt: new Date().toISOString() });
-        else await ref.delete();
+        await refreshRankingEntry(db, userRef, caller.uid, m);
       }
       res.status(200).json({ ok: true });
     } catch (err) {
