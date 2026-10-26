@@ -496,6 +496,20 @@ function tenthFrameSpareChances(rolls) {
   return chances;
 }
 
+// ノーミスゲーム (clean game): every frame is a strike or a spare — no open
+// frames. In the 10th, a strike must be followed by another strike or a
+// spare on the two bonus balls; the fill ball after a spare doesn't matter.
+function isCleanGame(g) {
+  const fr = g && g.frames;
+  if (!Array.isArray(fr) || fr.length < 10) return false;
+  for (let i = 0; i < 9; i++) {
+    const r = fr[i]?.rolls || [];
+    if (!(r[0] === "X" || r[1] === "/")) return false;
+  }
+  const t = fr[9]?.rolls || [];
+  return t[0] === "X" ? t[1] === "X" || t[2] === "/" : t[1] === "/";
+}
+
 function computeGameSetStats(gamesList) {
   const totals = gamesList.map((g) => g.total);
   const avg = totals.length ? Math.round(totals.reduce((a, b) => a + b, 0) / totals.length) : 0;
@@ -570,6 +584,8 @@ function computeGameSetStats(gamesList) {
     splitCoverCount: splitCovers, splitCoverRate: pct(splitCovers, splitOpenCount),
     gutterCount: gutters, gutterRate: pct(gutters, totalBalls),
     foulCount: fouls, foulRate: pct(fouls, totalBalls),
+    cleanGameCount: gamesList.filter(isCleanGame).length,
+    cleanGameRate: pct(gamesList.filter(isCleanGame).length, gamesList.length),
     totalBalls,
   };
 }
@@ -8921,6 +8937,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
     splitCoverCount, splitCoverRate,
     gutterCount, gutterRate,
     foulCount, foulRate,
+    cleanGameCount, cleanGameRate,
   } = computeGameSetStats(periodGames);
 
   // "day" compares individual games side by side (a line across a few hours
@@ -10634,6 +10651,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                       {[
                         { label: "ストライク", count: strikeCount, rate: strikeRate },
                         { label: "スペア", count: spareCount, rate: spareRate },
+                        { label: "ノーミスゲーム", count: cleanGameCount, rate: cleanGameRate },
                         { label: "オープンフレーム", count: openFrameCount, rate: openFrameRate },
                         { label: "スプリット", count: splitCount, rate: splitRate },
                         { label: "スプリットカバー", count: splitCoverCount, rate: splitCoverRate },
@@ -10769,6 +10787,14 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                                         <ChevronRight size={14} style={{ color: COLORS.gold }} />
                                       )}
                                       {g.gameNumber ? `${g.gameNumber}ゲーム目` : "ゲーム"}
+                                      {isCleanGame(g) && (
+                                        <span
+                                          className="rounded-full"
+                                          style={{ marginLeft: 4, padding: "0 7px", fontSize: 11, fontWeight: 700, color: COLORS.ink, background: COLORS.gold, lineHeight: "18px" }}
+                                        >
+                                          ノーミス
+                                        </span>
+                                      )}
                                     </span>
                                     <span style={{ fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 17, color: COLORS.gold, lineHeight: 1 }}>
                                       {g.total}
@@ -10859,6 +10885,11 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                             label: "スペア率",
                             meaning: "1投目で倒しきれなかった場合、2投目までの合計で10本すべて倒すことを「スペア」という",
                             formula: "計算式:スペア数 ÷ スペアチャンス数(1投目がストライクでなかったフレームの数)",
+                          },
+                          {
+                            label: "ノーミスゲーム率",
+                            meaning: "10フレームすべてをストライクかスペアにして、オープンフレームが1つもないゲームを「ノーミスゲーム」という。10フレーム目は、ストライクのあとの2投でストライクかスペアにすればOK",
+                            formula: "計算式:ノーミスゲーム数 ÷ ゲーム数",
                           },
                           {
                             label: "オープンフレーム率",
