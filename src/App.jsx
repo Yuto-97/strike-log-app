@@ -8031,15 +8031,20 @@ export default function StrikeLog() {
     }
     // Keep the page behind still, so the app's own screen (bottom tabs etc.)
     // can't slide into view under the chat while typing.
+    // iPhone ignores overflow:hidden for this, so the page is pinned in place
+    // (position: fixed at its current scroll) and put back when the chat closes.
     const html = document.documentElement;
-    const prevOverflow = [html.style.overflow, document.body.style.overflow];
+    const body = document.body;
+    const scrollY = window.scrollY;
+    const prev = { htmlOverflow: html.style.overflow, position: body.style.position, top: body.style.top, left: body.style.left, right: body.style.right, width: body.style.width, overflow: body.style.overflow };
     html.style.overflow = "hidden";
-    document.body.style.overflow = "hidden";
-    if (!vv) {
-      return () => {
-        [html.style.overflow, document.body.style.overflow] = prevOverflow;
-      };
-    }
+    Object.assign(body.style, { position: "fixed", top: `-${scrollY}px`, left: "0", right: "0", width: "100%", overflow: "hidden" });
+    const unlock = () => {
+      html.style.overflow = prev.htmlOverflow;
+      Object.assign(body.style, { position: prev.position, top: prev.top, left: prev.left, right: prev.right, width: prev.width, overflow: prev.overflow });
+      window.scrollTo(0, scrollY);
+    };
+    if (!vv) return unlock;
     // When the keyboard opens, iPhone scrolls the page up as well as covering
     // the bottom: follow both the visible height and where it starts.
     const update = () =>
@@ -8050,7 +8055,7 @@ export default function StrikeLog() {
     return () => {
       vv.removeEventListener("resize", update);
       vv.removeEventListener("scroll", update);
-      [html.style.overflow, document.body.style.overflow] = prevOverflow;
+      unlock();
     };
   }, [chatOpen]);
 
@@ -11624,7 +11629,8 @@ function getNextRollCell(frameIdx, rollIdx, value) {
         )}
       </main>
 
-      {/* bottom nav */}
+      {/* bottom nav (hidden behind the support chat, so it can never peek out under it) */}
+      {!chatOpen && (
       <nav
         className="fixed bottom-0 left-0 right-0 border-t"
         style={{ background: COLORS.ink, borderColor: COLORS.oak, paddingBottom: "env(safe-area-inset-bottom)" }}
@@ -11652,8 +11658,15 @@ function getNextRollCell(frameIdx, rollIdx, value) {
           })}
         </div>
       </nav>
+      )}
 
       {/* help-chat button now lives in the header */}
+      {chatOpen && (
+        <div
+          aria-hidden="true"
+          style={{ position: "fixed", left: 0, right: 0, top: "-50vh", bottom: "-50vh", background: COLORS.navyBg, zIndex: 49, touchAction: "none" }}
+        />
+      )}
       {chatOpen && (
         <div
           className="fixed left-0 right-0 top-0 flex flex-col"
@@ -11675,6 +11688,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
               // still covers the top ~20px in app mode — so keep a minimum.
               paddingTop: "calc(16px + max(env(safe-area-inset-top), 20px))",
               paddingBottom: 16,
+              touchAction: "none", // dragging here must not move the page behind
             }}
           >
             <div className="flex items-center gap-2">
@@ -11688,7 +11702,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
             </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3" style={{ overscrollBehavior: "contain", touchAction: "pan-y" }}>
             {chatMessages.length === 0 && (
               <div className="text-xs text-center py-6" style={{ color: COLORS.strike }}>
                 アプリの使い方や、ストライク・スペアなどのボウリング用語について、気軽に聞いてください。
@@ -11736,6 +11750,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
             style={{
               borderTop: `1px solid ${COLORS.oak}`,
               background: COLORS.navyBg,
+              touchAction: "none",
               // With the keyboard up, the home-bar gap is covered anyway.
               paddingBottom: chatViewport && chatViewport.kb ? 10 : "calc(12px + env(safe-area-inset-bottom))",
             }}
