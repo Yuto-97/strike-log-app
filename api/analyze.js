@@ -17,7 +17,7 @@
 // steal and reuse it.
 
 import { identifyCaller, recordAiCall, recordOutcome, classifyAiError, publicAiError, noteServiceAlert } from "./_usage.js";
-import { checkAllowance } from "./_plans.js";
+import { checkAllowance, consumePack } from "./_plans.js";
 
 const MODEL = "claude-sonnet-4-6";
 
@@ -122,7 +122,16 @@ export default async function handler(req, res) {
       return;
     }
 
-    res.status(200).json(withUsage(data, feature, allowance));
+    // Went past the monthly allowance: take this reading from a 追加パック.
+    let pack = null;
+    if (allowance && allowance.usePack && deps && caller) {
+      try {
+        pack = await consumePack(deps.db, caller.key);
+      } catch (e) {
+        console.warn("pack use failed", e.message || e);
+      }
+    }
+    res.status(200).json(withUsage(data, feature, allowance, pack));
   } catch (err) {
     await record(deps, caller, feature, { ok: false, usage: null });
     console.error("Upstream request failed:", err.message || err);
@@ -137,7 +146,7 @@ async function record(deps, caller, feature, { ok, usage }) {
 
 // Tells the app this month's count after a successful analysis, so it can
 // show "今月 12/60回" without asking again.
-function withUsage(data, feature, allowance) {
+function withUsage(data, feature, allowance, pack) {
   if (feature !== "analyze" || !allowance || !allowance.used) return data;
-  return { ...data, _usage: { feature, used: (allowance.used.analyze || 0) + 1, limit: allowance.limit } };
+  return { ...data, _usage: { feature, used: (allowance.used.analyze || 0) + 1, limit: allowance.limit, ...(pack ? { pack } : {}) } };
 }

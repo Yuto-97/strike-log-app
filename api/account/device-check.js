@@ -31,7 +31,7 @@ export default async function handler(req, res) {
     // read) only when the app asks with &usage=1 — not on every poll.
     const used = req.query.usage ? await loadUsed(db, caller.uid).catch(() => null) : null;
     res.status(200).json({
-      plan: planView(effectivePlanId(data), used),
+      plan: planView(effectivePlanId(data), used, data),
       active: data.activeDeviceId === deviceId,
       status: data.status || "pending",
       requestNumber: data.requestNumber || null,

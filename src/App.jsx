@@ -1089,7 +1089,8 @@ function withPhotoTip(msg) {
 function friendlyAiError(code, what, body) {
   if (code === "limit_reached") {
     const n = body?.limit ? `(${body.limit}回)` : "";
-    return `今月の${what}の回数${n}を使い切りました。${body?.resetsOn || "来月1日"}に回数が戻ります。`;
+    const pack = body?.packAvailable ? "「設定」の追加パック(読み取り20回・500円)を使うと、続けて読み取れます。" : "";
+    return `今月の${what}の回数${n}を使い切りました。${body?.resetsOn || "来月1日"}に回数が戻ります。${pack}`;
   }
   if (code === "service_paused") return `ただいま${what}を一時停止しています。時間をおいて、もう一度お試しください。`;
   if (code === "busy") return `AIが混み合っています。少し時間をおいて、もう一度お試しください。`;
@@ -5074,11 +5075,10 @@ const ADMIN_PLAN_OPTIONS = [
   { id: "", label: "未設定(今まで通り)" },
   { id: "basic", label: "ベーシック 1,000円" },
   { id: "premium", label: "プレミアム 2,000円" },
-  { id: "premium_plus", label: "プレミアム＋ 3,000円" },
   { id: "free", label: "招待(無料・全機能)" },
 ];
 
-function AdminRequestCard({ r, dateLabel, onToggleRanking, onSetPlan, actions, children }) {
+function AdminRequestCard({ r, dateLabel, onToggleRanking, onSetPlan, onAddPack, actions, children }) {
   const migrated = !!r.linkedAccountUid;
   const showEmail = r.email && r.email !== r.name;
   return (
@@ -5148,6 +5148,23 @@ function AdminRequestCard({ r, dateLabel, onToggleRanking, onSetPlan, actions, c
               </option>
             ))}
           </select>
+        </div>
+      )}
+
+      {onAddPack && !migrated && (
+        <div className="flex items-center justify-between gap-2 rounded-lg" style={{ marginTop: 8, padding: "8px 10px", background: "rgba(255,255,255,0.05)" }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ color: COLORS.cream, fontSize: 13, fontWeight: 700 }}>追加パック 残り{r.packRemaining || 0}回</div>
+            {r.packExpiresOn && <div style={{ color: COLORS.strike, fontSize: 12 }}>{r.packExpiresOn}まで有効(一番早く切れる分)</div>}
+          </div>
+          <button
+            type="button"
+            onClick={onAddPack}
+            className="rounded-lg"
+            style={{ padding: "6px 10px", fontSize: 12, fontWeight: 700, color: COLORS.strike, border: "1px solid rgba(255,255,255,0.25)", whiteSpace: "nowrap", flexShrink: 0 }}
+          >
+            ＋20回を付ける
+          </button>
         </div>
       )}
 
@@ -5231,6 +5248,17 @@ function AdminPanel() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ password, action: "rankingExclude", uid, excluded }),
+    });
+    load(password);
+  };
+
+  // Give someone a 追加パック by hand (until Stripe sells them).
+  const addPack = async (id, name) => {
+    if (!window.confirm(`${name || "この利用者"}さんに追加パック(読み取り20回・6か月有効)を付けます。よろしいですか?`)) return;
+    await adminFetch("/api/admin/requests", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password, action: "addPack", id }),
     });
     load(password);
   };
@@ -5500,6 +5528,7 @@ function AdminPanel() {
                 dateLabel={`承認 ${formatAdminDateTime(r.updatedAt)}`}
                 onToggleRanking={() => toggleRankingExclude(r.id, !r.rankingExcluded)}
                 onSetPlan={(plan) => setPlan(r.id, plan)}
+                onAddPack={() => addPack(r.id, r.name)}
                 actions={
                   r.linkedAccountUid ? (
                     <AdminButton onClick={() => deleteMigrated([r.id])}>削除</AdminButton>
@@ -6172,13 +6201,7 @@ function PlanUsage({ plan }) {
       <div className="flex items-center justify-between gap-2">
         <span style={{ color: COLORS.strike, opacity: 0.7, fontSize: 12 }}>ご利用中のプラン</span>
         <span style={{ color: COLORS.gold, fontWeight: 700, fontSize: 15 }}>
-          {plan.id === "premium_plus" ? (
-            <>
-              プレミアム<ruby>＋<rt style={{ fontSize: 8 }}>プラス</rt></ruby>
-            </>
-          ) : (
-            plan.label
-          )}
+          {plan.label}
         </span>
       </div>
       {rows.map((r) => {
@@ -6197,7 +6220,85 @@ function PlanUsage({ plan }) {
       {(plan.limits?.analyze != null || plan.limits?.chat != null) && (
         <div style={{ color: COLORS.strike, opacity: 0.6, fontSize: 11 }}>回数は{plan.resetsOn || "毎月1日"}に戻ります</div>
       )}
+      {plan.pack && plan.limits?.analyze != null && <PackRow plan={plan} />}
     </div>
+  );
+}
+
+// 追加パック: remaining readings, and a sheet explaining / selling the pack.
+// Buying turns on when Stripe is live (plan.pack.purchasable from the server).
+function PackRow({ plan }) {
+  const [open, setOpen] = useState(false);
+  const pack = plan.pack;
+  const secondThisMonth = plan.id === "basic" && (pack.boughtThisMonth || 0) >= 1;
+  return (
+    <>
+      <div className="flex items-center justify-between gap-2" style={{ borderTop: "1px solid rgba(224,168,0,0.12)", paddingTop: 8 }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ color: COLORS.strike, fontSize: 13 }}>追加パック</div>
+          <div style={{ color: COLORS.strike, opacity: 0.6, fontSize: 11 }}>
+            {pack.remaining ? `${pack.expiresOn}まで有効` : `読み取り${pack.count}回 ${pack.price.toLocaleString()}円`}
+          </div>
+        </div>
+        <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
+          {pack.remaining > 0 && <span style={{ color: COLORS.cream, fontSize: 13, fontWeight: 700 }}>残り{pack.remaining}回</span>}
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            className="rounded-lg"
+            style={{ padding: "6px 10px", fontSize: 12.5, fontWeight: 700, color: COLORS.ink, background: COLORS.gold, whiteSpace: "nowrap" }}
+          >
+            買う
+          </button>
+        </div>
+      </div>
+      {open && createPortal(
+        <div
+          className="fixed inset-0 flex items-end justify-center"
+          style={{ background: "rgba(0,0,0,0.6)", zIndex: 60, padding: 12 }}
+          onClick={() => setOpen(false)}
+        >
+          <div
+            className="glass-card rounded-2xl w-full"
+            style={{ maxWidth: 420, padding: "20px 18px calc(18px + env(safe-area-inset-bottom))", border: `1px solid ${COLORS.gold}`, background: COLORS.navyBg }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <div style={{ color: COLORS.cream, fontSize: 18, fontWeight: 700 }}>追加パック</div>
+              <button type="button" onClick={() => setOpen(false)} aria-label="閉じる">
+                <X size={22} style={{ color: COLORS.cream }} />
+              </button>
+            </div>
+            <div className="flex items-baseline gap-2" style={{ marginTop: 10 }}>
+              <span style={{ color: COLORS.gold, fontFamily: "'Oswald', sans-serif", fontWeight: 700, fontSize: 30 }}>{pack.price.toLocaleString()}円</span>
+              <span style={{ color: COLORS.strike, fontSize: 14 }}>(税込)・スコアの読み取り{pack.count}回</span>
+            </div>
+            <ul style={{ color: COLORS.cream, fontSize: 14, lineHeight: 1.7, margin: "10px 0 0", paddingLeft: "1.2em" }}>
+              <li>買ったらすぐに使えます</li>
+              <li>今月の回数を使い切ったあとに使われます</li>
+              <li>使い切れなかった分は、買った日から{pack.months}か月まで持ち越せます</li>
+              <li>写真1枚で1回(何ゲーム写っていても1回)です</li>
+            </ul>
+            {secondThisMonth && (
+              <div className="rounded-lg" style={{ marginTop: 12, padding: "10px 12px", background: "rgba(224,168,0,0.14)", border: "1px solid rgba(224,168,0,0.5)", color: COLORS.cream, fontSize: 13.5, lineHeight: 1.6 }}>
+                <b style={{ color: COLORS.gold }}>プレミアムの方がお得です</b>
+                <br />
+                ベーシック1,000円＋パック500円×2つで2,000円になり、プレミアム(月100回・くわしい成績・自動で読み取り)と同じ金額です。
+              </div>
+            )}
+            <button
+              type="button"
+              disabled={!pack.purchasable}
+              className="w-full rounded-lg"
+              style={{ marginTop: 14, padding: "12px 8px", fontWeight: 700, fontSize: 15, ...primaryButtonStyle(!!pack.purchasable) }}
+            >
+              {pack.purchasable ? `${pack.price.toLocaleString()}円で買う` : "準備中(まもなく買えるようになります)"}
+            </button>
+          </div>
+        </div>,
+        document.body
+      )}
+    </>
   );
 }
 
@@ -6232,7 +6333,7 @@ const GUIDE_VIDEOS = [
   { no: 1, name: "tour", title: "アプリ全体の見方", sec: 80 },
   { no: 2, name: "setup", title: "はじめの設定", sec: 219 },
   { no: 3, name: "record_basic", title: "スコアを記録する(ベーシック)", sec: 100 },
-  { no: 4, name: "record_premium", title: "スコアを記録する(プレミアム以上)", sec: 84 },
+  { no: 4, name: "record_premium", title: "スコアを記録する(プレミアム)", sec: 84 },
   { no: 5, name: "fix", title: "読み取りがずれていた時の直し方", sec: 133 },
   { no: 6, name: "history", title: "履歴の見方", sec: 73 },
   { no: 7, name: "stats", title: "記録(成績)の見方", sec: 99 },
@@ -6273,7 +6374,7 @@ const GUIDE_CAPTIONS = {
   tour: [[0.4, 4.5, "アプリ全体の見方"], [4.5, 10.2, "画面の下に5つのボタンがあります"], [10.2, 18.59, "「スコア分析」スコア画面の写真からスコアを記録します"], [18.59, 27.02, "「履歴」これまでの記録を日ごとに見られます"], [27.02, 35.54, "「記録」アベレージやストライク率など成績を見られます"], [35.54, 43.97, "「ランキング」みんなとの月間ランキングです"], [43.97, 57.41, "「設定」ボールの登録や文字の大きさなどを変えられます"], [57.41, 64.92, "右上のベルは「お知らせ」アップデートなどが届きます"], [64.92, 72.42, "吹き出しは「AIチャット相談」使い方を質問できます"], [72.42, 79.52, "くわしい使い方はそれぞれの動画で紹介しています"]],
   setup: [[0.4, 6.7, "はじめて開くと「はじめの設定」が出ます"], [6.7, 14.68, "「設定をはじめる」を押します"], [14.68, 28.5, "文字の大きさを選びます押すとすぐに変わります"], [28.5, 35.12, "選んだら「次へ」"], [35.12, 44.45, "ニックネームを入れます"], [44.45, 54.26, "スコア画面に出る自分の名前を画面と同じように入れます"], [54.26, 60.94, "「次へ」"], [60.94, 81.77, "利き手と目標を入れます"], [81.77, 88.41, "「次へ」"], [88.41, 101.64, "よく行くボウリング場を入れます"], [101.64, 108.27, "「次へ」"], [108.27, 123.99, "使っているボールを登録します種類・用途・重さを選びます"], [123.99, 132.98, "マイボールは名前も入れられます"], [132.98, 141.88, "くわしい情報は分かる所だけでOK分からなければ空欄のままで大丈夫"], [141.88, 149.58, "例えばカバーストック(ボールの表面の素材)を選びます"], [149.58, 156.54, "球質(曲がり方)なども分かれば選びます"], [156.54, 164.7, "ボールが2つ以上あるときは「もう1つ追加する」"], [164.7, 173.1, "登録したボールが上に並びます登録できたら「次へ」"], [173.1, 188.65, "シューズを選びますマイシューズは名前を入れます"], [188.65, 195.27, "「次へ」"], [195.27, 202.37, "アカウントを作ると機種変更しても記録が残ります"], [202.37, 209.02, "あとで作るときは「あとで設定する」"], [209.02, 218.33, "これで準備ができました「はじめる」を押します"]],
   record_basic: [[0.4, 6.9, "スコアの記録のしかた(ベーシックプラン)"], [6.9, 14.6, "まず、ここの名前がスコア画面の名前と同じか確かめます"], [14.6, 21.9, "「スコア画面を撮影」を押してスコア画面を撮ります"], [21.9, 29.21, "自分の行を、名前から合計まで指でなぞって囲みます"], [29.21, 35.86, "囲めたら「この範囲で決定」"], [35.86, 42.99, "「囲んだ範囲を解析する」を押します"], [42.99, 50.09, "AIがスコアを読み取ります(10〜20秒ほど)"], [50.09, 57.39, "読み取った結果が出ました写真と見比べて確かめます"], [57.39, 65.89, "違うところがあればマスを押して直せます(直し方は別の動画で)"], [65.89, 72.99, "プレー日・何ゲーム目・ボウリング場を確かめます"], [72.99, 84.59, "使ったボールを選びます"], [84.59, 92.19, "最後に「記録を保存」を押します"], [92.19, 98.89, "これで記録できました「履歴」に追加されます"]],
-  record_premium: [[0.4, 7.5, "スコアの記録のしかた(プレミアム以上のプラン)"], [7.5, 13.4, "名前がスコア画面と同じか確かめます"], [13.4, 20.7, "「スコア画面を撮影」を押してスコア画面を撮ります"], [20.7, 27.2, "指で囲まなくても自分の行を自動で探します"], [27.2, 34.71, "スコアの部分を自動で切り取ってそのまま読み取ります"], [34.71, 42.01, "読み取った結果が出ました写真と見比べて確かめます"], [42.01, 49.91, "うまく切り取れなかった時は「囲み直す」で自分で囲めます"], [49.91, 57.01, "プレー日・何ゲーム目・ボウリング場を確かめます"], [57.01, 68.65, "使ったボールを選びます"], [68.65, 76.3, "最後に「記録を保存」を押します"], [76.3, 83.0, "これで記録できました「履歴」に追加されます"]],
+  record_premium: [[0.4, 7.5, "スコアの記録のしかた(プレミアムプラン)"], [7.5, 13.4, "名前がスコア画面と同じか確かめます"], [13.4, 20.7, "「スコア画面を撮影」を押してスコア画面を撮ります"], [20.7, 27.2, "指で囲まなくても自分の行を自動で探します"], [27.2, 34.71, "スコアの部分を自動で切り取ってそのまま読み取ります"], [34.71, 42.01, "読み取った結果が出ました写真と見比べて確かめます"], [42.01, 49.91, "うまく切り取れなかった時は「囲み直す」で自分で囲めます"], [49.91, 57.01, "プレー日・何ゲーム目・ボウリング場を確かめます"], [57.01, 68.65, "使ったボールを選びます"], [68.65, 76.3, "最後に「記録を保存」を押します"], [76.3, 83.0, "これで記録できました「履歴」に追加されます"]],
   fix: [[0.4, 5.9, "読み取りがずれていた時の直し方"], [5.9, 13.6, "まず、ここの名前がスコア画面の名前と同じか確かめます"], [13.6, 20.9, "「スコア画面を撮影」を押してスコア画面を撮ります"], [20.9, 28.2, "自分の行を、名前から合計まで指でなぞって囲みます"], [28.2, 34.83, "囲めたら「この範囲で決定」"], [34.83, 42.09, "「囲んだ範囲を解析する」を押します"], [42.09, 49.19, "AIがスコアを読み取ります(10〜20秒ほど)"], [49.19, 56.12, "合わないところがあるとお知らせが出ます"], [56.12, 63.62, "写真と見比べると4フレーム目の1投目が「8」でした"], [63.62, 70.27, "直したいマスを押します"], [70.27, 78.78, "下に数字のボタンが出るので正しい数字を押します"], [78.78, 87.72, "ストライクやスペアは記号のボタンで入れられます"], [87.72, 93.62, "直すと合計も自動で計算し直されます"], [93.62, 100.73, "保存したあとに気づいた時は「履歴」から直せます"], [100.73, 107.73, "直したいゲームのえんぴつのマークを押します"], [107.73, 117.17, "同じようにマスを押すと数字のボタンが出ます"], [117.17, 125.46, "直したら「保存」を押します(やめる時は「キャンセル」)"], [125.46, 131.96, "ボウリング場やボールも同じ画面で直せます"]],
   history: [[0.4, 9.06, "「履歴」の見方"], [9.06, 15.96, "月ごとの見出しにゲーム数とアベレージが出ます"], [15.96, 24.46, "1日ごとにカードになっていてトータルやアベレージが分かります"], [24.46, 33.08, "日付のカードを押すとその日のゲームが開きます"], [33.08, 39.18, "全部のフレームがスコア表で見られます"], [39.18, 45.28, "ゲームの下には使ったボールとシューズ"], [45.28, 58.09, "えんぴつのマークで直す×のマークで消せます"], [58.09, 71.77, "ほかの日も、押すと開きますもう一度押すと閉じます"]],
   stats: [[0.4, 8.76, "「記録」の見方"], [8.76, 16.66, "上のボタンで期間を切り替えます日・週・月・年・期間指定"], [16.66, 22.36, "「‹ ›」で前後の期間に移れます"], [22.36, 30.06, "アベレージ・トータル・ゲーム数ハイゲーム・ローゲーム"], [30.06, 36.36, "目標まであといくつかもバーで分かります"], [36.36, 44.86, "ストライク・スペアなどの回数と割合"], [44.86, 52.56, "スコアの移り変わりのグラフ点が多い時は横にスクロール"], [52.56, 66.86, "「ボール別」「ボウリング場別」の成績は押すと開きます"], [66.86, 76.15, "「用語と計算式」でストライク率などの意味が分かります"], [76.15, 89.52, "「日」にすると、その日のゲームをスコア表で並べて見られます"], [89.52, 97.92, "ゲーム名を押すとストライクなどの内訳が開きます"]],
@@ -6455,7 +6556,7 @@ function GuideMore({ title, children }) {
   );
 }
 
-// Two big side-by-side choices (iPhone / Android, ベーシック / プレミアム以上).
+// Two big side-by-side choices (iPhone / Android, ベーシック / プレミアム).
 function GuideSeg({ options, value, onChange, label }) {
   return (
     <div className="g-seg g-noprint" role="group" aria-label={label}>
@@ -6521,11 +6622,11 @@ function GuideInstall() {
 }
 
 const GUIDE_PLAN_ROWS = [
-  ["月額(税込)", "1,000円", "2,000円", "3,000円"],
-  ["写真の読み取り", "月60回", "月150回", "無制限"],
-  ["AIに相談", "月30回", "月150回", "無制限"],
-  ["自動で読み取り", "ー", "○", "○"],
-  ["くわしい成績", "ー", "○", "○"],
+  ["月額(税込)", "1,000円", "2,000円"],
+  ["写真の読み取り", "月40回", "月100回"],
+  ["AIに相談", "月30回", "月30回"],
+  ["自動で読み取り", "ー", "○"],
+  ["くわしい成績", "ー", "○"],
 ];
 
 // One topic per screen: a video (or a choice of two), at most four
@@ -6593,7 +6694,7 @@ const GUIDE_TOPICS = [
       },
       {
         key: "premium",
-        label: "プレミアム以上",
+        label: "プレミアム",
         video: "record_premium",
         steps: ["下の「スコア分析」を押します", "「スコア画面を撮影」を押して、スコア画面を撮ります", "自分の行を自動で見つけて読み取ります(囲まなくてOK)", "日付などを選んで「記録を保存」を押します"],
       },
@@ -6677,10 +6778,6 @@ const GUIDE_TOPICS = [
               <th></th>
               <th>ベーシック</th>
               <th>プレミアム</th>
-              <th>
-                プレミアム
-                <br />＋(プラス)
-              </th>
             </tr>
           </thead>
           <tbody>
@@ -6688,7 +6785,7 @@ const GUIDE_TOPICS = [
               <tr key={label} className={r === 0 ? "is-price" : ""}>
                 <th scope="row">{label}</th>
                 {cells.map((c, i) => (
-                  <td key={i} className={c === "ー" ? "is-no" : c === "○" || c === "無制限" ? "is-yes" : ""}>
+                  <td key={i} className={c === "ー" ? "is-no" : c === "○" ? "is-yes" : ""}>
                     {c}
                   </td>
                 ))}
@@ -6697,6 +6794,12 @@ const GUIDE_TOPICS = [
           </tbody>
         </table>
         <GuideTip>読み取りは写真1枚で1回です。1枚に何ゲーム写っていても1回です。回数は毎月1日に戻ります。</GuideTip>
+        <div className="g-tip" style={{ background: "#fff" }}>
+          <b>回数が足りない時は「追加パック」</b>
+          <div>
+            読み取り20回で500円。「設定」の「ご利用中のプラン」から買えます。買ってすぐ使え、その月の回数を使い切ったあとに使われます。使い切れなかった分は、買った日から6か月まで持ち越せます。
+          </div>
+        </div>
         <GuideMore title="お支払いについてくわしく見る">
           <p className="g-p">
             お支払いは毎月1日です。1〜15日のお申し込みは翌月1日から、16日〜末日のお申し込みは翌々月1日からです。くわしくは<a href="/terms">利用規約</a>をご覧ください。
@@ -6717,7 +6820,7 @@ const GUIDE_TOPICS = [
           ["自分の行が見つからない", "「スコア画面に表示されている自分の名前」が、ボウリング場の画面の表示と同じか確かめてください。指で自分の行を囲んでも読み取れます。", "record"],
           ["文字が小さくて読みにくい", "「設定」の「文字の大きさ」で「大きめ」か「特大」にしてください。", "settings"],
           ["機種変更する", "「設定」でアカウントを作っておけば、新しいスマホでログインするだけで記録が引き継げます。使えるのは1台だけです。", "settings"],
-          ["今月の回数を使い切った", "毎月1日に戻ります。1枚に複数ゲーム写るように撮ると回数を節約できます。写真を撮っておけば、あとから選んで記録もできます。", "plans"],
+          ["今月の回数を使い切った", "追加パック(読み取り20回・500円)を買うと、すぐに続けて読み取れます。回数は毎月1日にも戻ります。1枚に複数ゲーム写るように撮ると回数を節約できます。", "plans"],
           ["やめたい(解約)", "下のお問い合わせ先に、メールでご連絡ください。記録は解約日から1年間残ります。"],
         ].map(([q, a, link]) => {
           const t = link && GUIDE_TOPICS.find((x) => x.id === link);
@@ -7091,16 +7194,15 @@ function LegalPage({ page }) {
 本サービスには以下の有料プランがあります(価格はいずれも税込)。
 ・ベーシック:月額1,000円
 ・プレミアム:月額2,000円
-・プレミアム＋:月額3,000円
-各プランで利用できる機能と、各機能の1か月あたりの利用回数の上限は以下の通りです。
-・ベーシック:スコアの読み取り(自分の行を指で囲んで読み取る方式)月60回、AIチャット相談 月30回
-・プレミアム:スコアの読み取り(自分の行を自動で見つけて読み取る方式を含む)月150回、AIチャット相談 月150回、期間別のグラフ、ボール別・ボウリング場別の成績
-・プレミアム＋:プレミアムのすべての機能を、スコアの読み取り・AIチャット相談ともに回数の上限なく利用できます
+各プランで利用できる機能と、各機能の1か月あたりの利用回数の上限は以下の通りです。スコアの読み取りは、写真1枚につき1回と数えます(1枚に複数ゲームが写っている場合も1回です)。
+・ベーシック:スコアの読み取り(自分の行を指で囲んで読み取る方式)月40回、AIチャット相談 月30回
+・プレミアム:スコアの読み取り(自分の行を自動で見つけて読み取る方式を含む)月100回、AIチャット相談 月30回、期間別のグラフ、ボール別・ボウリング場別の成績
 利用回数は毎月1日に戻ります。上限に達した場合、その月はその機能を利用できなくなりますが、それまでの記録や他の機能はそのまま利用できます。
-プレミアム＋を含むすべてのプランにおいて、運営者は、公平なサービス提供のため、通常の利用の範囲を著しく超える利用や、プログラム等による自動的な利用が認められた場合、その利用者の利用を制限することがあります。
+スコアの読み取りの回数が足りない場合は、追加パック(スコアの読み取り20回・500円(税込))を購入できます。追加パックの回数は購入後すぐに利用でき、その月のプランの回数を使い切ったあとに使われます。使い切れなかった回数は翌月以降に持ち越せますが、購入日から6か月を過ぎると利用できなくなります。追加パックはAIチャット相談には使えません。
+すべてのプランにおいて、運営者は、公平なサービス提供のため、通常の利用の範囲を著しく超える利用や、プログラム等による自動的な利用が認められた場合、その利用者の利用を制限することがあります。
 
 第5条(料金の支払い)
-料金はクレジットカード決済による自動継続課金とします。請求日は全利用者共通で、毎月1日とします。初回はお申し込み時に1か月分を課金し、日割り計算は行いません。2回目以降は、次の通り毎月1日に自動的に請求されます。
+プランの料金はクレジットカード決済による自動継続課金とします。追加パックは、購入時に1回だけ課金します。請求日は全利用者共通で、毎月1日とします。初回はお申し込み時に1か月分を課金し、日割り計算は行いません。2回目以降は、次の通り毎月1日に自動的に請求されます。
 ・毎月1日〜15日にお申し込みの場合:お申し込みの翌月1日から
 ・毎月16日〜末日にお申し込みの場合:お申し込みの翌々月1日から
 
@@ -7119,7 +7221,7 @@ function LegalPage({ page }) {
 ・アカウントの共有、譲渡、売買
 
 第9条(解約)
-利用者はいつでも解約できます。解約後は次回請求日以降の課金が停止しますが、既にお支払いいただいた分の返金は行いません。
+利用者はいつでも解約できます。解約後は次回請求日以降の課金が停止しますが、既にお支払いいただいた分の返金は行いません。購入済みの追加パックの未使用分についても、返金は行いません。
 解約後も、アカウントに保存された記録は解約日から1年間保管し、その間に利用を再開した場合は元の記録を引き続き利用できます。1年を過ぎた記録は削除します。
 
 第10条(サービスの変更・停止・終了)
@@ -7135,7 +7237,7 @@ function LegalPage({ page }) {
 本規約の解釈には日本法を準拠法とし、本サービスに関して紛争が生じた場合には、運営者の所在地を管轄する裁判所を専属的合意管轄とします。
 
 制定日:2026年8月17日
-改定日:2026年10月21日`,
+改定日:2026年10月28日`,
     },
     privacy: {
       title: "プライバシーポリシー",
@@ -7203,19 +7305,19 @@ smmryut.9021@gmail.com
 
 メールアドレス:smmryut.9021@gmail.com
 
-販売価格:ベーシックプラン 月額1,000円(税込)/プレミアムプラン 月額2,000円(税込)/プレミアム＋プラン 月額3,000円(税込)
+販売価格:ベーシックプラン 月額1,000円(税込)/プレミアムプラン 月額2,000円(税込)/追加パック(スコアの読み取り20回) 500円(税込)
 
 商品代金以外の必要料金:インターネット接続に伴う通信費は利用者のご負担となります。
 
 支払方法:クレジットカード決済(Stripe)
 
-支払時期:お申し込み時に初回1か月分を課金し(日割り計算はありません)、以後は毎月1日に自動課金されます。なお、2回目の課金は、1日〜15日のお申し込みの場合は翌月1日、16日〜末日のお申し込みの場合は翌々月1日となります。
+支払時期:お申し込み時に初回1か月分を課金し(日割り計算はありません)、以後は毎月1日に自動課金されます。なお、2回目の課金は、1日〜15日のお申し込みの場合は翌月1日、16日〜末日のお申し込みの場合は翌々月1日となります。追加パックは購入時に課金されます。
 
-サービス提供時期:決済完了後、即時にご利用いただけます。
+サービス提供時期:決済完了後、即時にご利用いただけます。追加パックの有効期間は購入日から6か月です。
 
 動作環境:インターネットに接続できるスマートフォン(iPhoneのSafari、AndroidのChromeの最新版を推奨)
 
-返品・返金について:サービスの性質上、返金・返品には対応しておりません。解約はいつでも可能ですが、既にお支払いいただいた分の返金は行いません。
+返品・返金について:サービスの性質上、返金・返品には対応しておりません。解約はいつでも可能ですが、既にお支払いいただいた分(追加パックの未使用分を含む)の返金は行いません。
 
 解約方法:アプリ内設定画面、または上記お問い合わせ先までご連絡ください。次回請求日以降の課金が停止します。`,
     },
@@ -7799,7 +7901,7 @@ export default function StrikeLog() {
     };
   }, [isAdminRoute, authUser, deviceId, handleKickedOut, runSync]);
 
-  // 年・期間指定のグラフ、ボール別・ボウリング場別の成績 (プレミアム以上).
+  // 年・期間指定のグラフ、ボール別・ボウリング場別の成績 (プレミアム).
   // Until the server has answered, nothing is locked.
   const premiumStatsOk = !planInfo || planInfo.premiumStats !== false;
   useEffect(() => {
@@ -7810,7 +7912,11 @@ export default function StrikeLog() {
   useEffect(() => {
     setUsageListener((u) => {
       if (!u || !u.feature) return;
-      setPlanInfo((prev) => (prev && prev.used ? { ...prev, used: { ...prev.used, [u.feature]: u.used } } : prev));
+      setPlanInfo((prev) =>
+        prev && prev.used
+          ? { ...prev, used: { ...prev.used, [u.feature]: u.used }, ...(u.pack && prev.pack ? { pack: { ...prev.pack, ...u.pack } } : {}) }
+          : prev
+      );
     });
     return () => setUsageListener(null);
   }, []);
@@ -10391,7 +10497,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                         type="button"
                         onClick={() => {
                           if (locked) {
-                            setPlanNotice("年・期間指定のグラフは、プレミアム以上のプランで使えます");
+                            setPlanNotice("年・期間指定のグラフは、プレミアムプランで使えます");
                             return;
                           }
                           setPlanNotice("");
@@ -10856,7 +10962,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                           {!premiumStatsOk && <Lock size={13} style={{ display: "inline", verticalAlign: "-2px", marginRight: 4 }} />}
                           ボール別の成績
                         </summary>
-                        {premiumStatsOk ? <BallRankings stats={ballStats} /> : <PlanLockNote text="ボール別の成績は、プレミアム以上のプランで見られます" inset />}
+                        {premiumStatsOk ? <BallRankings stats={ballStats} /> : <PlanLockNote text="ボール別の成績は、プレミアムプランで見られます" inset />}
                       </details>
                     )}
 
@@ -10866,7 +10972,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                           {!premiumStatsOk && <Lock size={13} style={{ display: "inline", verticalAlign: "-2px", marginRight: 4 }} />}
                           ボウリング場別の成績
                         </summary>
-                        {premiumStatsOk ? <CenterStats games={periodGames} /> : <PlanLockNote text="ボウリング場別の成績は、プレミアム以上のプランで見られます" inset />}
+                        {premiumStatsOk ? <CenterStats games={periodGames} /> : <PlanLockNote text="ボウリング場別の成績は、プレミアムプランで見られます" inset />}
                       </details>
                     )}
 

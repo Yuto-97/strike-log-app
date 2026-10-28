@@ -6,7 +6,9 @@
 // POST   /api/admin/requests { password, action: "finance", month, fixedCosts, revenueJpy, usdJpy }
 //                                        -> save that month's fixed costs / revenue, and the USD→JPY rate
 // POST   /api/admin/requests { password, action: "setPlan", id, plan }
-//                                        -> set someone's plan by hand (plan: basic|premium|premium_plus|free, or null to clear)
+//                                        -> set someone's plan by hand (plan: basic|premium|free, or null to clear)
+// POST   /api/admin/requests { password, action: "addPack", id }
+//                                        -> give someone a 追加パック (20 readings, 6 months) by hand
 // Fixed costs carry forward automatically: a month with nothing saved uses
 // the most recent earlier month that has them. Items may be in yen or in
 // dollars ({ label, amount, currency: "JPY" | "USD" }); dollar items are
@@ -22,7 +24,7 @@ import { db, adminAuth, FieldValue } from "../_firebaseAdmin.js";
 import { isAdminRequest } from "../_adminAuth.js";
 import { generateUniqueId } from "../_idGenerator.js";
 import { monthJST } from "../_usage.js";
-import { ASSIGNABLE_PLANS } from "../_plans.js";
+import { ASSIGNABLE_PLANS, newPack, packSummary } from "../_plans.js";
 import { timingSafeEqual } from "crypto";
 
 const MONTH_RE = /^\d{4}-\d{2}$/;
@@ -245,6 +247,26 @@ export default async function handler(req, res) {
       return;
     }
 
+    // Give someone a 追加パック by hand (testing, or paid outside the app).
+    // Stripe will add packs the same way once purchases are live.
+    if (req.method === "POST" && (req.body || {}).action === "addPack") {
+      const { id } = req.body;
+      if (!id || typeof id !== "string" || id.includes("/")) {
+        res.status(400).json({ error: "id is required" });
+        return;
+      }
+      const ref = db.collection("accessRequests").doc(id);
+      const snap = await ref.get();
+      if (!snap.exists) {
+        res.status(404).json({ error: "not found" });
+        return;
+      }
+      const packs = Array.isArray(snap.data().packs) ? snap.data().packs : [];
+      await ref.set({ packs: [...packs, newPack()] }, { merge: true });
+      res.status(200).json({ ok: true });
+      return;
+    }
+
     if (req.method === "POST" && (req.body || {}).action === "ackAlerts") {
       const now = new Date().toISOString();
       const snap = await db.collection("alerts").get();
@@ -286,7 +308,8 @@ export default async function handler(req, res) {
           await d.ref.set({ requestNumber }, { merge: true });
           data.requestNumber = requestNumber;
         }
-        items.push({ id: d.id, ...data });
+        const ps = packSummary(data);
+        items.push({ id: d.id, ...data, packRemaining: ps.remaining, packExpiresOn: ps.expiresOn });
       }
       // ランキング: who takes part, and who the admin has removed
       try {
