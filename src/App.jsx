@@ -1089,8 +1089,8 @@ function withPhotoTip(msg) {
 function friendlyAiError(code, what, body) {
   if (code === "limit_reached") {
     const n = body?.limit ? `(${body.limit}回)` : "";
-    const pack = body?.packAvailable ? "「設定」の追加パック(読み取り20回・500円)を使うと、続けて読み取れます。" : "";
-    return `今月の${what}の回数${n}を使い切りました。${body?.resetsOn || "来月1日"}に回数が戻ります。${pack}`;
+    const pack = body?.packAvailable ? "\n続けて読み取るには「設定」の追加パック(20回 500円)をご利用ください。" : "";
+    return `今月の${what}の回数${n}を使い切りました。\n${body?.resetsOn || "来月1日"}に回数が戻ります。${pack}`;
   }
   if (code === "service_paused") return `ただいま${what}を一時停止しています。時間をおいて、もう一度お試しください。`;
   if (code === "busy") return `AIが混み合っています。少し時間をおいて、もう一度お試しください。`;
@@ -6538,12 +6538,25 @@ function GuideSteps({ items }) {
   );
 }
 
-function GuideTip({ children }) {
+// A tip box: a title, then either one short line or a few bullet lines
+// (long run-on sentences are hard to read on a phone).
+function GuideTip({ title = "ポイント", children, plain = false }) {
+  const lines = Array.isArray(children) ? children : null;
   return (
-    <div className="g-tip">
-      <b>ポイント</b>
-      <div>{children}</div>
+    <div className={`g-tip${plain ? " is-plain" : ""}`}>
+      <b className="g-tip-t">{title}</b>
+      {lines ? <GuideList items={lines} /> : <div>{children}</div>}
     </div>
+  );
+}
+
+function GuideList({ items }) {
+  return (
+    <ul className="g-list">
+      {items.map((t, i) => (
+        <li key={i}>{t}</li>
+      ))}
+    </ul>
   );
 }
 
@@ -6576,13 +6589,14 @@ const GUIDE_APP_HOST = GUIDE_URL.replace("https://", "").replace(/\/$/, "");
 function GuideInstall() {
   const [os, setOs] = useState(() => (typeof navigator !== "undefined" && /android/i.test(navigator.userAgent) ? "android" : "iphone"));
   const steps = {
-    iphone: ["Safari(サファリ)で、下のボタンを押してアプリを開きます", "画面の下の共有ボタン(四角から上向きの矢印)を押します", "「ホーム画面に追加」を押します", "右上の「追加」を押すと、アイコンができます"],
+    iphone: ["Safari(サファリ)で、下のボタンを押してアプリを開きます", "右下の「…」(点が3つ)を押し、「共有」を押します(「…」がない時は、画面の下の共有ボタン)", "「ホーム画面に追加」を押します", "右上の「追加」を押すと、アイコンができます"],
     android: ["Chrome(クローム)で、下のボタンを押してアプリを開きます", "右上の「︙」(点が縦に3つ)を押します", "「ホーム画面に追加」を押します", "「追加」を押すと、アイコンができます"],
   };
   // On paper there is no button to press: point to the QR code instead.
   const printSteps = (list) => [list[0].replace("下のボタンを押して", "下のQRコードを読み取って"), ...list.slice(1)];
   return (
     <>
+      <p className="g-choose g-noprint">お使いのスマホを選んでください</p>
       <GuideSeg
         label="スマホの種類"
         options={[
@@ -6592,6 +6606,7 @@ function GuideInstall() {
         value={os}
         onChange={setOs}
       />
+      <p className="g-which g-noprint">分からない時:スマホの裏にリンゴのマークがあれば iPhone、それ以外は Android です</p>
       <div className="g-noprint">
         <GuideSteps items={steps[os]} />
         <a className="g-open" href="/">
@@ -6625,8 +6640,18 @@ const GUIDE_PLAN_ROWS = [
   ["月額(税込)", "1,000円", "2,000円"],
   ["写真の読み取り", "月40回", "月100回"],
   ["AIに相談", "月30回", "月30回"],
-  ["自動で読み取り", "ー", "○"],
-  ["くわしい成績", "ー", "○"],
+  ["囲まずに読み取り", "ー", "○"],
+  ["1年・好きな期間のグラフ", "ー", "○"],
+  ["ボール別・ボウリング場別の成績", "ー", "○"],
+];
+
+// What プレミアム adds, each with a picture, so the difference is easy to imagine.
+const GUIDE_PREMIUM_FEATURES = [
+  { img: "auto", title: "囲まずに読み取れる", text: "撮るだけで、自分の行を自動で見つけて読み取ります。指でなぞる手間がいりません。" },
+  { img: "p_year", title: "1年間のスコアの流れが見える", text: "「年」や好きな期間で、スコアの上がり下がりをグラフで見られます。ベーシックは「日・週・月」までです。" },
+  { img: "p_ball", title: "どのボールが合っているか分かる", text: "ボールの組み合わせごとに、アベレージやストライク率を比べて順位を付けます。" },
+  { img: "p_center", title: "ボウリング場ごとに比べられる", text: "よく行くボウリング場ごとのアベレージや、得意・苦手が分かります。" },
+  { title: "読み取りが月100回", text: "ベーシックの月40回の2.5倍。週に何回も投げる人でも安心です。" },
 ];
 
 // One topic per screen: a video (or a choice of two), at most four
@@ -6700,7 +6725,8 @@ const GUIDE_TOPICS = [
       },
     ],
     shot: ["scan", "スコア分析の画面"],
-    tip: "画面の正面から、自分の名前から合計まで全部入るように撮るときれいに読めます。1枚に何ゲーム分写っていても、まとめて記録できます(ベーシックは、記録したいゲームを全部囲みます)。",
+    tipTitle: "上手に撮るコツ",
+    tip: ["画面の正面から撮る", "自分の名前から合計まで、全部入れる", "1枚に何ゲームあっても、まとめて記録できる(ベーシックは全部を囲む)"],
   },
   {
     id: "fix",
@@ -6710,7 +6736,8 @@ const GUIDE_TOPICS = [
     video: "fix",
     steps: ["写真と見比べて、ちがうマスを押します", "下に出るボタンで、正しい数字を押します", "合計は自動で計算し直されます"],
     shot: ["result", "読み取った結果の画面"],
-    tip: "保存したあとでも、「履歴」のえんぴつのマークから直せます。",
+    tipTitle: "保存したあとでも直せます",
+    tip: "「履歴」のえんぴつのマークを押します。",
   },
   {
     id: "history",
@@ -6763,7 +6790,8 @@ const GUIDE_TOPICS = [
     sub: "文字の大きさ・目標・ボール",
     video: "settings",
     steps: ["下の「設定」を押します", "変えたい項目を押して直します"],
-    tip: "文字が小さい時は「文字の大きさ」を「大きめ」か「特大」にしてください。",
+    tipTitle: "文字が小さい時は",
+    tip: "「文字の大きさ」を「大きめ」か「特大」にします。",
   },
   {
     id: "plans",
@@ -6793,17 +6821,39 @@ const GUIDE_TOPICS = [
             ))}
           </tbody>
         </table>
-        <GuideTip>読み取りは写真1枚で1回です。1枚に何ゲーム写っていても1回です。回数は毎月1日に戻ります。</GuideTip>
-        <div className="g-tip" style={{ background: "#fff" }}>
-          <b>回数が足りない時は「追加パック」</b>
-          <div>
-            読み取り20回で500円。「設定」の「ご利用中のプラン」から買えます。買ってすぐ使え、その月の回数を使い切ったあとに使われます。使い切れなかった分は、買った日から6か月まで持ち越せます。
-          </div>
+        <h3 className="g-h3">プレミアムにすると、できること</h3>
+        <div className="g-feats">
+          {GUIDE_PREMIUM_FEATURES.map((f) => (
+            <div className="g-feat" key={f.title}>
+              {f.img && <img src={`/guide-img/${f.img}.jpg`} alt={f.title} loading="lazy" className={f.img === "auto" ? "is-phone" : ""} />}
+              <div className="g-feat-t">{f.title}</div>
+              <div className="g-feat-d">{f.text}</div>
+            </div>
+          ))}
         </div>
-        <GuideMore title="お支払いについてくわしく見る">
-          <p className="g-p">
-            お支払いは毎月1日です。1〜15日のお申し込みは翌月1日から、16日〜末日のお申し込みは翌々月1日からです。くわしくは<a href="/terms">利用規約</a>をご覧ください。
-          </p>
+        <GuideTip title="回数の数え方">{["写真1枚で1回(何ゲーム写っていても1回)", "毎月1日に回数が戻る"]}</GuideTip>
+        <GuideTip title="足りない時は「追加パック」" plain>
+          {[
+            <>
+              <b>20回 500円</b>
+            </>,
+            "買ったらすぐ使える",
+            "今月の回数を使い切ったあとに使われる",
+            "使い切れなかった分は6か月まで持ち越せる",
+            "買う場所:「設定」→「追加パック」の「買う」",
+          ]}
+        </GuideTip>
+        <GuideMore title="お支払いについて">
+          <GuideList
+            items={[
+              "お支払いは毎月1日",
+              "1〜15日に申し込み → 次は翌月1日",
+              "16日〜末日に申し込み → 次は翌々月1日",
+              <>
+                くわしくは<a href="/terms">利用規約</a>へ
+              </>,
+            ]}
+          />
         </GuideMore>
       </>
     ),
@@ -6816,12 +6866,12 @@ const GUIDE_TOPICS = [
     body: () => (
       <div className="g-faq">
         {[
-          ["読み取った数字がちがう", "数字がちがうマスを押すと直せます。保存したあとは「履歴」のえんぴつのマークから直せます。", "fix"],
-          ["自分の行が見つからない", "「スコア画面に表示されている自分の名前」が、ボウリング場の画面の表示と同じか確かめてください。指で自分の行を囲んでも読み取れます。", "record"],
-          ["文字が小さくて読みにくい", "「設定」の「文字の大きさ」で「大きめ」か「特大」にしてください。", "settings"],
-          ["機種変更する", "「設定」でアカウントを作っておけば、新しいスマホでログインするだけで記録が引き継げます。使えるのは1台だけです。", "settings"],
-          ["今月の回数を使い切った", "追加パック(読み取り20回・500円)を買うと、すぐに続けて読み取れます。回数は毎月1日にも戻ります。1枚に複数ゲーム写るように撮ると回数を節約できます。", "plans"],
-          ["やめたい(解約)", "下のお問い合わせ先に、メールでご連絡ください。記録は解約日から1年間残ります。"],
+          ["読み取った数字がちがう", ["ちがうマスを押して直す", "保存したあとは「履歴」のえんぴつのマークから"], "fix"],
+          ["自分の行が見つからない", ["「スコア画面に表示されている自分の名前」が、ボウリング場の画面と同じか確かめる", "指で自分の行を囲んでも読み取れる"], "record"],
+          ["文字が小さくて読みにくい", ["「設定」→「文字の大きさ」を「大きめ」か「特大」に"], "settings"],
+          ["機種変更する", ["前のスマホで「設定」からアカウントを作っておく", "新しいスマホでログインすれば記録が引き継げる", "使えるのは1台だけ"], "settings"],
+          ["今月の回数を使い切った", ["追加パック(20回 500円)を買うと、すぐ続けられる", "毎月1日にも回数が戻る", "1枚に複数ゲーム写すと回数の節約になる"], "plans"],
+          ["やめたい(解約)", ["下のお問い合わせ先にメールで連絡", "記録は解約日から1年間残る"]],
         ].map(([q, a, link]) => {
           const t = link && GUIDE_TOPICS.find((x) => x.id === link);
           const hasVideo = t && (t.video || t.variants);
@@ -6829,7 +6879,7 @@ const GUIDE_TOPICS = [
             <details key={q} className="g-more">
               <summary>{q}</summary>
               <div className="g-more-in">
-                <p className="g-p">{a}</p>
+                <div className="g-faq-a">{Array.isArray(a) ? <GuideList items={a} /> : <p className="g-p">{a}</p>}</div>
                 {t && (
                   <a className="g-faq-link" href={`#${t.id}`}>
                     <span aria-hidden="true">{hasVideo ? "▶" : "›"}</span>
@@ -6916,7 +6966,7 @@ function GuideTopic({ t, active, onBack }) {
           <figcaption>{t.shot[1]}</figcaption>
         </figure>
       )}
-      {t.tip && <GuideTip>{t.tip}</GuideTip>}
+      {t.tip && <GuideTip title={t.tipTitle}>{t.tip}</GuideTip>}
       {t.more && <GuideMore title={t.more.title}>{t.more.content()}</GuideMore>}
       <div className="g-noprint">
         {next ? (
@@ -6997,6 +7047,14 @@ function GuidePage() {
         .g-topic { padding-top: 4px; }
         .g-off { display: none; }
         .g-h2 { font-size: 27px; font-weight: 700; line-height: 1.35; margin: 14px 0 12px; }
+        .g-h3 { font-size: 22px; font-weight: 700; margin: 26px 0 12px; }
+        .g-feats { display: grid; gap: 14px; margin: 0 0 22px; }
+        .g-feat { background: #fff; border-radius: 16px; padding: 14px; border: 2px solid #F0D98A; }
+        .g-feat img { display: block; width: 100%; border-radius: 10px; background: #1E2340; margin-bottom: 10px; }
+        .g-feat img.is-phone { width: 62%; margin: 0 auto 10px; border: 5px solid #1E2340; border-radius: 16px; }
+        .g-feat-t { font-size: 20px; font-weight: 700; line-height: 1.4; }
+        .g-feat-d { font-size: 17px; line-height: 1.7; color: #3D4560; margin-top: 4px; }
+        .g-which { margin: -8px 0 18px; font-size: 15px; color: #5B6080; line-height: 1.6; }
         .g-choose { margin: 0 0 8px; font-size: 18px; font-weight: 700; color: #5B6080; }
         .g-p { margin: 0 0 12px; }
         .g-video { background: #1E2340; border-radius: 18px; padding: 12px; margin: 0 0 24px; scroll-margin-top: 78px; }
@@ -7021,7 +7079,12 @@ function GuidePage() {
         .g-shot img { width: 72%; max-width: 260px; border-radius: 20px; border: 6px solid #1E2340; }
         .g-shot figcaption { font-size: 16px; color: #5B6080; margin-top: 6px; }
         .g-tip { background: #FFF6D9; border-radius: 14px; padding: 16px 18px; margin: 0 0 20px; }
-        .g-tip b { display: block; font-size: 17px; color: #8A6400; margin-bottom: 2px; }
+        .g-tip .g-tip-t { display: block; font-size: 17px; color: #8A6400; margin-bottom: 4px; }
+        .g-tip.is-plain { background: #fff; }
+        .g-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+        .g-list li { position: relative; padding-left: 26px; line-height: 1.6; }
+        .g-list li::before { content: ""; position: absolute; left: 4px; top: 0.62em; width: 10px; height: 10px; border-radius: 50%; background: #E0A800; }
+        .g-faq-a { margin: 0 0 12px; }
         .g-more { background: #fff; border-radius: 14px; margin: 0 0 12px; }
         .g-more summary { list-style: none; cursor: pointer; min-height: 60px; padding: 14px 52px 14px 18px; font-size: 19px; font-weight: 700; position: relative; display: flex; align-items: center; }
         .g-more summary::-webkit-details-marker { display: none; }
@@ -7085,6 +7148,11 @@ function GuidePage() {
           .g-shot figcaption { font-size: 10pt; }
           .g-tip { padding: 3mm 4mm; margin-bottom: 4mm; break-inside: avoid; }
           .g-ptable { font-size: 12pt; border: 1px solid #D9CDB2; }
+          .g-feats { grid-template-columns: 1fr 1fr; gap: 3mm; }
+          .g-feat { break-inside: avoid; padding: 2mm 3mm; }
+          .g-feat img { max-height: 40mm; object-fit: contain; }
+          .g-feat-t { font-size: 12pt; }
+          .g-feat-d { font-size: 10.5pt; }
           .g-ptable th, .g-ptable td { padding: 3mm 2mm; }
           .g-ptable tr.is-price td { font-size: 14pt; }
           .g-more { break-inside: avoid; }
