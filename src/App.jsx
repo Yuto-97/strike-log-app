@@ -1157,30 +1157,78 @@ function renderLocateGrid(img) {
   return { base64: url.split(",")[1], mediaType: "image/jpeg" };
 }
 
+// Tightens the whole-table box around the print, from the photo's pixels
+// alone (no extra AI call). The top starts at the player's first name (the
+// AI finds the top of a sheet reliably; it's further down where it drifts),
+// nudged up to the nearest blank line so the heading isn't cut. The bottom
+// and sides drop the blank paper. Returns null when the picture doesn't look
+// like printed paper (e.g. a dark LED screen); then the table box is kept.
+function trimToPrint(img, table, nameY) {
+  try {
+    const W = 600;
+    const H = Math.max(1, Math.round(((table.h * img.height) / (table.w * img.width)) * W));
+    const c = document.createElement("canvas");
+    c.width = W;
+    c.height = H;
+    const ctx = c.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(img, table.x * img.width, table.y * img.height, table.w * img.width, table.h * img.height, 0, 0, W, H);
+    const px = ctx.getImageData(0, 0, W, H).data;
+    const gray = new Float32Array(W * H);
+    const ink = new Uint8Array(W * H);
+    for (let i = 0; i < W * H; i++) gray[i] = px[i * 4] * 0.299 + px[i * 4 + 1] * 0.587 + px[i * 4 + 2] * 0.114;
+    const paper = Array.from(gray).sort((a, b) => a - b)[Math.floor(W * H * 0.5)];
+    if (paper < 120) return null; // a dark screen, not paper
+    for (let i = 0; i < W * H; i++) {
+      const r = px[i * 4], g = px[i * 4 + 1], b = px[i * 4 + 2];
+      // print: dark and not colourful (skips coloured logos and banners)
+      ink[i] = gray[i] < paper * 0.6 && Math.max(r, g, b) - Math.min(r, g, b) < 60 ? 1 : 0;
+    }
+    const rowInk = (y) => {
+      let k = 0;
+      for (let x = 0; x < W; x++) k += ink[y * W + x];
+      return k / W;
+    };
+    const blank = (y) => rowInk(y) < 0.004;
+    // top: just above the first name, up to the nearest blank line
+    let top = Math.min(H - 1, Math.max(0, Math.round(((nameY - table.y) / table.h) * H - H * 0.02)));
+    {
+      let t = top;
+      for (let k = 0; k < H * 0.04 && t > 0 && !blank(t); k++) t--;
+      if (blank(t)) top = t; // no blank line close by: keep the start as is
+    }
+    // bottom: drop blank paper below the last print
+    let bottom = H - 1;
+    while (bottom > top && blank(bottom)) bottom--;
+    let left = W - 1, right = 0;
+    for (let y = top; y <= bottom; y++)
+      for (let x = 0; x < W; x++)
+        if (ink[y * W + x]) {
+          if (x < left) left = x;
+          if (x > right) right = x;
+        }
+    if (right <= left || bottom - top < H * 0.1) return null;
+    const m = 0.01;
+    const fx1 = Math.max(0, left / W - m), fx2 = Math.min(1, (right + 1) / W + m);
+    const fy1 = Math.max(0, top / H - m), fy2 = Math.min(1, (bottom + 1) / H + m);
+    return { x: table.x + fx1 * table.w, y: table.y + fy1 * table.h, w: (fx2 - fx1) * table.w, h: (fy2 - fy1) * table.h };
+  } catch (e) {
+    return null;
+  }
+}
+
 async function locatePlayerRow(img, playerName) {
   if (!img || !playerName) return null;
   try {
     const { base64, mediaType } = renderLocateGrid(img);
-    const prompt = `これはボウリングのスコア画面(電光掲示板)またはスコアシートの写真です。位置を答えやすいように、ピンク色の目盛り線を重ねてあります。左端の数字が縦の位置(上端0〜下端100)、上端の数字が横の位置(左端0〜右端100)で、細い線は5刻みです。
+    const prompt = `これはボウリングのスコア画面(電光掲示板)またはスコアシートの写真です。ピンク色の目盛り線を重ねてあります。左端の数字が縦の位置(上端0〜下端100)、上端の数字が横の位置(左端0〜右端100)で、細い線は5刻みです。目盛りの数字(0〜100)で答えてください。
 
-次の2つを、目盛りの数字(0〜100)で答えてください。
+t・b・l・r: スコア表示の枠全体の上端・下端・左端・右端。電光掲示板なら画面全体、紙なら記入欄の表全体。隣のレーンの画面も写っていれば、名前「${playerName}」がある方だけ。
+y: 名前「${playerName}」の文字の中心の縦の位置。表記ゆれ(ひらがな・カタカナ・ローマ字・大文字小文字・末尾の1文字の区分ラベル)も考慮。同じ名前が何か所かあれば一番上。
+g: 名前「${playerName}」のゲームが何ゲーム分写っているか(紙では同じ人のゲームが縦に並び、ゲームごとに名前が書かれていることが多い)。一番下まで数える。
+o: ほかの人のスコアの行があれば1、なければ0。
 
-A. スコア表示の枠全体の位置
-電光掲示板なら画面(モニター)全体、紙なら記入欄の表全体の、上端・下端・左端・右端。隣に別のレーンの画面が写っている場合は、名前「${playerName}」がある方の画面だけ。
-
-B. 名前「${playerName}」の文字の位置
-表記ゆれ(ひらがな・カタカナ・ローマ字・大文字小文字・末尾に付く1文字の区分ラベルなど)も考慮して、最も一致する名前の文字の中心の縦・横の位置。同じ名前が何か所かある場合は、一番上のもの。
-
-C. この人のゲーム数
-名前「${playerName}」のスコアが、何ゲーム分写っているか(紙のスコアシートでは、同じ人の1ゲーム目・2ゲーム目…が縦に並び、ゲームごとに同じ名前が書かれていることがよくあります)。写真の一番下まで数えてください。
-
-D. ほかの人のスコア
-名前「${playerName}」以外の人のスコアの行が写っているか。
-
-次のJSONだけを出力してください。
-見つかった場合: {"found": true, "name_on_screen": "画面上の表記", "board_top": 数字, "board_bottom": 数字, "board_left": 数字, "board_right": 数字, "name_x": 数字, "name_y": 数字, "my_game_count": 数字, "others_present": true または false}
-名前が見つからない、または似た名前の別の人が複数いてどれか判断できない場合: {"found": false}
-(同じ表記の名前が複数あるのは、同じ人の複数ゲームなので found: true です)`;
+次のJSONだけを出力: {"f":1,"t":数字,"b":数字,"l":数字,"r":数字,"y":数字,"g":数字,"o":0か1}
+名前が見つからない、または似た名前の別人が複数いて判断できない場合: {"f":0}`;
     const response = await fetch("/api/analyze", {
       method: "POST",
       headers: { "Content-Type": "application/json", ...(await usageHeaders()) },
@@ -1190,14 +1238,14 @@ D. ほかの人のスコア
     const data = await response.json();
     const text = (data.content || []).find((b) => b.type === "text")?.text || "";
     const r = extractJson(text);
-    if (!r || r.found !== true) return null;
+    if (!r || Number(r.f) !== 1) return null;
     const pct = (v) => Number(v) / 100;
-    const nameY = pct(r.name_y);
+    const nameY = pct(r.y);
     if (!Number.isFinite(nameY) || nameY < 0 || nameY > 1) return null;
-    let bTop = pct(r.board_top);
-    let bBottom = pct(r.board_bottom);
-    let bLeft = pct(r.board_left);
-    let bRight = pct(r.board_right);
+    let bTop = pct(r.t);
+    let bBottom = pct(r.b);
+    let bLeft = pct(r.l);
+    let bRight = pct(r.r);
     if (![bTop, bBottom, bLeft, bRight].every(Number.isFinite) || bBottom <= bTop || bRight <= bLeft) {
       bTop = 0;
       bBottom = 1;
@@ -1212,19 +1260,22 @@ D. ほかの人のスコア
     // and cumulative scores underneath are always inside. If it also catches
     // other players' rows, the analysis still picks the right row by name.
     const boardH = bBottom - bTop;
-    const n = Number(r.my_game_count);
-    const expectedGames = Number.isFinite(n) && n >= 1 && n <= 12 ? Math.round(n) : null;
-    // Several games of this person, or nobody else on the sheet: there's no
-    // other row to get mixed up with, so take the whole score table with a
-    // wide margin. This only needs the outline of the table, which the AI
-    // finds reliably; pinpointing each game's position does not (in testing
-    // it kept cutting off the last game on a 4-game paper sheet).
-    if ((expectedGames && expectedGames >= 2) || r.others_present === false) {
+    const g = Number(r.g);
+    const expectedGames = Number.isFinite(g) && g >= 1 && g <= 12 ? Math.round(g) : null;
+    // Several games of this person, or nobody else on the sheet: no other
+    // row to mix up, so there's no need to pinpoint a row. Take the score
+    // table (with a margin, since the AI's edges can be a little off), then
+    // tighten it from the photo's pixels: start at the player's first name
+    // and drop the blank paper. On a 4-game sheet, pinpointing each game's
+    // position kept cutting off the last game; this way nothing is cut and
+    // no extra AI call is needed.
+    if ((expectedGames && expectedGames >= 2) || Number(r.o) === 0) {
       const wx1 = Math.max(0, bLeft - 0.03);
       const wx2 = Math.min(1, bRight + 0.03);
       const wy1 = Math.max(0, bTop - 0.03);
       const wy2 = Math.min(1, bBottom + 0.05);
-      return { rect: { x: wx1, y: wy1, w: wx2 - wx1, h: wy2 - wy1 }, expectedGames };
+      const table = { x: wx1, y: wy1, w: wx2 - wx1, h: wy2 - wy1 };
+      return { rect: trimToPrint(img, table, nameY) || table, expectedGames };
     }
     const x1 = Math.max(0, bLeft - 0.02);
     const x2 = Math.min(1, bRight + 0.02);
@@ -7519,6 +7570,7 @@ export default function StrikeLog() {
   const [locating, setLocating] = useState(false); // プレミアム: finding the player's row automatically
   const [locateMissed, setLocateMissed] = useState(false); // auto-find failed → asked to box by finger
   const [autoCropped, setAutoCropped] = useState(false); // the current box came from auto-find
+  const [autoGames, setAutoGames] = useState(0); // the player's games the auto-find counted
   const [celebration, setCelebration] = useState(null); // achievements to celebrate, or null
   const [saveBlockItems, setSaveBlockItems] = useState(null); // what's still unselected when 記録を保存 is pressed
   const [rolePromptDismissed, setRolePromptDismissed] = useState(false); // 「あとで」 for this session
@@ -8631,7 +8683,8 @@ export default function StrikeLog() {
         if (found) {
           setCropRect(found.rect);
           setAutoCropped(true);
-          runAnalysis(found.rect, found.expectedGames);
+          setAutoGames(found.expectedGames || 0);
+          runAnalysis(found.rect);
           return;
         }
         setLocateMissed(true);
@@ -8644,9 +8697,7 @@ export default function StrikeLog() {
   };
 
   // rectOverride: a crop decided just now (auto-find), before state updates land.
-  // expectedGames: how many of the player's games the auto-find counted in
-  // the photo (null when the user boxed it by hand).
-  const runAnalysis = async (rectOverride, expectedGames = null) => {
+  const runAnalysis = async (rectOverride) => {
     if (!imageMeta && !sourceImgRef.current) return;
     const rect = rectOverride && typeof rectOverride.w === "number" ? rectOverride : cropRect;
     setAnalyzing(true);
@@ -8737,23 +8788,6 @@ ${lines}
             }
           } catch (e) {
             // the first reading stands
-          }
-        }
-        // Safety net for the auto crop: fewer games came back than the
-        // auto-find counted in the photo, so the box may have cut one off.
-        // Read the whole photo once more (part of the same analysis, so it
-        // doesn't count toward the monthly limit) and keep whichever found more.
-        if (expectedGames && built.cropped && normalizedGames.length < expectedGames && sourceImgRef.current) {
-          const note = `【再確認のお願い】
-この写真には、名前「${playerName.trim()}」のゲームが${expectedGames}ゲーム分あるはずですが、前回は${normalizedGames.length}ゲームしか読み取れませんでした。写真の一番下まで見て、名前「${playerName.trim()}」のゲームをすべて読み取ってください。`;
-          try {
-            const whole = buildAnalysisImages(sourceImgRef.current, null);
-            const again = await analyzeScoreImage(whole.images, playerName.trim(), { ...whole, recheckNote: note });
-            if (again && again.player_matched !== false && Array.isArray(again.games) && again.games.length > normalizedGames.length) {
-              normalizedGames = normalize(again);
-            }
-          } catch (e) {
-            // keep what we have
           }
         }
         const firstDetectedDate = normalizedGames.find((g) => g.detectedDate)?.detectedDate;
@@ -9631,7 +9665,9 @@ function getNextRollCell(frameIdx, rollIdx, value) {
                 </div>
                 <div style={{ color: COLORS.strike, opacity: 0.75, fontSize: 12 }}>
                   {autoCropped && cropRect
-                    ? `この中から「${playerName.trim()}」の行を読み取ります`
+                    ? autoGames >= 2
+                      ? `この中から「${playerName.trim()}」の${autoGames}ゲームを読み取ります`
+                      : `この中から「${playerName.trim()}」の行を読み取ります`
                     : locateMissed
                     ? "自動で見つけられなかったので、指で囲んでください"
                     : "名前〜合計まで囲むと精度アップ(省略OK)"}
