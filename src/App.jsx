@@ -1169,11 +1169,18 @@ A. スコア表示の枠全体の位置
 電光掲示板なら画面(モニター)全体、紙なら記入欄の表全体の、上端・下端・左端・右端。隣に別のレーンの画面が写っている場合は、名前「${playerName}」がある方の画面だけ。
 
 B. 名前「${playerName}」の文字の位置
-表記ゆれ(ひらがな・カタカナ・ローマ字・大文字小文字・末尾に付く1文字の区分ラベルなど)も考慮して、最も一致する名前の文字の中心の縦・横の位置。
+表記ゆれ(ひらがな・カタカナ・ローマ字・大文字小文字・末尾に付く1文字の区分ラベルなど)も考慮して、最も一致する名前の文字の中心の縦・横の位置。同じ名前が何か所かある場合は、一番上のもの。
+
+C. この人のゲーム数
+名前「${playerName}」のスコアが、何ゲーム分写っているか(紙のスコアシートでは、同じ人の1ゲーム目・2ゲーム目…が縦に並び、ゲームごとに同じ名前が書かれていることがよくあります)。写真の一番下まで数えてください。
+
+D. ほかの人のスコア
+名前「${playerName}」以外の人のスコアの行が写っているか。
 
 次のJSONだけを出力してください。
-見つかった場合: {"found": true, "name_on_screen": "画面上の表記", "board_top": 数字, "board_bottom": 数字, "board_left": 数字, "board_right": 数字, "name_x": 数字, "name_y": 数字}
-名前が見つからない、または候補が複数あってどれか判断できない場合: {"found": false}`;
+見つかった場合: {"found": true, "name_on_screen": "画面上の表記", "board_top": 数字, "board_bottom": 数字, "board_left": 数字, "board_right": 数字, "name_x": 数字, "name_y": 数字, "my_game_count": 数字, "others_present": true または false}
+名前が見つからない、または似た名前の別の人が複数いてどれか判断できない場合: {"found": false}
+(同じ表記の名前が複数あるのは、同じ人の複数ゲームなので found: true です)`;
     const response = await fetch("/api/analyze", {
       method: "POST",
       headers: { "Content-Type": "application/json", ...(await usageHeaders()) },
@@ -1205,6 +1212,20 @@ B. 名前「${playerName}」の文字の位置
     // and cumulative scores underneath are always inside. If it also catches
     // other players' rows, the analysis still picks the right row by name.
     const boardH = bBottom - bTop;
+    const n = Number(r.my_game_count);
+    const expectedGames = Number.isFinite(n) && n >= 1 && n <= 12 ? Math.round(n) : null;
+    // Several games of this person, or nobody else on the sheet: there's no
+    // other row to get mixed up with, so take the whole score table with a
+    // wide margin. This only needs the outline of the table, which the AI
+    // finds reliably; pinpointing each game's position does not (in testing
+    // it kept cutting off the last game on a 4-game paper sheet).
+    if ((expectedGames && expectedGames >= 2) || r.others_present === false) {
+      const wx1 = Math.max(0, bLeft - 0.03);
+      const wx2 = Math.min(1, bRight + 0.03);
+      const wy1 = Math.max(0, bTop - 0.03);
+      const wy2 = Math.min(1, bBottom + 0.05);
+      return { rect: { x: wx1, y: wy1, w: wx2 - wx1, h: wy2 - wy1 }, expectedGames };
+    }
     const x1 = Math.max(0, bLeft - 0.02);
     const x2 = Math.min(1, bRight + 0.02);
     // Top: always the top of the display. When the display is small in the
@@ -1216,7 +1237,7 @@ B. 名前「${playerName}」の文字の位置
     const rect = { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
     // Ignore boxes that are clearly not a score row (tiny, or most of the photo).
     if (rect.w < 0.15 || rect.h < 0.02 || rect.w * rect.h > 0.85) return null;
-    return rect;
+    return { rect, expectedGames };
   } catch (e) {
     return null;
   }
@@ -8604,13 +8625,13 @@ export default function StrikeLog() {
       const name = playerName.trim();
       if (planInfo?.autoLocate && name) {
         setLocating(true);
-        const rect = await locatePlayerRow(img, name);
+        const found = await locatePlayerRow(img, name);
         setLocating(false);
         if (sourceImgRef.current !== img) return; // another photo was picked meanwhile
-        if (rect) {
-          setCropRect(rect);
+        if (found) {
+          setCropRect(found.rect);
           setAutoCropped(true);
-          runAnalysis(rect);
+          runAnalysis(found.rect, found.expectedGames);
           return;
         }
         setLocateMissed(true);
@@ -8623,7 +8644,9 @@ export default function StrikeLog() {
   };
 
   // rectOverride: a crop decided just now (auto-find), before state updates land.
-  const runAnalysis = async (rectOverride) => {
+  // expectedGames: how many of the player's games the auto-find counted in
+  // the photo (null when the user boxed it by hand).
+  const runAnalysis = async (rectOverride, expectedGames = null) => {
     if (!imageMeta && !sourceImgRef.current) return;
     const rect = rectOverride && typeof rectOverride.w === "number" ? rectOverride : cropRect;
     setAnalyzing(true);
@@ -8714,6 +8737,23 @@ ${lines}
             }
           } catch (e) {
             // the first reading stands
+          }
+        }
+        // Safety net for the auto crop: fewer games came back than the
+        // auto-find counted in the photo, so the box may have cut one off.
+        // Read the whole photo once more (part of the same analysis, so it
+        // doesn't count toward the monthly limit) and keep whichever found more.
+        if (expectedGames && built.cropped && normalizedGames.length < expectedGames && sourceImgRef.current) {
+          const note = `【再確認のお願い】
+この写真には、名前「${playerName.trim()}」のゲームが${expectedGames}ゲーム分あるはずですが、前回は${normalizedGames.length}ゲームしか読み取れませんでした。写真の一番下まで見て、名前「${playerName.trim()}」のゲームをすべて読み取ってください。`;
+          try {
+            const whole = buildAnalysisImages(sourceImgRef.current, null);
+            const again = await analyzeScoreImage(whole.images, playerName.trim(), { ...whole, recheckNote: note });
+            if (again && again.player_matched !== false && Array.isArray(again.games) && again.games.length > normalizedGames.length) {
+              normalizedGames = normalize(again);
+            }
+          } catch (e) {
+            // keep what we have
           }
         }
         const firstDetectedDate = normalizedGames.find((g) => g.detectedDate)?.detectedDate;
