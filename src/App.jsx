@@ -1157,6 +1157,154 @@ function renderLocateGrid(img) {
   return { base64: url.split(",")[1], mediaType: "image/jpeg" };
 }
 
+// Finds the games on a printed score sheet from the photo's pixels alone
+// (no extra AI call). Each game's score grid is drawn with long horizontal
+// rules (top, middle, bottom) — something nothing else on a sheet has (the
+// logo banner, pin pictures, the "Total" line and the shop's address have no
+// long lines). The rules are grouped into grids; each grid is widened up to
+// take in its heading line ("Game 1 … Date …") and down to take in the small
+// boxes on its right (HCP, totals). The edges always fall on blank paper,
+// so a game is never sliced. Returns { rect, games } in 0..1 photo
+// coordinates, or null when no grid is found (then the caller falls back).
+function findScoreGrids(img) {
+  try {
+    const W = 1000;
+    const H = Math.max(1, Math.round((img.height / img.width) * W));
+    const c = document.createElement("canvas");
+    c.width = W;
+    c.height = H;
+    const ctx = c.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(img, 0, 0, W, H);
+    const px = ctx.getImageData(0, 0, W, H).data;
+    const lum = new Float32Array(W * H);
+    for (let i = 0; i < W * H; i++) lum[i] = px[i * 4] * 0.299 + px[i * 4 + 1] * 0.587 + px[i * 4 + 2] * 0.114;
+    // Print = clearly darker than the paper around it (local contrast, so
+    // shadows and uneven light don't matter) and not colourful.
+    // Paper level: the bright end of the photo. Only marks on something that
+    // bright count, so wood grain, cloth or a dark table never do.
+    const sample = [];
+    for (let i = 0; i < W * H; i += 7) sample.push(lum[i]);
+    sample.sort((a, b) => a - b);
+    const paperLevel = sample[Math.floor(sample.length * 0.9)];
+    const R = 12;
+    const ink = new Uint8Array(W * H);
+    const grayish = new Uint8Array(W * H); // black/grey print, not a coloured banner
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const i = y * W + x;
+        let bright = 0;
+        for (let d = -R; d <= R; d += 4) {
+          const xx = Math.min(W - 1, Math.max(0, x + d));
+          const yy = Math.min(H - 1, Math.max(0, y + d));
+          bright = Math.max(bright, lum[y * W + xx], lum[yy * W + x]);
+        }
+        const r = px[i * 4], g = px[i * 4 + 1], b = px[i * 4 + 2];
+        const mx = Math.max(r, g, b);
+        ink[i] = lum[i] < bright * 0.62 && bright > paperLevel * 0.72 && mx - Math.min(r, g, b) < 70 ? 1 : 0;
+        grayish[i] = mx - Math.min(r, g, b) < mx * 0.35 ? 1 : 0;
+      }
+    }
+    // Photos are rarely straight. Find the tilt (up to ±6°) at which the
+    // print lines up best in rows, and read the sheet along that slant.
+    const pts = [];
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x += 3) if (ink[y * W + x] && grayish[y * W + x]) pts.push(x - W / 2, y); // every row, so no row is favoured
+    let slope = 0, bestScore = -1;
+    const hist = new Float32Array(H + W);
+    for (let a = -6; a <= 6.001; a += 0.25) {
+      const t = Math.tan((a * Math.PI) / 180);
+      hist.fill(0);
+      for (let k = 0; k < pts.length; k += 2) {
+        const yy = Math.round(pts[k + 1] - pts[k] * t) + W / 2;
+        if (yy >= 0 && yy < hist.length) hist[yy]++;
+      }
+      let sc = 0;
+      for (let k = 0; k < hist.length; k++) sc += hist[k] * hist[k];
+      if (sc > bestScore) { bestScore = sc; slope = t; }
+    }
+    // inkAt(x, y): the print at column x on the slanted row y.
+    const inkAt = (x, y) => {
+      const yy = Math.round(y + (x - W / 2) * slope);
+      return yy >= 0 && yy < H ? ink[yy * W + x] : 0;
+    };
+    // Long horizontal rules: in a band of ±2 rows (to allow what's left of
+    // the tilt), the longest run of columns with print, allowing small breaks.
+    const isRule = new Uint8Array(H);
+    for (let y = 2; y < H - 2; y++) {
+      let best = 0, run = 0, gap = 0;
+      for (let x = 0; x < W; x++) {
+        let on = 0;
+        for (let d = -2; d <= 2; d++) if (inkAt(x, y + d)) { on = 1; break; }
+        if (on) { run += 1 + gap; gap = 0; }
+        else if (run > 0 && gap < 6) gap++;
+        else { run = 0; gap = 0; }
+        if (run > best) best = run;
+      }
+      isRule[y] = best > W * 0.45 ? 1 : 0;
+    }
+    // Rule bands (consecutive rule rows) → lines.
+    const lines = [];
+    for (let y = 0; y < H; y++) {
+      if (!isRule[y]) continue;
+      const s = y;
+      while (y < H && isRule[y]) y++;
+      lines.push((s + y - 1) / 2);
+    }
+    if (lines.length < 2) return null;
+    // Group lines into grids: lines of one grid are close together.
+    const gaps = lines.slice(1).map((v, i) => v - lines[i]).sort((a, b) => a - b);
+    const rowH = gaps[0] > 0 ? gaps[Math.floor(gaps.length / 3)] : H * 0.03;
+    const grids = [];
+    let cur = [lines[0]];
+    for (let i = 1; i < lines.length; i++) {
+      if (lines[i] - lines[i - 1] <= rowH * 1.6) cur.push(lines[i]);
+      else { grids.push(cur); cur = [lines[i]]; }
+    }
+    grids.push(cur);
+    const games = grids.filter((g) => g.length >= 2).map((g) => ({ top: g[0], bottom: g[g.length - 1] }));
+    if (!games.length) return null;
+    const rowInk = (y) => {
+      let k = 0;
+      for (let x = 0; x < W; x++) k += inkAt(x, y);
+      return k / W;
+    };
+    const blankRun = Math.max(3, Math.round(rowH * 0.35)); // a real gap, not the space inside a heading
+    const growUp = (y, limit) => {
+      let blanks = 0, top = y;
+      for (let yy = y; yy > limit; yy--) {
+        if (rowInk(yy) < 0.003) { if (++blanks >= blankRun) break; }
+        else { blanks = 0; top = yy; }
+      }
+      return top;
+    };
+    const growDown = (y, limit) => {
+      let blanks = 0, bottom = y;
+      for (let yy = y; yy < limit; yy++) {
+        if (rowInk(yy) < 0.003) { if (++blanks >= blankRun) break; }
+        else { blanks = 0; bottom = yy; }
+      }
+      return bottom;
+    };
+    const first = games[0], last = games[games.length - 1];
+    const top = growUp(Math.floor(first.top), Math.max(0, first.top - rowH * 3));
+    const bottom = growDown(Math.ceil(last.bottom), Math.min(H - 1, last.bottom + rowH * 2.5));
+    let left = W - 1, right = 0;
+    for (let y = Math.round(top); y <= bottom; y++)
+      for (let x = 0; x < W; x++)
+        if (inkAt(x, y)) { if (x < left) left = x; if (x > right) right = x; }
+    if (right <= left) return null;
+    const m = 0.008;
+    const fx1 = Math.max(0, left / W - m), fx2 = Math.min(1, (right + 1) / W + m);
+    // Back from the slanted rows to the photo: the box must hold the slanted
+    // band at both its left and right ends.
+    const s1 = (left - W / 2) * slope, s2 = (right - W / 2) * slope;
+    const fy1 = Math.max(0, (top + Math.min(s1, s2)) / H - m);
+    const fy2 = Math.min(1, (bottom + 1 + Math.max(s1, s2)) / H + m);
+    return { rect: { x: fx1, y: fy1, w: fx2 - fx1, h: fy2 - fy1 }, games: games.length };
+  } catch (e) {
+    return null;
+  }
+}
+
 // Finds the printed area of a paper score sheet around the player's name,
 // from the photo's pixels alone (no extra AI call). The AI's positions are
 // only used as a starting point, so its errors don't matter: from there the
@@ -1309,6 +1457,11 @@ o: ほかの人のスコアの行があれば1、なければ0。
       const wy1 = Math.max(0, bTop - 0.03);
       const wy2 = Math.min(1, bBottom + 0.05);
       const table = { x: wx1, y: wy1, w: wx2 - wx1, h: wy2 - wy1 };
+      // First choice: the score grids themselves (all the player's games,
+      // nothing else). If fewer grids are found than the AI counted, fall
+      // back to the whole printed sheet, which never cuts a game.
+      const grids = findScoreGrids(img);
+      if (grids && grids.games >= (expectedGames || 1)) return { rect: grids.rect, expectedGames };
       return { rect: findSheetPrint(img, table, nameY) || table, expectedGames };
     }
     const x1 = Math.max(0, bLeft - 0.02);
@@ -4139,6 +4292,85 @@ function CropEditor({ src, initialRect, onDone, onSkip }) {
 }
 
 // The chosen photo on the scan screen, with the box drawn on it (read-only).
+// The part of the photo that was read, as an image (no contrast boost, so it
+// looks like the photo). Same margin as the analysis uses.
+function cropToDataUrl(img, rect) {
+  try {
+    const sx = rect ? Math.max(0, rect.x * img.width - img.width * 0.015) : 0;
+    const sy = rect ? Math.max(0, rect.y * img.height - img.height * 0.015) : 0;
+    const ex = rect ? Math.min(img.width, (rect.x + rect.w) * img.width + img.width * 0.015) : img.width;
+    const ey = rect ? Math.min(img.height, (rect.y + rect.h) * img.height + img.height * 0.015) : img.height;
+    const sw = ex - sx, sh = ey - sy;
+    const scale = Math.min(1, 2000 / Math.max(sw, sh));
+    const c = document.createElement("canvas");
+    c.width = Math.max(1, Math.round(sw * scale));
+    c.height = Math.max(1, Math.round(sh * scale));
+    c.getContext("2d").drawImage(img, sx, sy, sw, sh, 0, 0, c.width, c.height);
+    return c.toDataURL("image/jpeg", 0.9);
+  } catch (e) {
+    return null;
+  }
+}
+
+// The photo shown above the reading, to check the scores against. Shows the
+// whole part that was read (never cut off); tap to open it full screen,
+// where it can be enlarged and scrolled, and switched to the whole photo.
+function ResultPhoto({ img, rect, fallbackSrc }) {
+  const [readSrc, setReadSrc] = useState(null);
+  const [wholeSrc, setWholeSrc] = useState(null);
+  const [open, setOpen] = useState(false);
+  const [zoom, setZoom] = useState(1);
+  const [showWhole, setShowWhole] = useState(false);
+  useEffect(() => {
+    if (!img) return;
+    setReadSrc(rect ? cropToDataUrl(img, rect) : null);
+    setWholeSrc(cropToDataUrl(img, null));
+  }, [img, rect]);
+  const shown = readSrc || wholeSrc || fallbackSrc;
+  const big = showWhole ? wholeSrc || fallbackSrc : shown;
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => { setZoom(1); setShowWhole(false); setOpen(true); }}
+        className="block w-full rounded-xl overflow-hidden border"
+        style={{ borderColor: COLORS.oak, background: "#000" }}
+        aria-label="写真を大きく見る"
+      >
+        <img src={shown} alt="読み取った範囲の写真" style={{ display: "block", width: "100%", maxHeight: "calc(60vh / var(--app-zoom, 1))", objectFit: "contain" }} />
+        <div style={{ color: "#fff", fontSize: 13, padding: "6px 0", background: "rgba(0,0,0,0.6)" }}>タップで大きく表示</div>
+      </button>
+      {open &&
+        createPortal(
+          <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "#000", display: "flex", flexDirection: "column" }}>
+            <div style={{ display: "flex", gap: 8, padding: "calc(env(safe-area-inset-top) + 10px) 12px 10px", alignItems: "center" }}>
+              <button type="button" onClick={() => setZoom((z) => (z >= 3 ? 1 : z + 1))} style={{ color: "#fff", border: "1px solid #fff", borderRadius: 10, padding: "8px 14px", fontSize: 15 }}>
+                {zoom >= 3 ? "元の大きさ" : "拡大"}
+              </button>
+              {readSrc && (
+                <button type="button" onClick={() => { setShowWhole((v) => !v); setZoom(1); }} style={{ color: "#fff", border: "1px solid #fff", borderRadius: 10, padding: "8px 14px", fontSize: 15 }}>
+                  {showWhole ? "読み取った範囲" : "写真全体"}
+                </button>
+              )}
+              <button type="button" onClick={() => setOpen(false)} style={{ marginLeft: "auto", color: "#fff", border: "1px solid #fff", borderRadius: 10, padding: "8px 14px", fontSize: 15 }}>
+                閉じる
+              </button>
+            </div>
+            <div style={{ flex: 1, overflow: "auto", WebkitOverflowScrolling: "touch" }}>
+              <img
+                src={big}
+                alt="写真"
+                onDoubleClick={() => setZoom((z) => (z >= 3 ? 1 : z + 1))}
+                style={{ display: "block", width: `${zoom * 100}%`, maxWidth: "none", height: "auto" }}
+              />
+            </div>
+          </div>,
+          document.body
+        )}
+    </>
+  );
+}
+
 function CropPreview({ src, rect }) {
   return (
     <div className="flex justify-center">
@@ -9674,9 +9906,7 @@ function getNextRollCell(frameIdx, rollIdx, value) {
             />
 
             {imagePreview && pendingResult && (
-              <div className="rounded-xl overflow-hidden border" style={{ borderColor: COLORS.oak }}>
-                <img src={imagePreview} alt="スコア写真プレビュー" className="w-full object-cover max-h-72" />
-              </div>
+              <ResultPhoto img={sourceImgRef.current} rect={cropRect} fallbackSrc={imagePreview} />
             )}
 
             {imagePreview && !pendingResult && locating && (
