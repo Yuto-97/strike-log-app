@@ -1157,60 +1157,95 @@ function renderLocateGrid(img) {
   return { base64: url.split(",")[1], mediaType: "image/jpeg" };
 }
 
-// Tightens the whole-table box around the print, from the photo's pixels
-// alone (no extra AI call). The top starts at the player's first name (the
-// AI finds the top of a sheet reliably; it's further down where it drifts),
-// nudged up to the nearest blank line so the heading isn't cut. The bottom
-// and sides drop the blank paper. Returns null when the picture doesn't look
-// like printed paper (e.g. a dark LED screen); then the table box is kept.
-function trimToPrint(img, table, nameY) {
+// Finds the printed area of a paper score sheet around the player's name,
+// from the photo's pixels alone (no extra AI call). The AI's positions are
+// only used as a starting point, so its errors don't matter: from there the
+// box grows up and down over the paper (white or pale, not colourful) until
+// it reaches something that isn't paper — a coloured banner, the table
+// underneath — and is then trimmed back to the first and last printed line.
+// Every edge therefore lies on blank paper, so the box can never slice
+// through a game, wherever the AI's guess landed.
+// Returns null when the photo isn't a paper sheet (e.g. a dark LED screen).
+function findSheetPrint(img, table, anchorY) {
   try {
     const W = 600;
-    const H = Math.max(1, Math.round(((table.h * img.height) / (table.w * img.width)) * W));
+    const H = Math.max(1, Math.round((img.height / img.width) * W));
     const c = document.createElement("canvas");
     c.width = W;
     c.height = H;
     const ctx = c.getContext("2d", { willReadFrequently: true });
-    ctx.drawImage(img, table.x * img.width, table.y * img.height, table.w * img.width, table.h * img.height, 0, 0, W, H);
+    ctx.drawImage(img, 0, 0, W, H);
     const px = ctx.getImageData(0, 0, W, H).data;
-    const gray = new Float32Array(W * H);
-    const ink = new Uint8Array(W * H);
-    for (let i = 0; i < W * H; i++) gray[i] = px[i * 4] * 0.299 + px[i * 4 + 1] * 0.587 + px[i * 4 + 2] * 0.114;
-    const paper = Array.from(gray).sort((a, b) => a - b)[Math.floor(W * H * 0.5)];
-    if (paper < 120) return null; // a dark screen, not paper
-    for (let i = 0; i < W * H; i++) {
-      const r = px[i * 4], g = px[i * 4 + 1], b = px[i * 4 + 2];
-      // print: dark and not colourful (skips coloured logos and banners)
-      ink[i] = gray[i] < paper * 0.6 && Math.max(r, g, b) - Math.min(r, g, b) < 60 ? 1 : 0;
-    }
-    const rowInk = (y) => {
-      let k = 0;
-      for (let x = 0; x < W; x++) k += ink[y * W + x];
-      return k / W;
+    const x0 = Math.max(0, Math.floor((table.x - 0.03) * W));
+    const x1 = Math.min(W - 1, Math.ceil((table.x + table.w + 0.03) * W));
+    // Paper brightness: the bright end of the table area.
+    const vals = [];
+    const ty0 = Math.max(0, Math.floor(table.y * H)), ty1 = Math.min(H - 1, Math.ceil((table.y + table.h) * H));
+    for (let y = ty0; y <= ty1; y += 2)
+      for (let x = x0; x <= x1; x += 2) {
+        const i = (y * W + x) * 4;
+        vals.push(px[i] * 0.299 + px[i + 1] * 0.587 + px[i + 2] * 0.114);
+      }
+    vals.sort((a, b) => a - b);
+    const paper = vals[Math.floor(vals.length * 0.75)];
+    if (!(paper >= 140)) return null; // dark screen, not paper
+    // A row is paper unless it's mostly dark (the table under the sheet) or
+    // mostly colourful (a printed banner). Printed marks and shadows on the
+    // paper don't change that: most of the row is still paper.
+    const isPaper = new Uint8Array(H);
+    const inkFrac = new Float32Array(H);
+    const ink = (x, y) => {
+      const i = (y * W + x) * 4;
+      const r = px[i], g = px[i + 1], b = px[i + 2];
+      return r * 0.299 + g * 0.587 + b * 0.114 < paper * 0.6 && Math.max(r, g, b) - Math.min(r, g, b) < 60;
     };
-    const blank = (y) => rowInk(y) < 0.004;
-    // top: just above the first name, up to the nearest blank line
-    let top = Math.min(H - 1, Math.max(0, Math.round(((nameY - table.y) / table.h) * H - H * 0.02)));
-    {
-      let t = top;
-      for (let k = 0; k < H * 0.04 && t > 0 && !blank(t); k++) t--;
-      if (blank(t)) top = t; // no blank line close by: keep the start as is
+    const n = x1 - x0 + 1;
+    const lum = new Float32Array(n);
+    const sat = new Float32Array(n);
+    for (let y = 0; y < H; y++) {
+      let k = 0;
+      for (let x = x0; x <= x1; x++) {
+        const i = (y * W + x) * 4;
+        const r = px[i], g = px[i + 1], b = px[i + 2];
+        lum[x - x0] = r * 0.299 + g * 0.587 + b * 0.114;
+        sat[x - x0] = Math.max(r, g, b) - Math.min(r, g, b);
+        if (ink(x, y)) k++;
+      }
+      const ml = Array.from(lum).sort((p, q) => p - q)[n >> 1];
+      const ms = Array.from(sat).sort((p, q) => p - q)[n >> 1];
+      isPaper[y] = ml >= paper * 0.5 && ms < 45 ? 1 : 0;
+      inkFrac[y] = k / n;
     }
-    // bottom: drop blank paper below the last print
-    let bottom = H - 1;
+    const blank = (y) => inkFrac[y] < 0.004;
+    let a = Math.min(H - 1, Math.max(0, Math.round(anchorY * H)));
+    // The anchor itself may sit on a dark spot; step to the nearest paper row.
+    for (let k = 0; k < H * 0.05 && !isPaper[a] && a < H - 1; k++) a++;
+    if (!isPaper[a]) return null;
+    // Grow over the paper.
+    let up = a;
+    while (up > 0 && isPaper[up - 1]) up--;
+    let down = a;
+    while (down < H - 1 && isPaper[down + 1]) down++;
+    // Trim to the printed lines.
+    let top = up;
+    while (top < down && blank(top)) top++;
+    let bottom = down;
     while (bottom > top && blank(bottom)) bottom--;
-    let left = W - 1, right = 0;
-    for (let y = top; y <= bottom; y++)
-      for (let x = 0; x < W; x++)
-        if (ink[y * W + x]) {
+    if (bottom - top < H * 0.05) return null;
+    let left = x1, right = x0;
+    for (let y = top; y <= bottom; y++) {
+      if (!isPaper[y]) continue;
+      for (let x = x0; x <= x1; x++)
+        if (ink(x, y)) {
           if (x < left) left = x;
           if (x > right) right = x;
         }
-    if (right <= left || bottom - top < H * 0.1) return null;
+    }
+    if (right <= left) return null;
     const m = 0.01;
     const fx1 = Math.max(0, left / W - m), fx2 = Math.min(1, (right + 1) / W + m);
     const fy1 = Math.max(0, top / H - m), fy2 = Math.min(1, (bottom + 1) / H + m);
-    return { x: table.x + fx1 * table.w, y: table.y + fy1 * table.h, w: (fx2 - fx1) * table.w, h: (fy2 - fy1) * table.h };
+    return { x: fx1, y: fy1, w: fx2 - fx1, h: fy2 - fy1 };
   } catch (e) {
     return null;
   }
@@ -1263,19 +1298,18 @@ o: ほかの人のスコアの行があれば1、なければ0。
     const g = Number(r.g);
     const expectedGames = Number.isFinite(g) && g >= 1 && g <= 12 ? Math.round(g) : null;
     // Several games of this person, or nobody else on the sheet: no other
-    // row to mix up, so there's no need to pinpoint a row. Take the score
-    // table (with a margin, since the AI's edges can be a little off), then
-    // tighten it from the photo's pixels: start at the player's first name
-    // and drop the blank paper. On a 4-game sheet, pinpointing each game's
-    // position kept cutting off the last game; this way nothing is cut and
-    // no extra AI call is needed.
+    // row to mix up, so there's no need to pinpoint a row. The AI's positions
+    // drift by a row or more on a tall paper sheet (it cut off the first or
+    // last game in testing), so they're only a starting point: the box is
+    // found from the photo's pixels — all the print on the sheet around the
+    // name — and its edges always fall on blank paper. No extra AI call.
     if ((expectedGames && expectedGames >= 2) || Number(r.o) === 0) {
       const wx1 = Math.max(0, bLeft - 0.03);
       const wx2 = Math.min(1, bRight + 0.03);
       const wy1 = Math.max(0, bTop - 0.03);
       const wy2 = Math.min(1, bBottom + 0.05);
       const table = { x: wx1, y: wy1, w: wx2 - wx1, h: wy2 - wy1 };
-      return { rect: trimToPrint(img, table, nameY) || table, expectedGames };
+      return { rect: findSheetPrint(img, table, nameY) || table, expectedGames };
     }
     const x1 = Math.max(0, bLeft - 0.02);
     const x2 = Math.min(1, bRight + 0.02);
